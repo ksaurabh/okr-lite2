@@ -54,8 +54,12 @@ function PeriodFilterButton({ period, periods, activePeriodId, onSelect, depth }
   );
 }
 
+type ViewMode = 'tree' | 'list';
+
 export function ObjectiveTree() {
   const [isFilterExpanded, setIsFilterExpanded] = useState(true);
+  const [viewMode, setViewMode] = useState<ViewMode>('tree');
+  const [includeAncestorPeriods, setIncludeAncestorPeriods] = useState(false);
   const objectives = useOKRStore((state) => state.objectives);
   const periods = useOKRStore((state) => state.periods);
   const teams = useOKRStore((state) => state.teams);
@@ -92,10 +96,14 @@ export function ObjectiveTree() {
   const filteredObjectives = useMemo(() => {
     let result = objectives;
 
-    // Filter by period (including ancestor periods)
+    // Filter by period (optionally including ancestor periods)
     if (activePeriodId) {
-      const validPeriodIds = getAncestorPeriodIds(activePeriodId);
-      result = result.filter((obj) => validPeriodIds.includes(obj.periodId));
+      if (includeAncestorPeriods) {
+        const validPeriodIds = getAncestorPeriodIds(activePeriodId);
+        result = result.filter((obj) => validPeriodIds.includes(obj.periodId));
+      } else {
+        result = result.filter((obj) => obj.periodId === activePeriodId);
+      }
     }
 
     // Filter by teams
@@ -111,7 +119,7 @@ export function ObjectiveTree() {
     }
 
     return result;
-  }, [objectives, activePeriodId, filterTeamIds, filterTagIds, getAncestorPeriodIds]);
+  }, [objectives, activePeriodId, filterTeamIds, filterTagIds, includeAncestorPeriods, getAncestorPeriodIds]);
 
   // Get root objectives (no parent)
   const rootObjectives = filteredObjectives.filter((obj) => !obj.parentId);
@@ -178,7 +186,20 @@ export function ObjectiveTree() {
           <div className="px-4 pb-4 space-y-4 border-t border-gray-100 pt-4">
             {/* Period Filter */}
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-2">Time Period</label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-xs font-medium text-gray-500">Time Period</label>
+                {activePeriodId && (
+                  <label className="inline-flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={includeAncestorPeriods}
+                      onChange={(e) => setIncludeAncestorPeriods(e.target.checked)}
+                      className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    Include parent periods
+                  </label>
+                )}
+              </div>
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => setActivePeriod(null)}
@@ -251,6 +272,38 @@ export function ObjectiveTree() {
         )}
       </div>
 
+      {/* View Toggle */}
+      <div className="flex justify-end">
+        <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1">
+          <button
+            onClick={() => setViewMode('tree')}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors ${
+              viewMode === 'tree'
+                ? 'bg-gray-100 text-gray-900'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+            </svg>
+            Tree
+          </button>
+          <button
+            onClick={() => setViewMode('list')}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors ${
+              viewMode === 'list'
+                ? 'bg-gray-100 text-gray-900'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+            List
+          </button>
+        </div>
+      </div>
+
       {/* Empty state for filtered results */}
       {filteredObjectives.length === 0 && (
         <div className="text-center py-12">
@@ -268,44 +321,62 @@ export function ObjectiveTree() {
         </div>
       )}
 
-      {/* Objectives List */}
-      {companyObjectives.length > 0 && (
-        <section>
-          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <span className="w-3 h-3 bg-purple-500 rounded-full"></span>
-            Company Objectives
-          </h2>
-          <div className="space-y-3">
-            {companyObjectives.map((obj) => (
-              <ObjectiveCard key={obj.id} objective={obj} />
-            ))}
-          </div>
-        </section>
+      {/* Tree View - Hierarchical grouped by level */}
+      {viewMode === 'tree' && (
+        <>
+          {companyObjectives.length > 0 && (
+            <section>
+              <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <span className="w-3 h-3 bg-purple-500 rounded-full"></span>
+                Company Objectives
+              </h2>
+              <div className="space-y-3">
+                {companyObjectives.map((obj) => (
+                  <ObjectiveCard key={obj.id} objective={obj} />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {teamObjectives.length > 0 && (
+            <section>
+              <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <span className="w-3 h-3 bg-blue-500 rounded-full"></span>
+                Team Objectives
+              </h2>
+              <div className="space-y-3">
+                {teamObjectives.map((obj) => (
+                  <ObjectiveCard key={obj.id} objective={obj} />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {individualObjectives.length > 0 && (
+            <section>
+              <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <span className="w-3 h-3 bg-green-500 rounded-full"></span>
+                Individual Objectives
+              </h2>
+              <div className="space-y-3">
+                {individualObjectives.map((obj) => (
+                  <ObjectiveCard key={obj.id} objective={obj} />
+                ))}
+              </div>
+            </section>
+          )}
+        </>
       )}
 
-      {teamObjectives.length > 0 && (
+      {/* List View - Flat list of all objectives */}
+      {viewMode === 'list' && filteredObjectives.length > 0 && (
         <section>
-          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <span className="w-3 h-3 bg-blue-500 rounded-full"></span>
-            Team Objectives
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+            All Objectives ({filteredObjectives.length})
           </h2>
           <div className="space-y-3">
-            {teamObjectives.map((obj) => (
-              <ObjectiveCard key={obj.id} objective={obj} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {individualObjectives.length > 0 && (
-        <section>
-          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <span className="w-3 h-3 bg-green-500 rounded-full"></span>
-            Individual Objectives
-          </h2>
-          <div className="space-y-3">
-            {individualObjectives.map((obj) => (
-              <ObjectiveCard key={obj.id} objective={obj} />
+            {filteredObjectives.map((obj) => (
+              <ObjectiveCard key={obj.id} objective={obj} showChildren={false} />
             ))}
           </div>
         </section>

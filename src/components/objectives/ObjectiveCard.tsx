@@ -12,6 +12,7 @@ import { ObjectiveForm } from './ObjectiveForm';
 interface ObjectiveCardProps {
   objective: Objective;
   depth?: number;
+  showChildren?: boolean;
 }
 
 const getChildLevel = (parentLevel: ObjectiveLevel): ObjectiveLevel => {
@@ -22,7 +23,7 @@ const getChildLevel = (parentLevel: ObjectiveLevel): ObjectiveLevel => {
   }
 };
 
-export function ObjectiveCard({ objective, depth = 0 }: ObjectiveCardProps) {
+export function ObjectiveCard({ objective, depth = 0, showChildren = true }: ObjectiveCardProps) {
   const [isExpanded, setIsExpanded] = useState(true);
   const [showAddKR, setShowAddKR] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
@@ -32,6 +33,7 @@ export function ObjectiveCard({ objective, depth = 0 }: ObjectiveCardProps) {
   const allObjectives = useOKRStore((state) => state.objectives);
   const deleteObjective = useOKRStore((state) => state.deleteObjective);
   const teams = useOKRStore((state) => state.teams);
+  const periods = useOKRStore((state) => state.periods);
   const allTags = useOKRStore((state) => state.tags);
 
   const keyResults = useMemo(
@@ -48,7 +50,8 @@ export function ObjectiveCard({ objective, depth = 0 }: ObjectiveCardProps) {
   );
 
   const team = teams.find((t) => t.id === objective.teamId);
-  const hasChildren = childObjectives.length > 0 || keyResults.length > 0;
+  const period = periods.find((p) => p.id === objective.periodId);
+  const hasChildren = (showChildren && childObjectives.length > 0) || keyResults.length > 0;
 
   const levelColors = {
     company: 'border-l-purple-500',
@@ -89,6 +92,14 @@ export function ObjectiveCard({ objective, depth = 0 }: ObjectiveCardProps) {
               {team && (
                 <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
                   {team.name}
+                </span>
+              )}
+              {period && (
+                <span className="text-xs text-gray-500 bg-blue-50 px-2 py-0.5 rounded flex items-center gap-1">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  {period.name}
                 </span>
               )}
               {objectiveTags.map((tag) => (
@@ -157,13 +168,14 @@ export function ObjectiveCard({ objective, depth = 0 }: ObjectiveCardProps) {
         )}
       </div>
 
-      {isExpanded && childObjectives.length > 0 && (
+      {showChildren && isExpanded && childObjectives.length > 0 && (
         <div className="ml-6 mt-2 space-y-2 border-l-2 border-gray-200 pl-4">
           {childObjectives.map((child) => (
             <ObjectiveCard
               key={child.id}
               objective={child}
               depth={depth + 1}
+              showChildren={showChildren}
             />
           ))}
         </div>
