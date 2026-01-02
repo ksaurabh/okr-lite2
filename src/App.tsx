@@ -3,10 +3,11 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { Layout } from './components/layout';
 import { ObjectiveTree, ObjectiveForm } from './components/objectives';
 import { AdminPage } from './components/admin';
+import { SettingsPage } from './components/settings';
 import { LoginPage, UnauthorizedPage, AuthCallback, AdminInviteAccept } from './components/auth';
 import { Modal } from './components/common';
 
-type View = 'objectives' | 'teams' | 'periods' | 'tags' | 'admin';
+type View = 'objectives' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin';
 
 function AppContent() {
   const [currentView, setCurrentView] = useState<View>('objectives');
@@ -68,6 +69,7 @@ function AppContent() {
           <p>Manage tags from the sidebar</p>
         </div>
       )}
+      {currentView === 'settings' && <SettingsPage />}
       {currentView === 'admin' && <AdminPage />}
 
       <Modal

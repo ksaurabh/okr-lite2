@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 
-type View = 'objectives' | 'teams' | 'periods' | 'tags' | 'admin';
+type View = 'objectives' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin';
 
 interface LayoutProps {
   children: ReactNode;

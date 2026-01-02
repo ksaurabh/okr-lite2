@@ -16,6 +16,7 @@ const PORT = process.env.PORT || 3001;
 const DOMAINS_FILE = join(__dirname, 'allowed-domains.json');
 const ORGANIZATIONS_FILE = join(__dirname, 'organizations.json');
 const SUPER_ADMINS_FILE = join(__dirname, 'super-admins.json');
+const USERS_FILE = join(__dirname, 'users.json');
 
 // Initialize files if they don't exist
 if (!existsSync(DOMAINS_FILE)) {
@@ -26,6 +27,9 @@ if (!existsSync(ORGANIZATIONS_FILE)) {
 }
 if (!existsSync(SUPER_ADMINS_FILE)) {
   writeFileSync(SUPER_ADMINS_FILE, JSON.stringify({ superAdminEmails: [] }, null, 2));
+}
+if (!existsSync(USERS_FILE)) {
+  writeFileSync(USERS_FILE, JSON.stringify({ users: [] }, null, 2));
 }
 
 // Helper functions for domains
@@ -90,6 +94,70 @@ function isOrgAdmin(email) {
 
 function generateInviteToken() {
   return `${Date.now()}-${Math.random().toString(36).substring(2, 15)}-${Math.random().toString(36).substring(2, 15)}`;
+}
+
+// Helper functions for users
+function getUsers() {
+  try {
+    const data = readFileSync(USERS_FILE, 'utf-8');
+    return JSON.parse(data).users || [];
+  } catch {
+    return [];
+  }
+}
+
+function saveUsers(users) {
+  writeFileSync(USERS_FILE, JSON.stringify({ users }, null, 2));
+}
+
+function upsertUser(userData) {
+  const users = getUsers();
+  const existingIndex = users.findIndex(u => u.email === userData.email);
+  const now = new Date().toISOString();
+
+  if (existingIndex >= 0) {
+    // Update existing user
+    users[existingIndex] = {
+      ...users[existingIndex],
+      name: userData.name,
+      picture: userData.picture,
+      lastLoginAt: now,
+    };
+  } else {
+    // Create new user
+    users.push({
+      id: `user-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      email: userData.email,
+      name: userData.name,
+      picture: userData.picture,
+      domain: userData.domain,
+      organizationId: userData.organizationId,
+      role: 'user', // Default role
+      createdAt: now,
+      lastLoginAt: now,
+    });
+  }
+
+  saveUsers(users);
+  return users.find(u => u.email === userData.email);
+}
+
+function getUsersByOrganization(orgId) {
+  const users = getUsers();
+  return users.filter(u => u.organizationId === orgId);
+}
+
+function updateUserRole(email, role) {
+  const users = getUsers();
+  const userIndex = users.findIndex(u => u.email === email);
+
+  if (userIndex === -1) {
+    return null;
+  }
+
+  users[userIndex].role = role;
+  saveUsers(users);
+  return users[userIndex];
 }
 
 function isDomainAllowed(email) {
@@ -183,6 +251,17 @@ app.get('/auth/user', (req, res) => {
   const isOrgAdminUser = org
     ? org.admins?.some(a => a.email === req.user.email?.toLowerCase() && a.status === 'accepted')
     : false;
+
+  // Track user login
+  if (isAllowed && org) {
+    upsertUser({
+      email: req.user.email,
+      name: req.user.name,
+      picture: req.user.picture,
+      domain: req.user.domain,
+      organizationId: org.id,
+    });
+  }
 
   res.json({
     authenticated: true,
@@ -458,6 +537,74 @@ app.post('/api/invite/accept', (req, res) => {
     organization: organizations[orgIndex],
     message: 'You are now an admin for this organization',
   });
+});
+
+// User management routes
+function requireOrgAdminOrSuperAdmin(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  if (isSuperAdmin(req.user.email) || isOrgAdmin(req.user.email)) {
+    return next();
+  }
+  return res.status(403).json({ error: 'Admin access required' });
+}
+
+app.get('/api/users', requireAuth, (req, res) => {
+  const organizations = getOrganizations();
+
+  // Super admins see all users
+  if (isSuperAdmin(req.user.email)) {
+    const allUsers = getUsers();
+    // Enrich users with organization info
+    const usersWithOrg = allUsers.map(user => {
+      const org = organizations.find(o => o.id === user.organizationId);
+      return {
+        ...user,
+        organizationName: org?.name || 'Unknown',
+      };
+    });
+    return res.json({ users: usersWithOrg, allOrgs: true });
+  }
+
+  // Regular users see only their org's users
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) {
+    return res.json({ users: [], allOrgs: false });
+  }
+  const users = getUsersByOrganization(org.id);
+  const usersWithOrg = users.map(user => ({
+    ...user,
+    organizationName: org.name,
+  }));
+  res.json({ users: usersWithOrg, allOrgs: false });
+});
+
+app.put('/api/users/:email/role', requireOrgAdminOrSuperAdmin, (req, res) => {
+  const { email } = req.params;
+  const { role } = req.body;
+
+  if (!role || !['admin', 'user'].includes(role)) {
+    return res.status(400).json({ error: 'Invalid role. Must be "admin" or "user"' });
+  }
+
+  const decodedEmail = decodeURIComponent(email).toLowerCase();
+
+  // Verify user belongs to same org (unless super admin)
+  if (!isSuperAdmin(req.user.email)) {
+    const org = getOrganizationByDomain(req.user.domain);
+    const users = getUsersByOrganization(org?.id);
+    if (!users.some(u => u.email === decodedEmail)) {
+      return res.status(403).json({ error: 'Cannot modify users from other organizations' });
+    }
+  }
+
+  const updatedUser = updateUserRole(decodedEmail, role);
+  if (!updatedUser) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+
+  res.json({ user: updatedUser });
 });
 
 // Health check
