@@ -64,3 +64,23 @@ export interface OKRState {
   filterTagIds: string[];
   filterTeamIds: string[];
 }
+
+// Organization types
+export type AdminInviteStatus = 'pending' | 'accepted';
+
+export interface OrganizationAdmin {
+  email: string;
+  inviteToken: string;
+  inviteCreatedAt: string;
+  status: AdminInviteStatus;
+  acceptedAt?: string;
+}
+
+export interface Organization {
+  id: string;
+  name: string;
+  domain: string;
+  admins: OrganizationAdmin[];
+  createdAt: string;
+  updatedAt: string;
+}

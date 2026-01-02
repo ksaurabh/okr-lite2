@@ -3,7 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { Layout } from './components/layout';
 import { ObjectiveTree, ObjectiveForm } from './components/objectives';
 import { AdminPage } from './components/admin';
-import { LoginPage, UnauthorizedPage, AuthCallback } from './components/auth';
+import { LoginPage, UnauthorizedPage, AuthCallback, AdminInviteAccept } from './components/auth';
 import { Modal } from './components/common';
 
 type View = 'objectives' | 'teams' | 'periods' | 'tags' | 'admin';
@@ -16,6 +16,11 @@ function AppContent() {
   // Handle OAuth callback
   if (window.location.pathname === '/auth/callback') {
     return <AuthCallback />;
+  }
+
+  // Handle admin invite accept
+  if (window.location.pathname === '/invite/accept') {
+    return <AdminInviteAccept />;
   }
 
   // Show loading state

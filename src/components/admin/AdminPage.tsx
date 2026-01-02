@@ -2,10 +2,13 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Button } from '../common/Button';
 import { Modal } from '../common/Modal';
 import { useOKRStore, type BackupData, type OKRStore } from '../../store/okrStore';
+import { useAuth } from '../../context/AuthContext';
+import { OrganizationManagement } from './OrganizationManagement';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
 export function AdminPage() {
+  const { isSuperAdmin } = useAuth();
   const [newDomain, setNewDomain] = useState('');
   const [allowedDomains, setAllowedDomains] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -146,9 +149,16 @@ export function AdminPage() {
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Super Admin</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Manage allowed domains for the application
+          Manage organizations and allowed domains
         </p>
       </div>
+
+      {/* Organizations Section - Super Admin Only */}
+      {isSuperAdmin && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <OrganizationManagement />
+        </div>
+      )}
 
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Allowed Domains</h2>

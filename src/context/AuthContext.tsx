@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import type { ReactNode } from 'react';
+import type { Organization } from '../types';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -9,6 +10,7 @@ interface User {
   name: string;
   picture?: string;
   domain: string;
+  organizationId?: string;
 }
 
 interface AuthState {
@@ -16,6 +18,9 @@ interface AuthState {
   isAuthenticated: boolean;
   isAllowed: boolean;
   user: User | null;
+  isSuperAdmin: boolean;
+  isOrgAdmin: boolean;
+  organization: Organization | null;
 }
 
 interface AuthContextType extends AuthState {
@@ -32,6 +37,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isAuthenticated: false,
     isAllowed: false,
     user: null,
+    isSuperAdmin: false,
+    isOrgAdmin: false,
+    organization: null,
   });
 
   const checkAuth = useCallback(async () => {
@@ -46,6 +54,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: data.authenticated,
         isAllowed: data.allowed || false,
         user: data.user || null,
+        isSuperAdmin: data.isSuperAdmin || false,
+        isOrgAdmin: data.isOrgAdmin || false,
+        organization: data.organization || null,
       });
     } catch (error) {
       console.error('Auth check failed:', error);
@@ -54,6 +65,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: false,
         isAllowed: false,
         user: null,
+        isSuperAdmin: false,
+        isOrgAdmin: false,
+        organization: null,
       });
     }
   }, []);
@@ -76,6 +90,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: false,
         isAllowed: false,
         user: null,
+        isSuperAdmin: false,
+        isOrgAdmin: false,
+        organization: null,
       });
     } catch (error) {
       console.error('Logout failed:', error);
