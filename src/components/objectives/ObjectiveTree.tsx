@@ -63,6 +63,7 @@ export function ObjectiveTree() {
   const [isFilterExpanded, setIsFilterExpanded] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>('tree');
   const [includeAncestorPeriods, setIncludeAncestorPeriods] = useState(false);
+  const [includeChildPeriods, setIncludeChildPeriods] = useState(false);
   const [orgUsers, setOrgUsers] = useState<User[]>([]);
 
   const { organization, user, isSuperAdmin, isOrgAdmin } = useAuth();
@@ -149,6 +150,22 @@ export function ObjectiveTree() {
     };
   }, [orgPeriods]);
 
+  // Get all descendant period IDs for a given period (including the period itself)
+  const getDescendantPeriodIds = useMemo(() => {
+    return (periodId: string): string[] => {
+      const ids: string[] = [periodId];
+      const findChildren = (parentId: string) => {
+        const children = orgPeriods.filter((p: Period) => p.parentId === parentId);
+        children.forEach((child: Period) => {
+          ids.push(child.id);
+          findChildren(child.id);
+        });
+      };
+      findChildren(periodId);
+      return ids;
+    };
+  }, [orgPeriods]);
+
   // Get root periods (no parent) for hierarchical display
   const rootPeriods = useMemo(() => {
     return orgPeriods.filter((p: Period) => !p.parentId);
@@ -158,14 +175,16 @@ export function ObjectiveTree() {
   const filteredObjectives = useMemo(() => {
     let result = orgObjectives;
 
-    // Filter by period (optionally including ancestor periods)
+    // Filter by period (optionally including ancestor and/or child periods)
     if (activePeriodId) {
+      let validPeriodIds: string[] = [activePeriodId];
       if (includeAncestorPeriods) {
-        const validPeriodIds = getAncestorPeriodIds(activePeriodId);
-        result = result.filter((obj: Objective) => validPeriodIds.includes(obj.periodId));
-      } else {
-        result = result.filter((obj: Objective) => obj.periodId === activePeriodId);
+        validPeriodIds = [...new Set([...validPeriodIds, ...getAncestorPeriodIds(activePeriodId)])];
       }
+      if (includeChildPeriods) {
+        validPeriodIds = [...new Set([...validPeriodIds, ...getDescendantPeriodIds(activePeriodId)])];
+      }
+      result = result.filter((obj: Objective) => validPeriodIds.includes(obj.periodId));
     }
 
     // Filter by teams
@@ -201,7 +220,7 @@ export function ObjectiveTree() {
     }
 
     return result;
-  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, includeAncestorPeriods, getAncestorPeriodIds]);
+  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, includeAncestorPeriods, includeChildPeriods, getAncestorPeriodIds, getDescendantPeriodIds]);
 
   // Get root objectives (no parent)
   const rootObjectives = filteredObjectives.filter((obj: Objective) => !obj.parentId);
@@ -271,15 +290,26 @@ export function ObjectiveTree() {
               <div className="flex items-center justify-between mb-2">
                 <label className="block text-xs font-medium text-gray-500">Time Period</label>
                 {activePeriodId && (
-                  <label className="inline-flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={includeAncestorPeriods}
-                      onChange={(e) => setIncludeAncestorPeriods(e.target.checked)}
-                      className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    Include parent periods
-                  </label>
+                  <div className="flex items-center gap-4">
+                    <label className="inline-flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={includeAncestorPeriods}
+                        onChange={(e) => setIncludeAncestorPeriods(e.target.checked)}
+                        className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      Include parent periods
+                    </label>
+                    <label className="inline-flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={includeChildPeriods}
+                        onChange={(e) => setIncludeChildPeriods(e.target.checked)}
+                        className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      Include child periods
+                    </label>
+                  </div>
                 )}
               </div>
               <div className="flex flex-wrap gap-2">
