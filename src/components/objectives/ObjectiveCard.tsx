@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import type { Objective, ObjectiveLevel, KeyResult, Tag, Team, Period, ObjectiveHistoryEntry } from '../../types';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
+import { useAuth } from '../../context/AuthContext';
 import { getStatusColor } from '../../utils/calculations';
 import { ProgressBar } from '../common/ProgressBar';
 import { Button } from '../common/Button';
@@ -36,6 +37,11 @@ export function ObjectiveCard({ objective, depth = 0, showChildren = true }: Obj
   const teams = useOKRStore((state: OKRStore) => state.teams);
   const periods = useOKRStore((state: OKRStore) => state.periods);
   const allTags = useOKRStore((state: OKRStore) => state.tags);
+
+  const { user, isSuperAdmin, isOrgAdmin } = useAuth();
+  const userEmail = user?.email || '';
+  const isAdmin = isSuperAdmin || isOrgAdmin;
+  const canModify = isAdmin || objective.createdBy === userEmail;
 
   const keyResults = useMemo(
     () => allKeyResults.filter((kr: KeyResult) => kr.objectiveId === objective.id),
@@ -143,28 +149,32 @@ export function ObjectiveCard({ objective, depth = 0, showChildren = true }: Obj
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => setShowEdit(true)}>
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-              </svg>
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => setShowAddKR(true)}>
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-              </svg>
-            </Button>
-            {objective.level !== 'individual' && (
-              <Button variant="ghost" size="sm" onClick={() => setShowAddChild(true)}>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                </svg>
-              </Button>
+            {canModify && (
+              <>
+                <Button variant="ghost" size="sm" onClick={() => setShowEdit(true)}>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setShowAddKR(true)}>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                  </svg>
+                </Button>
+                {objective.level !== 'individual' && (
+                  <Button variant="ghost" size="sm" onClick={() => setShowAddChild(true)}>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                    </svg>
+                  </Button>
+                )}
+                <Button variant="ghost" size="sm" onClick={() => deleteObjective(objective.id)}>
+                  <svg className="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </Button>
+              </>
             )}
-            <Button variant="ghost" size="sm" onClick={() => deleteObjective(objective.id)}>
-              <svg className="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-            </Button>
           </div>
         </div>
 

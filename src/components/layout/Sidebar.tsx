@@ -18,9 +18,10 @@ interface TeamItemProps {
   onAddChild: (parentId: string) => void;
   onDelete: (id: string) => void;
   depth?: number;
+  isAdmin?: boolean;
 }
 
-function TeamItem({ team, teams, onAddChild, onDelete, depth = 0 }: TeamItemProps) {
+function TeamItem({ team, teams, onAddChild, onDelete, depth = 0, isAdmin = false }: TeamItemProps) {
   const [isExpanded, setIsExpanded] = useState(true);
 
   const childTeams = teams.filter((t: Team) => t.parentId === team.id);
@@ -52,25 +53,27 @@ function TeamItem({ team, teams, onAddChild, onDelete, depth = 0 }: TeamItemProp
           )}
           <span className="truncate">{team.name}</span>
         </div>
-        <div className="flex items-center gap-1 flex-shrink-0">
-          <button
-            onClick={() => onAddChild(team.id)}
-            className="text-gray-400 hover:text-blue-600 p-0.5"
-            title="Add sub-team"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-            </svg>
-          </button>
-          <button
-            onClick={() => onDelete(team.id)}
-            className="text-gray-400 hover:text-red-600 p-0.5"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
+        {isAdmin && (
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <button
+              onClick={() => onAddChild(team.id)}
+              className="text-gray-400 hover:text-blue-600 p-0.5"
+              title="Add sub-team"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+            </button>
+            <button
+              onClick={() => onDelete(team.id)}
+              className="text-gray-400 hover:text-red-600 p-0.5"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        )}
       </div>
       {isExpanded && hasChildren && (
         <div>
@@ -82,6 +85,7 @@ function TeamItem({ team, teams, onAddChild, onDelete, depth = 0 }: TeamItemProp
               onAddChild={onAddChild}
               onDelete={onDelete}
               depth={depth + 1}
+              isAdmin={isAdmin}
             />
           ))}
         </div>
@@ -119,9 +123,10 @@ interface PeriodItemProps {
   onAddChild: (parentId: string, childType: PeriodType) => void;
   onDelete: (id: string) => void;
   depth?: number;
+  isAdmin?: boolean;
 }
 
-function PeriodItem({ period, periods, onAddChild, onDelete, depth = 0 }: PeriodItemProps) {
+function PeriodItem({ period, periods, onAddChild, onDelete, depth = 0, isAdmin = false }: PeriodItemProps) {
   const [isExpanded, setIsExpanded] = useState(true);
 
   const childPeriods = periods.filter((p: Period) => p.parentId === period.id);
@@ -159,27 +164,29 @@ function PeriodItem({ period, periods, onAddChild, onDelete, depth = 0 }: Period
           </span>
           <span className="truncate">{period.name}</span>
         </div>
-        <div className="flex items-center gap-1 flex-shrink-0">
-          {canAddChild && (
+        {isAdmin && (
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {canAddChild && (
+              <button
+                onClick={() => onAddChild(period.id, childType)}
+                className="text-gray-400 hover:text-blue-600 p-0.5"
+                title={`Add ${PERIOD_TYPE_LABELS[childType]}`}
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+              </button>
+            )}
             <button
-              onClick={() => onAddChild(period.id, childType)}
-              className="text-gray-400 hover:text-blue-600 p-0.5"
-              title={`Add ${PERIOD_TYPE_LABELS[childType]}`}
+              onClick={() => onDelete(period.id)}
+              className="text-gray-400 hover:text-red-600 p-0.5"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
-          )}
-          <button
-            onClick={() => onDelete(period.id)}
-            className="text-gray-400 hover:text-red-600 p-0.5"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
+          </div>
+        )}
       </div>
       {isExpanded && hasChildren && (
         <div>
@@ -191,6 +198,7 @@ function PeriodItem({ period, periods, onAddChild, onDelete, depth = 0 }: Period
               onAddChild={onAddChild}
               onDelete={onDelete}
               depth={depth + 1}
+              isAdmin={isAdmin}
             />
           ))}
         </div>
@@ -392,12 +400,14 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
           <div className="mt-6">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-medium text-gray-500 uppercase">Teams</h3>
-              <button
-                onClick={() => openAddTeamModal()}
-                className="text-blue-600 hover:text-blue-700 text-sm"
-              >
-                + Add
-              </button>
+              {isAdmin && (
+                <button
+                  onClick={() => openAddTeamModal()}
+                  className="text-blue-600 hover:text-blue-700 text-sm"
+                >
+                  + Add
+                </button>
+              )}
             </div>
             <div className="space-y-0.5">
               {rootTeams.map((team: Team) => (
@@ -407,6 +417,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
                   teams={orgTeams}
                   onAddChild={openAddTeamModal}
                   onDelete={deleteTeam}
+                  isAdmin={isAdmin}
                 />
               ))}
               {rootTeams.length === 0 && (
@@ -420,12 +431,14 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
           <div className="mt-6">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-medium text-gray-500 uppercase">Periods</h3>
-              <button
-                onClick={() => openAddPeriodModal(undefined, 'quarter')}
-                className="text-blue-600 hover:text-blue-700 text-sm"
-              >
-                + Quarter
-              </button>
+              {isAdmin && (
+                <button
+                  onClick={() => openAddPeriodModal(undefined, 'quarter')}
+                  className="text-blue-600 hover:text-blue-700 text-sm"
+                >
+                  + Quarter
+                </button>
+              )}
             </div>
             <div className="space-y-0.5">
               {rootPeriods.map((period: Period) => (
@@ -435,6 +448,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
                   periods={orgPeriods}
                   onAddChild={openAddPeriodModal}
                   onDelete={deletePeriod}
+                  isAdmin={isAdmin}
                 />
               ))}
               {rootPeriods.length === 0 && (
@@ -448,12 +462,14 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
           <div className="mt-6">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-medium text-gray-500 uppercase">Tags</h3>
-              <button
-                onClick={openAddTagModal}
-                className="text-blue-600 hover:text-blue-700 text-sm"
-              >
-                + Add
-              </button>
+              {isAdmin && (
+                <button
+                  onClick={openAddTagModal}
+                  className="text-blue-600 hover:text-blue-700 text-sm"
+                >
+                  + Add
+                </button>
+              )}
             </div>
             <ul className="space-y-1">
               {orgTags.map((tag: Tag) => (
@@ -462,14 +478,16 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
                     <span className={`w-3 h-3 rounded-full ${tag.color}`}></span>
                     <span>{tag.name}</span>
                   </div>
-                  <button
-                    onClick={() => deleteTag(tag.id)}
-                    className="text-gray-400 hover:text-red-600"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
+                  {isAdmin && (
+                    <button
+                      onClick={() => deleteTag(tag.id)}
+                      className="text-gray-400 hover:text-red-600"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
