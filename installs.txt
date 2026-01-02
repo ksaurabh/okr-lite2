@@ -1,0 +1,73 @@
+ 5. Install PM2 and start the server
+
+  sudo npm install -g pm2
+  pm2 start server/index.js --name okr-lite
+  pm2 save
+  pm2 startup  # Follow the command it outputs
+
+  6. Install and configure Nginx
+
+  sudo dnf install -y nginx
+  sudo systemctl enable nginx
+
+  Create the config:
+  sudo nano /etc/nginx/conf.d/okr-lite.conf
+
+  Paste:
+  server {
+      listen 80;
+      server_name _;
+
+      location / {
+          root /home/ec2-user/okr-lite2/dist;
+          try_files $uri $uri/ /index.html;
+      }
+
+      location /api {
+          proxy_pass http://127.0.0.1:3001;
+          proxy_http_version 1.1;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+      }
+
+      location /auth {
+          proxy_pass http://127.0.0.1:3001;
+          proxy_http_version 1.1;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+      }
+  }
+
+  7. Set permissions and start Nginx
+
+  chmod 755 /home/ec2-user
+  chmod -R 755 /home/ec2-user/okr-lite2/dist
+  sudo setsebool -P httpd_can_network_connect 1
+  sudo setsebool -P httpd_read_user_content 1
+  sudo nginx -t
+  sudo systemctl start nginx
+
+  8. Open firewall ports in Lightsail
+
+  In the Lightsail console:
+  - Go to your instance → Networking
+  - Add rule: HTTP (port 80)
+  - Add rule: HTTPS (port 443) if using SSL
+
+  9. Access the app
+
+  Open http://your-lightsail-ip in your browser.
+
+  ---
+  Updating the app
+
+  cd ~/okr-lite2
+  git pull
+  npm install
+  npm run build
+  pm2 restart okr-lite
+

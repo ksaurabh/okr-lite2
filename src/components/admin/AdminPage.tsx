@@ -3,7 +3,7 @@ import { Button } from '../common/Button';
 import { Modal } from '../common/Modal';
 import { useOKRStore, type BackupData, type OKRStore } from '../../store/okrStore';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const API_URL = import.meta.env.VITE_API_URL || '';
 
 export function AdminPage() {
   const [newDomain, setNewDomain] = useState('');
