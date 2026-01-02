@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { Objective, ObjectiveLevel } from '../../types';
-import { useOKRStore } from '../../store/okrStore';
+import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { Button } from '../common/Button';
 
 interface ObjectiveFormProps {
@@ -20,12 +20,12 @@ export function ObjectiveForm({ objective, parentId, defaultLevel, onClose }: Ob
   const [periodId, setPeriodId] = useState(objective?.periodId || '');
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>(objective?.tagIds || []);
 
-  const teams = useOKRStore((state) => state.teams);
-  const periods = useOKRStore((state) => state.periods);
-  const tags = useOKRStore((state) => state.tags);
-  const activePeriodId = useOKRStore((state) => state.activePeriodId);
-  const addObjective = useOKRStore((state) => state.addObjective);
-  const updateObjective = useOKRStore((state) => state.updateObjective);
+  const teams = useOKRStore((state: OKRStore) => state.teams);
+  const periods = useOKRStore((state: OKRStore) => state.periods);
+  const tags = useOKRStore((state: OKRStore) => state.tags);
+  const activePeriodId = useOKRStore((state: OKRStore) => state.activePeriodId);
+  const addObjective = useOKRStore((state: OKRStore) => state.addObjective);
+  const updateObjective = useOKRStore((state: OKRStore) => state.updateObjective);
 
   useEffect(() => {
     if (!periodId && activePeriodId) {

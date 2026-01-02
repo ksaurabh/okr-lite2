@@ -5,11 +5,19 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:server": "node server/index.js",
+    "dev:all": "npm run dev & npm run dev:server",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "express-session": "^1.18.2",
+    "passport": "^0.7.0",
+    "passport-google-oauth20": "^2.0.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "zustand": "^5.0.9"

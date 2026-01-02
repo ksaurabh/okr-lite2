@@ -1,14 +1,92 @@
 import { useState, useMemo } from 'react';
-import { useOKRStore } from '../../store/okrStore';
+import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { Button } from '../common/Button';
 import { Modal } from '../common/Modal';
-import type { Period, PeriodType } from '../../types';
+import type { Period, PeriodType, Team } from '../../types';
 
-type View = 'objectives' | 'teams' | 'periods' | 'tags';
+type View = 'objectives' | 'teams' | 'periods' | 'tags' | 'admin';
 
 interface SidebarProps {
   currentView: View;
   onViewChange: (view: View) => void;
+}
+
+interface TeamItemProps {
+  team: Team;
+  teams: Team[];
+  onAddChild: (parentId: string) => void;
+  onDelete: (id: string) => void;
+  depth?: number;
+}
+
+function TeamItem({ team, teams, onAddChild, onDelete, depth = 0 }: TeamItemProps) {
+  const [isExpanded, setIsExpanded] = useState(true);
+
+  const childTeams = teams.filter((t) => t.parentId === team.id);
+  const hasChildren = childTeams.length > 0;
+
+  return (
+    <div>
+      <div
+        className="flex items-center justify-between px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-200 rounded"
+        style={{ paddingLeft: `${12 + depth * 16}px` }}
+      >
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          {hasChildren ? (
+            <button
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="text-gray-400 hover:text-gray-600 flex-shrink-0"
+            >
+              <svg
+                className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          ) : (
+            <span className="w-3" />
+          )}
+          <span className="truncate">{team.name}</span>
+        </div>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <button
+            onClick={() => onAddChild(team.id)}
+            className="text-gray-400 hover:text-blue-600 p-0.5"
+            title="Add sub-team"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+            </svg>
+          </button>
+          <button
+            onClick={() => onDelete(team.id)}
+            className="text-gray-400 hover:text-red-600 p-0.5"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      {isExpanded && hasChildren && (
+        <div>
+          {childTeams.map((child) => (
+            <TeamItem
+              key={child.id}
+              team={child}
+              teams={teams}
+              onAddChild={onAddChild}
+              onDelete={onDelete}
+              depth={depth + 1}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 const TAG_COLORS = [
@@ -125,6 +203,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
   const [showPeriodModal, setShowPeriodModal] = useState(false);
   const [showTagModal, setShowTagModal] = useState(false);
   const [newTeamName, setNewTeamName] = useState('');
+  const [newTeamParentId, setNewTeamParentId] = useState<string | undefined>(undefined);
   const [newPeriodName, setNewPeriodName] = useState('');
   const [newPeriodType, setNewPeriodType] = useState<PeriodType>('quarter');
   const [newPeriodParentId, setNewPeriodParentId] = useState<string | undefined>(undefined);
@@ -133,15 +212,15 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
   const [newTagName, setNewTagName] = useState('');
   const [newTagColor, setNewTagColor] = useState('bg-blue-500');
 
-  const teams = useOKRStore((state) => state.teams);
-  const periods = useOKRStore((state) => state.periods);
-  const tags = useOKRStore((state) => state.tags);
-  const addTeam = useOKRStore((state) => state.addTeam);
-  const addPeriod = useOKRStore((state) => state.addPeriod);
-  const addTag = useOKRStore((state) => state.addTag);
-  const deleteTeam = useOKRStore((state) => state.deleteTeam);
-  const deletePeriod = useOKRStore((state) => state.deletePeriod);
-  const deleteTag = useOKRStore((state) => state.deleteTag);
+  const teams = useOKRStore((state: OKRStore) => state.teams);
+  const periods = useOKRStore((state: OKRStore) => state.periods);
+  const tags = useOKRStore((state: OKRStore) => state.tags);
+  const addTeam = useOKRStore((state: OKRStore) => state.addTeam);
+  const addPeriod = useOKRStore((state: OKRStore) => state.addPeriod);
+  const addTag = useOKRStore((state: OKRStore) => state.addTag);
+  const deleteTeam = useOKRStore((state: OKRStore) => state.deleteTeam);
+  const deletePeriod = useOKRStore((state: OKRStore) => state.deletePeriod);
+  const deleteTag = useOKRStore((state: OKRStore) => state.deleteTag);
 
   // Get root periods (quarters with no parent)
   const rootPeriods = useMemo(
@@ -149,12 +228,31 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
     [periods]
   );
 
+  // Get root teams (teams with no parent)
+  const rootTeams = useMemo(
+    () => teams.filter((t) => !t.parentId).sort((a, b) => a.name.localeCompare(b.name)),
+    [teams]
+  );
+
+  const openAddTeamModal = (parentId?: string) => {
+    setNewTeamParentId(parentId);
+    setNewTeamName('');
+    setShowTeamModal(true);
+  };
+
   const handleAddTeam = () => {
     if (newTeamName.trim()) {
-      addTeam({ name: newTeamName.trim() });
+      addTeam({ name: newTeamName.trim(), parentId: newTeamParentId });
       setNewTeamName('');
+      setNewTeamParentId(undefined);
       setShowTeamModal(false);
     }
+  };
+
+  const getParentTeamName = () => {
+    if (!newTeamParentId) return null;
+    const parent = teams.find((t) => t.id === newTeamParentId);
+    return parent?.name;
   };
 
   const openAddPeriodModal = (parentId?: string, type: PeriodType = 'quarter') => {
@@ -204,6 +302,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
     { id: 'teams', label: 'Teams', icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z' },
     { id: 'periods', label: 'Periods', icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z' },
     { id: 'tags', label: 'Tags', icon: 'M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z' },
+    { id: 'admin', label: 'Super Admin', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z' },
   ];
 
   return (
@@ -234,27 +333,26 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-medium text-gray-500 uppercase">Teams</h3>
               <button
-                onClick={() => setShowTeamModal(true)}
+                onClick={() => openAddTeamModal()}
                 className="text-blue-600 hover:text-blue-700 text-sm"
               >
                 + Add
               </button>
             </div>
-            <ul className="space-y-1">
-              {teams.map((team) => (
-                <li key={team.id} className="flex items-center justify-between px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-200 rounded">
-                  <span>{team.name}</span>
-                  <button
-                    onClick={() => deleteTeam(team.id)}
-                    className="text-gray-400 hover:text-red-600"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </li>
+            <div className="space-y-0.5">
+              {rootTeams.map((team) => (
+                <TeamItem
+                  key={team.id}
+                  team={team}
+                  teams={teams}
+                  onAddChild={openAddTeamModal}
+                  onDelete={deleteTeam}
+                />
               ))}
-            </ul>
+              {rootTeams.length === 0 && (
+                <p className="text-xs text-gray-400 px-3 py-2">No teams yet. Add a team to get started.</p>
+              )}
+            </div>
           </div>
         )}
 
@@ -319,11 +417,20 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
         )}
       </nav>
 
-      <Modal isOpen={showTeamModal} onClose={() => setShowTeamModal(false)} title="Add Team">
+      <Modal
+        isOpen={showTeamModal}
+        onClose={() => setShowTeamModal(false)}
+        title={newTeamParentId ? 'Add Sub-team' : 'Add Team'}
+      >
         <div className="space-y-4">
+          {newTeamParentId && (
+            <div className="text-sm text-gray-600 bg-gray-50 px-3 py-2 rounded">
+              Parent: <span className="font-medium">{getParentTeamName()}</span>
+            </div>
+          )}
           <input
             type="text"
-            placeholder="Team name"
+            placeholder={newTeamParentId ? 'Sub-team name' : 'Team name'}
             value={newTeamName}
             onChange={(e) => setNewTeamName(e.target.value)}
             className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -332,7 +439,9 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
             <Button variant="secondary" onClick={() => setShowTeamModal(false)}>
               Cancel
             </Button>
-            <Button onClick={handleAddTeam}>Add Team</Button>
+            <Button onClick={handleAddTeam}>
+              {newTeamParentId ? 'Add Sub-team' : 'Add Team'}
+            </Button>
           </div>
         </div>
       </Modal>

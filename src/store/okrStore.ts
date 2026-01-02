@@ -37,11 +37,29 @@ interface OKRActions {
   toggleFilterTeam: (teamId: string) => void;
   clearAllFilters: () => void;
 
+  // Allowed Domains
+  addAllowedDomain: (domain: string) => void;
+  deleteAllowedDomain: (domain: string) => void;
+
+  // Backup & Restore
+  exportData: () => BackupData;
+  importData: (data: BackupData) => void;
+
   // Utilities
   recalculateProgress: () => void;
 }
 
-type OKRStore = OKRState & OKRActions;
+export interface BackupData {
+  version: number;
+  exportedAt: string;
+  objectives: Objective[];
+  keyResults: KeyResult[];
+  teams: Team[];
+  periods: Period[];
+  tags: Tag[];
+}
+
+export type OKRStore = OKRState & OKRActions;
 
 const recalculateAllProgress = (state: OKRState): OKRState => {
   const updatedKeyResults = state.keyResults.map(kr => ({
@@ -66,7 +84,7 @@ const recalculateAllProgress = (state: OKRState): OKRState => {
   };
 };
 
-export const useOKRStore = create<OKRStore>((set) => ({
+export const useOKRStore = create<OKRStore>((set, get) => ({
   ...storage.load(),
 
   addObjective: (objective) => {
@@ -333,6 +351,66 @@ export const useOKRStore = create<OKRStore>((set) => ({
   recalculateProgress: () => {
     set((state) => {
       const recalculated = recalculateAllProgress(state);
+      storage.save(recalculated);
+      return recalculated;
+    });
+  },
+
+  addAllowedDomain: (domain) => {
+    set((state) => {
+      // Normalize domain (lowercase, trim)
+      const normalizedDomain = domain.toLowerCase().trim();
+      if (!normalizedDomain || state.allowedDomains.includes(normalizedDomain)) {
+        return state;
+      }
+      const newState = {
+        ...state,
+        allowedDomains: [...state.allowedDomains, normalizedDomain],
+      };
+      storage.save(newState);
+      return newState;
+    });
+  },
+
+  deleteAllowedDomain: (domain) => {
+    set((state) => {
+      const newState = {
+        ...state,
+        allowedDomains: state.allowedDomains.filter((d) => d !== domain),
+      };
+      storage.save(newState);
+      return newState;
+    });
+  },
+
+  exportData: (): BackupData => {
+    const state = get();
+    return {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      objectives: state.objectives,
+      keyResults: state.keyResults,
+      teams: state.teams,
+      periods: state.periods,
+      tags: state.tags,
+    };
+  },
+
+  importData: (data) => {
+    set((state) => {
+      const newState = {
+        ...state,
+        objectives: data.objectives || [],
+        keyResults: data.keyResults || [],
+        teams: data.teams || [],
+        periods: data.periods || [],
+        tags: data.tags || [],
+        // Reset filters
+        activePeriodId: null,
+        filterTagIds: [],
+        filterTeamIds: [],
+      };
+      const recalculated = recalculateAllProgress(newState);
       storage.save(recalculated);
       return recalculated;
     });

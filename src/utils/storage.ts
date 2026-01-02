@@ -8,6 +8,7 @@ const defaultState: OKRState = {
   teams: [],
   periods: [],
   tags: [],
+  allowedDomains: [],
   activePeriodId: null,
   filterTagIds: [],
   filterTeamIds: [],

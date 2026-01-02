@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useOKRStore } from '../../store/okrStore';
+import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { Button } from '../common/Button';
 
 interface KeyResultFormProps {
@@ -13,7 +13,7 @@ export function KeyResultForm({ objectiveId, onClose }: KeyResultFormProps) {
   const [currentValue, setCurrentValue] = useState('0');
   const [unit, setUnit] = useState('%');
 
-  const addKeyResult = useOKRStore((state) => state.addKeyResult);
+  const addKeyResult = useOKRStore((state: OKRStore) => state.addKeyResult);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

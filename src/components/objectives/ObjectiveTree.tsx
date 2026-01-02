@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useOKRStore } from '../../store/okrStore';
+import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { ObjectiveCard } from './ObjectiveCard';
 import type { Period, PeriodType } from '../../types';
 
@@ -60,17 +60,17 @@ export function ObjectiveTree() {
   const [isFilterExpanded, setIsFilterExpanded] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>('tree');
   const [includeAncestorPeriods, setIncludeAncestorPeriods] = useState(false);
-  const objectives = useOKRStore((state) => state.objectives);
-  const periods = useOKRStore((state) => state.periods);
-  const teams = useOKRStore((state) => state.teams);
-  const tags = useOKRStore((state) => state.tags);
-  const activePeriodId = useOKRStore((state) => state.activePeriodId);
-  const filterTagIds = useOKRStore((state) => state.filterTagIds);
-  const filterTeamIds = useOKRStore((state) => state.filterTeamIds);
-  const setActivePeriod = useOKRStore((state) => state.setActivePeriod);
-  const toggleFilterTag = useOKRStore((state) => state.toggleFilterTag);
-  const toggleFilterTeam = useOKRStore((state) => state.toggleFilterTeam);
-  const clearAllFilters = useOKRStore((state) => state.clearAllFilters);
+  const objectives = useOKRStore((state: OKRStore) => state.objectives);
+  const periods = useOKRStore((state: OKRStore) => state.periods);
+  const teams = useOKRStore((state: OKRStore) => state.teams);
+  const tags = useOKRStore((state: OKRStore) => state.tags);
+  const activePeriodId = useOKRStore((state: OKRStore) => state.activePeriodId);
+  const filterTagIds = useOKRStore((state: OKRStore) => state.filterTagIds);
+  const filterTeamIds = useOKRStore((state: OKRStore) => state.filterTeamIds);
+  const setActivePeriod = useOKRStore((state: OKRStore) => state.setActivePeriod);
+  const toggleFilterTag = useOKRStore((state: OKRStore) => state.toggleFilterTag);
+  const toggleFilterTeam = useOKRStore((state: OKRStore) => state.toggleFilterTeam);
+  const clearAllFilters = useOKRStore((state: OKRStore) => state.clearAllFilters);
 
   const hasActiveFilters = activePeriodId || filterTagIds.length > 0 || filterTeamIds.length > 0;
 

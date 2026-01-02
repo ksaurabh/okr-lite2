@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd view toggle, period display, and ancestor period filter option\n\n- Add tree/list view toggle to switch between hierarchical and flat views\n- Display time period badge on objective cards with calendar icon\n- Add optional \"Include parent periods\" checkbox when filtering by period\n- Support showChildren prop on ObjectiveCard to control child rendering\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(npx tsc:*)"
     ]
   }
 }

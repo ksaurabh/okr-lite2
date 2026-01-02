@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { KeyResult } from '../../types';
-import { useOKRStore } from '../../store/okrStore';
+import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { ProgressBar } from '../common/ProgressBar';
 import { Button } from '../common/Button';
 import { ProgressSlider } from './ProgressSlider';
@@ -13,8 +13,8 @@ export function KeyResultItem({ keyResult }: KeyResultItemProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [currentValue, setCurrentValue] = useState(keyResult.currentValue);
 
-  const updateKeyResult = useOKRStore((state) => state.updateKeyResult);
-  const deleteKeyResult = useOKRStore((state) => state.deleteKeyResult);
+  const updateKeyResult = useOKRStore((state: OKRStore) => state.updateKeyResult);
+  const deleteKeyResult = useOKRStore((state: OKRStore) => state.deleteKeyResult);
 
   const handleUpdateProgress = (value: number) => {
     setCurrentValue(value);

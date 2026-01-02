@@ -59,6 +59,7 @@ export interface OKRState {
   teams: Team[];
   periods: Period[];
   tags: Tag[];
+  allowedDomains: string[];
   activePeriodId: string | null;
   filterTagIds: string[];
   filterTeamIds: string[];

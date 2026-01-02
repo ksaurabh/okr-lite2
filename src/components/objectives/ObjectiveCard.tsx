@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import type { Objective, ObjectiveLevel } from '../../types';
-import { useOKRStore } from '../../store/okrStore';
+import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { getStatusColor } from '../../utils/calculations';
 import { ProgressBar } from '../common/ProgressBar';
 import { Button } from '../common/Button';
@@ -29,12 +29,12 @@ export function ObjectiveCard({ objective, depth = 0, showChildren = true }: Obj
   const [showEdit, setShowEdit] = useState(false);
   const [showAddChild, setShowAddChild] = useState(false);
 
-  const allKeyResults = useOKRStore((state) => state.keyResults);
-  const allObjectives = useOKRStore((state) => state.objectives);
-  const deleteObjective = useOKRStore((state) => state.deleteObjective);
-  const teams = useOKRStore((state) => state.teams);
-  const periods = useOKRStore((state) => state.periods);
-  const allTags = useOKRStore((state) => state.tags);
+  const allKeyResults = useOKRStore((state: OKRStore) => state.keyResults);
+  const allObjectives = useOKRStore((state: OKRStore) => state.objectives);
+  const deleteObjective = useOKRStore((state: OKRStore) => state.deleteObjective);
+  const teams = useOKRStore((state: OKRStore) => state.teams);
+  const periods = useOKRStore((state: OKRStore) => state.periods);
+  const allTags = useOKRStore((state: OKRStore) => state.tags);
 
   const keyResults = useMemo(
     () => allKeyResults.filter((kr) => kr.objectiveId === objective.id),
