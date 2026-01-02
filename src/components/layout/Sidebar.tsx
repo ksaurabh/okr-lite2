@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
+import { useAuth } from '../../context/AuthContext';
 import { Button } from '../common/Button';
 import { Modal } from '../common/Modal';
 import type { Period, PeriodType, Team, Tag } from '../../types';
@@ -212,6 +213,9 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
   const [newTagName, setNewTagName] = useState('');
   const [newTagColor, setNewTagColor] = useState('bg-blue-500');
 
+  const { organization } = useAuth();
+  const orgId = organization?.id || '';
+
   const teams = useOKRStore((state: OKRStore) => state.teams);
   const periods = useOKRStore((state: OKRStore) => state.periods);
   const tags = useOKRStore((state: OKRStore) => state.tags);
@@ -222,16 +226,32 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
   const deletePeriod = useOKRStore((state: OKRStore) => state.deletePeriod);
   const deleteTag = useOKRStore((state: OKRStore) => state.deleteTag);
 
+  // Filter items by organization (include items with matching orgId or no orgId for backward compatibility)
+  const orgTeams = useMemo(
+    () => teams.filter((t: Team) => !t.orgId || t.orgId === orgId),
+    [teams, orgId]
+  );
+
+  const orgPeriods = useMemo(
+    () => periods.filter((p: Period) => !p.orgId || p.orgId === orgId),
+    [periods, orgId]
+  );
+
+  const orgTags = useMemo(
+    () => tags.filter((t: Tag) => !t.orgId || t.orgId === orgId),
+    [tags, orgId]
+  );
+
   // Get root periods (quarters with no parent)
   const rootPeriods = useMemo(
-    () => periods.filter((p: Period) => !p.parentId).sort((a: Period, b: Period) => a.startDate.localeCompare(b.startDate)),
-    [periods]
+    () => orgPeriods.filter((p: Period) => !p.parentId).sort((a: Period, b: Period) => a.startDate.localeCompare(b.startDate)),
+    [orgPeriods]
   );
 
   // Get root teams (teams with no parent)
   const rootTeams = useMemo(
-    () => teams.filter((t: Team) => !t.parentId).sort((a: Team, b: Team) => a.name.localeCompare(b.name)),
-    [teams]
+    () => orgTeams.filter((t: Team) => !t.parentId).sort((a: Team, b: Team) => a.name.localeCompare(b.name)),
+    [orgTeams]
   );
 
   const openAddTeamModal = (parentId?: string) => {
@@ -242,7 +262,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
 
   const handleAddTeam = () => {
     if (newTeamName.trim()) {
-      addTeam({ name: newTeamName.trim(), parentId: newTeamParentId });
+      addTeam({ name: newTeamName.trim(), parentId: newTeamParentId }, orgId);
       setNewTeamName('');
       setNewTeamParentId(undefined);
       setShowTeamModal(false);
@@ -273,7 +293,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
         startDate: newPeriodStart,
         endDate: newPeriodEnd,
         isActive: false,
-      });
+      }, orgId);
       setNewPeriodName('');
       setNewPeriodStart('');
       setNewPeriodEnd('');
@@ -284,7 +304,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
 
   const handleAddTag = () => {
     if (newTagName.trim()) {
-      addTag({ name: newTagName.trim(), color: newTagColor });
+      addTag({ name: newTagName.trim(), color: newTagColor }, orgId);
       setNewTagName('');
       setNewTagColor('bg-blue-500');
       setShowTagModal(false);
@@ -344,7 +364,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
                 <TeamItem
                   key={team.id}
                   team={team}
-                  teams={teams}
+                  teams={orgTeams}
                   onAddChild={openAddTeamModal}
                   onDelete={deleteTeam}
                 />
@@ -372,7 +392,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
                 <PeriodItem
                   key={period.id}
                   period={period}
-                  periods={periods}
+                  periods={orgPeriods}
                   onAddChild={openAddPeriodModal}
                   onDelete={deletePeriod}
                 />
@@ -396,7 +416,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
               </button>
             </div>
             <ul className="space-y-1">
-              {tags.map((tag: Tag) => (
+              {orgTags.map((tag: Tag) => (
                 <li key={tag.id} className="flex items-center justify-between px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-200 rounded">
                   <div className="flex items-center gap-2">
                     <span className={`w-3 h-3 rounded-full ${tag.color}`}></span>

@@ -5,28 +5,28 @@ import { generateId, calculateObjectiveProgress, determineStatus, calculateKeyRe
 
 interface OKRActions {
   // Objectives
-  addObjective: (objective: Omit<Objective, 'id' | 'progress' | 'status' | 'createdAt' | 'updatedAt'>) => void;
+  addObjective: (objective: Omit<Objective, 'id' | 'orgId' | 'progress' | 'status' | 'createdAt' | 'updatedAt'>, orgId: string) => void;
   updateObjective: (id: string, updates: Partial<Objective>) => void;
   deleteObjective: (id: string) => void;
 
   // Key Results
-  addKeyResult: (keyResult: Omit<KeyResult, 'id' | 'progress' | 'createdAt' | 'updatedAt'>) => void;
+  addKeyResult: (keyResult: Omit<KeyResult, 'id' | 'orgId' | 'progress' | 'createdAt' | 'updatedAt'>, orgId: string) => void;
   updateKeyResult: (id: string, updates: Partial<KeyResult>) => void;
   deleteKeyResult: (id: string) => void;
 
   // Teams
-  addTeam: (team: Omit<Team, 'id'>) => void;
+  addTeam: (team: Omit<Team, 'id' | 'orgId'>, orgId: string) => void;
   updateTeam: (id: string, updates: Partial<Team>) => void;
   deleteTeam: (id: string) => void;
 
   // Periods
-  addPeriod: (period: Omit<Period, 'id'>) => void;
+  addPeriod: (period: Omit<Period, 'id' | 'orgId'>, orgId: string) => void;
   updatePeriod: (id: string, updates: Partial<Period>) => void;
   deletePeriod: (id: string) => void;
   setActivePeriod: (id: string | null) => void;
 
   // Tags
-  addTag: (tag: Omit<Tag, 'id'>) => void;
+  addTag: (tag: Omit<Tag, 'id' | 'orgId'>, orgId: string) => void;
   updateTag: (id: string, updates: Partial<Tag>) => void;
   deleteTag: (id: string) => void;
   setFilterTags: (tagIds: string[]) => void;
@@ -87,11 +87,12 @@ const recalculateAllProgress = (state: OKRState): OKRState => {
 export const useOKRStore = create<OKRStore>((set, get) => ({
   ...storage.load(),
 
-  addObjective: (objective) => {
+  addObjective: (objective, orgId) => {
     const now = new Date().toISOString();
     const newObjective: Objective = {
       ...objective,
       id: generateId(),
+      orgId,
       progress: 0,
       status: 'behind',
       createdAt: now,
@@ -140,7 +141,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     });
   },
 
-  addKeyResult: (keyResult) => {
+  addKeyResult: (keyResult, orgId) => {
     const now = new Date().toISOString();
     const progress = keyResult.targetValue > 0
       ? Math.round((keyResult.currentValue / keyResult.targetValue) * 100)
@@ -149,6 +150,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     const newKeyResult: KeyResult = {
       ...keyResult,
       id: generateId(),
+      orgId,
       progress,
       createdAt: now,
       updatedAt: now,
@@ -188,8 +190,8 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     });
   },
 
-  addTeam: (team: Omit<Team, 'id'>) => {
-    const newTeam: Team = { ...team, id: generateId() };
+  addTeam: (team, orgId) => {
+    const newTeam: Team = { ...team, id: generateId(), orgId };
     set((state: OKRStore) => {
       const newState = { ...state, teams: [...state.teams, newTeam] };
       storage.save(newState);
@@ -219,8 +221,8 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     });
   },
 
-  addPeriod: (period: Omit<Period, 'id'>) => {
-    const newPeriod: Period = { ...period, id: generateId() };
+  addPeriod: (period, orgId) => {
+    const newPeriod: Period = { ...period, id: generateId(), orgId };
     set((state: OKRStore) => {
       const newState = { ...state, periods: [...state.periods, newPeriod] };
       storage.save(newState);
@@ -259,8 +261,8 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     });
   },
 
-  addTag: (tag: Omit<Tag, 'id'>) => {
-    const newTag: Tag = { ...tag, id: generateId() };
+  addTag: (tag, orgId) => {
+    const newTag: Tag = { ...tag, id: generateId(), orgId };
     set((state: OKRStore) => {
       const newState = { ...state, tags: [...state.tags, newTag] };
       storage.save(newState);

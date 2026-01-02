@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
+import { useAuth } from '../../context/AuthContext';
 import { ObjectiveCard } from './ObjectiveCard';
 import type { Period, PeriodType, Objective, Team, Tag } from '../../types';
 
@@ -60,6 +61,10 @@ export function ObjectiveTree() {
   const [isFilterExpanded, setIsFilterExpanded] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>('tree');
   const [includeAncestorPeriods, setIncludeAncestorPeriods] = useState(false);
+
+  const { organization } = useAuth();
+  const orgId = organization?.id || '';
+
   const objectives = useOKRStore((state: OKRStore) => state.objectives);
   const periods = useOKRStore((state: OKRStore) => state.periods);
   const teams = useOKRStore((state: OKRStore) => state.teams);
@@ -72,29 +77,47 @@ export function ObjectiveTree() {
   const toggleFilterTeam = useOKRStore((state: OKRStore) => state.toggleFilterTeam);
   const clearAllFilters = useOKRStore((state: OKRStore) => state.clearAllFilters);
 
+  // Filter items by organization (include items with matching orgId or no orgId for backward compatibility)
+  const orgObjectives = useMemo(
+    () => objectives.filter((o: Objective) => !o.orgId || o.orgId === orgId),
+    [objectives, orgId]
+  );
+  const orgPeriods = useMemo(
+    () => periods.filter((p: Period) => !p.orgId || p.orgId === orgId),
+    [periods, orgId]
+  );
+  const orgTeams = useMemo(
+    () => teams.filter((t: Team) => !t.orgId || t.orgId === orgId),
+    [teams, orgId]
+  );
+  const orgTags = useMemo(
+    () => tags.filter((t: Tag) => !t.orgId || t.orgId === orgId),
+    [tags, orgId]
+  );
+
   const hasActiveFilters = activePeriodId || filterTagIds.length > 0 || filterTeamIds.length > 0;
 
   // Get all ancestor period IDs for a given period (including the period itself)
   const getAncestorPeriodIds = useMemo(() => {
     return (periodId: string): string[] => {
       const ids: string[] = [periodId];
-      let current = periods.find((p: Period) => p.id === periodId);
+      let current = orgPeriods.find((p: Period) => p.id === periodId);
       while (current?.parentId) {
         ids.push(current.parentId);
-        current = periods.find((p: Period) => p.id === current!.parentId);
+        current = orgPeriods.find((p: Period) => p.id === current!.parentId);
       }
       return ids;
     };
-  }, [periods]);
+  }, [orgPeriods]);
 
   // Get root periods (no parent) for hierarchical display
   const rootPeriods = useMemo(() => {
-    return periods.filter((p: Period) => !p.parentId);
-  }, [periods]);
+    return orgPeriods.filter((p: Period) => !p.parentId);
+  }, [orgPeriods]);
 
   // Apply all filters
   const filteredObjectives = useMemo(() => {
-    let result = objectives;
+    let result = orgObjectives;
 
     // Filter by period (optionally including ancestor periods)
     if (activePeriodId) {
@@ -119,7 +142,7 @@ export function ObjectiveTree() {
     }
 
     return result;
-  }, [objectives, activePeriodId, filterTeamIds, filterTagIds, includeAncestorPeriods, getAncestorPeriodIds]);
+  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, includeAncestorPeriods, getAncestorPeriodIds]);
 
   // Get root objectives (no parent)
   const rootObjectives = filteredObjectives.filter((obj: Objective) => !obj.parentId);
@@ -129,7 +152,7 @@ export function ObjectiveTree() {
   const teamObjectives = rootObjectives.filter((obj: Objective) => obj.level === 'team');
   const individualObjectives = rootObjectives.filter((obj: Objective) => obj.level === 'individual');
 
-  if (periods.length === 0) {
+  if (orgPeriods.length === 0) {
     return (
       <div className="text-center py-12">
         <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -215,7 +238,7 @@ export function ObjectiveTree() {
                   <PeriodFilterButton
                     key={period.id}
                     period={period}
-                    periods={periods}
+                    periods={orgPeriods}
                     activePeriodId={activePeriodId}
                     onSelect={setActivePeriod}
                     depth={0}
@@ -225,11 +248,11 @@ export function ObjectiveTree() {
             </div>
 
             {/* Team Filter */}
-            {teams.length > 0 && (
+            {orgTeams.length > 0 && (
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-2">Team</label>
                 <div className="flex flex-wrap gap-2">
-                  {teams.map((team: Team) => (
+                  {orgTeams.map((team: Team) => (
                     <button
                       key={team.id}
                       onClick={() => toggleFilterTeam(team.id)}
@@ -247,11 +270,11 @@ export function ObjectiveTree() {
             )}
 
             {/* Tag Filter */}
-            {tags.length > 0 && (
+            {orgTags.length > 0 && (
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-2">Tags</label>
                 <div className="flex flex-wrap gap-2">
-                  {tags.map((tag: Tag) => (
+                  {orgTags.map((tag: Tag) => (
                     <button
                       key={tag.id}
                       onClick={() => toggleFilterTag(tag.id)}

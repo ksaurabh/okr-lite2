@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
+import { useAuth } from '../../context/AuthContext';
 import { Button } from '../common/Button';
 
 interface KeyResultFormProps {
@@ -13,7 +14,9 @@ export function KeyResultForm({ objectiveId, onClose }: KeyResultFormProps) {
   const [currentValue, setCurrentValue] = useState('0');
   const [unit, setUnit] = useState('%');
 
+  const { organization } = useAuth();
   const addKeyResult = useOKRStore((state: OKRStore) => state.addKeyResult);
+  const orgId = organization?.id || '';
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,7 +29,7 @@ export function KeyResultForm({ objectiveId, onClose }: KeyResultFormProps) {
       targetValue: parseFloat(targetValue),
       currentValue: parseFloat(currentValue) || 0,
       unit: unit.trim() || '%',
-    });
+    }, orgId);
 
     onClose();
   };

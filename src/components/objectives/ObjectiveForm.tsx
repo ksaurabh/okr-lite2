@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import type { Objective, ObjectiveLevel, Period, Team, Tag } from '../../types';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
+import { useAuth } from '../../context/AuthContext';
 import { Button } from '../common/Button';
 
 interface ObjectiveFormProps {
@@ -20,6 +21,7 @@ export function ObjectiveForm({ objective, parentId, defaultLevel, onClose }: Ob
   const [periodId, setPeriodId] = useState(objective?.periodId || '');
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>(objective?.tagIds || []);
 
+  const { organization } = useAuth();
   const teams = useOKRStore((state: OKRStore) => state.teams);
   const periods = useOKRStore((state: OKRStore) => state.periods);
   const tags = useOKRStore((state: OKRStore) => state.tags);
@@ -27,13 +29,29 @@ export function ObjectiveForm({ objective, parentId, defaultLevel, onClose }: Ob
   const addObjective = useOKRStore((state: OKRStore) => state.addObjective);
   const updateObjective = useOKRStore((state: OKRStore) => state.updateObjective);
 
+  const orgId = organization?.id || '';
+
+  // Filter items by organization
+  const orgTeams = useMemo(
+    () => teams.filter((t: Team) => !t.orgId || t.orgId === orgId),
+    [teams, orgId]
+  );
+  const orgPeriods = useMemo(
+    () => periods.filter((p: Period) => !p.orgId || p.orgId === orgId),
+    [periods, orgId]
+  );
+  const orgTags = useMemo(
+    () => tags.filter((t: Tag) => !t.orgId || t.orgId === orgId),
+    [tags, orgId]
+  );
+
   useEffect(() => {
     if (!periodId && activePeriodId) {
       setPeriodId(activePeriodId);
-    } else if (!periodId && periods.length > 0) {
-      setPeriodId(periods[0].id);
+    } else if (!periodId && orgPeriods.length > 0) {
+      setPeriodId(orgPeriods[0].id);
     }
-  }, [activePeriodId, periods, periodId]);
+  }, [activePeriodId, orgPeriods, periodId]);
 
   const toggleTag = (tagId: string) => {
     setSelectedTagIds((prev) =>
@@ -66,7 +84,7 @@ export function ObjectiveForm({ objective, parentId, defaultLevel, onClose }: Ob
         teamId: teamId || undefined,
         tagIds: selectedTagIds.length > 0 ? selectedTagIds : undefined,
         periodId,
-      });
+      }, orgId);
     }
 
     onClose();
@@ -136,7 +154,7 @@ export function ObjectiveForm({ objective, parentId, defaultLevel, onClose }: Ob
             required
           >
             <option value="">Select period</option>
-            {periods.map((period: Period) => (
+            {orgPeriods.map((period: Period) => (
               <option key={period.id} value={period.id}>
                 {period.name}
               </option>
@@ -156,7 +174,7 @@ export function ObjectiveForm({ objective, parentId, defaultLevel, onClose }: Ob
             className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="">Select team (optional)</option>
-            {teams.map((team: Team) => (
+            {orgTeams.map((team: Team) => (
               <option key={team.id} value={team.id}>
                 {team.name}
               </option>
@@ -165,13 +183,13 @@ export function ObjectiveForm({ objective, parentId, defaultLevel, onClose }: Ob
         </div>
       )}
 
-      {tags.length > 0 && (
+      {orgTags.length > 0 && (
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Tags
           </label>
           <div className="flex flex-wrap gap-2">
-            {tags.map((tag: Tag) => (
+            {orgTags.map((tag: Tag) => (
               <button
                 key={tag.id}
                 type="button"
