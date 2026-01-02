@@ -1,5 +1,6 @@
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
+import type { Period } from '../../types';
 
 interface HeaderProps {
   onAddObjective: () => void;
@@ -23,7 +24,7 @@ export function Header({ onAddObjective }: HeaderProps) {
               className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="">All Periods</option>
-              {periods.map((period) => (
+              {periods.map((period: Period) => (
                 <option key={period.id} value={period.id}>
                   {period.name}
                 </option>
