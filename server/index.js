@@ -635,6 +635,66 @@ app.put('/api/users/:email/role', requireOrgAdminOrSuperAdmin, (req, res) => {
   res.json({ user: updatedUser });
 });
 
+app.post('/api/users', requireOrgAdminOrSuperAdmin, (req, res) => {
+  const { email, name } = req.body;
+
+  if (!email || !name) {
+    return res.status(400).json({ error: 'Email and name are required' });
+  }
+
+  const normalizedEmail = email.toLowerCase().trim();
+  const domain = normalizedEmail.split('@')[1];
+
+  if (!domain) {
+    return res.status(400).json({ error: 'Invalid email address' });
+  }
+
+  // Check if user already exists
+  const existingUsers = getUsers();
+  if (existingUsers.some(u => u.email === normalizedEmail)) {
+    return res.status(409).json({ error: 'User with this email already exists' });
+  }
+
+  // Determine organization based on domain
+  let org = getOrganizationByDomain(domain);
+
+  // If super admin, they can create users for any org
+  // If org admin, user must be in their org's domain
+  if (!isSuperAdmin(req.user.email)) {
+    const adminOrg = getOrganizationByDomain(req.user.domain);
+    if (!org || org.id !== adminOrg?.id) {
+      return res.status(403).json({ error: 'Can only create users for your organization domain' });
+    }
+  }
+
+  if (!org) {
+    return res.status(400).json({ error: 'No organization found for this email domain' });
+  }
+
+  const now = new Date().toISOString();
+  const newUser = {
+    id: `user-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    email: normalizedEmail,
+    name: name.trim(),
+    domain,
+    organizationId: org.id,
+    role: 'user',
+    createdAt: now,
+    lastLoginAt: now,
+  };
+
+  const users = getUsers();
+  users.push(newUser);
+  saveUsers(users);
+
+  res.json({
+    user: {
+      ...newUser,
+      organizationName: org.name,
+    }
+  });
+});
+
 // ============ OKR Data API Routes ============
 
 // Get all OKR data for the user's organization

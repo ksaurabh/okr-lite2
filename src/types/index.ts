@@ -26,6 +26,7 @@ export interface Objective {
   parentId?: string;
   teamId?: string;
   ownerId?: string;
+  assigneeId?: string;
   tagIds?: string[];
   progress: number;
   status: ObjectiveStatus;
@@ -113,4 +114,17 @@ export interface Organization {
   admins: OrganizationAdmin[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  picture?: string;
+  domain: string;
+  organizationId: string;
+  organizationName?: string;
+  role: 'admin' | 'user';
+  createdAt: string;
+  lastLoginAt: string;
 }

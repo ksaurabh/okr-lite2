@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import type { Objective, ObjectiveLevel, KeyResult, Tag, Team, Period, ObjectiveHistoryEntry } from '../../types';
+import { useState, useMemo, useEffect } from 'react';
+import type { Objective, ObjectiveLevel, KeyResult, Tag, Team, Period, ObjectiveHistoryEntry, User } from '../../types';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
 import { getStatusColor } from '../../utils/calculations';
@@ -9,6 +9,8 @@ import { Modal } from '../common/Modal';
 import { KeyResultItem } from '../key-results/KeyResultItem';
 import { KeyResultForm } from '../key-results/KeyResultForm';
 import { ObjectiveForm } from './ObjectiveForm';
+
+const API_URL = import.meta.env.VITE_API_URL || '';
 
 interface ObjectiveCardProps {
   objective: Objective;
@@ -30,6 +32,24 @@ export function ObjectiveCard({ objective, depth = 0, showChildren = true }: Obj
   const [showEdit, setShowEdit] = useState(false);
   const [showAddChild, setShowAddChild] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [orgUsers, setOrgUsers] = useState<User[]>([]);
+
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/users`, {
+          credentials: 'include',
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setOrgUsers(data.users || []);
+        }
+      } catch (err) {
+        console.error('Failed to fetch users:', err);
+      }
+    };
+    fetchUsers();
+  }, []);
 
   const allKeyResults = useOKRStore((state: OKRStore) => state.keyResults);
   const allObjectives = useOKRStore((state: OKRStore) => state.objectives);
@@ -54,6 +74,15 @@ export function ObjectiveCard({ objective, depth = 0, showChildren = true }: Obj
   const objectiveTags = useMemo(
     () => allTags.filter((tag: Tag) => objective.tagIds?.includes(tag.id)),
     [allTags, objective.tagIds]
+  );
+
+  const owner = useMemo(
+    () => orgUsers.find((u: User) => u.id === objective.ownerId),
+    [orgUsers, objective.ownerId]
+  );
+  const assignee = useMemo(
+    () => orgUsers.find((u: User) => u.id === objective.assigneeId),
+    [orgUsers, objective.assigneeId]
   );
 
   const team = teams.find((t: Team) => t.id === objective.teamId);
@@ -137,6 +166,26 @@ export function ObjectiveCard({ objective, depth = 0, showChildren = true }: Obj
             <h3 className="text-lg font-medium text-gray-900">{objective.title}</h3>
             {objective.description && (
               <p className="text-sm text-gray-600 mt-1">{objective.description}</p>
+            )}
+            {(owner || assignee) && (
+              <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
+                {owner && (
+                  <span className="flex items-center gap-1">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                    Owner: <span className="font-medium text-gray-700">{owner.name}</span>
+                  </span>
+                )}
+                {assignee && (
+                  <span className="flex items-center gap-1">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
+                    Assignee: <span className="font-medium text-gray-700">{assignee.name}</span>
+                  </span>
+                )}
+              </div>
             )}
             <div className="mt-2 max-w-xs">
               <ProgressBar progress={objective.progress} size="sm" />

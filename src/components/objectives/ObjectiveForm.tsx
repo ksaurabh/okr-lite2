@@ -1,8 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
-import type { Objective, ObjectiveLevel, Period, Team, Tag } from '../../types';
+import type { Objective, ObjectiveLevel, Period, Team, Tag, User } from '../../types';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../common/Button';
+
+const API_URL = import.meta.env.VITE_API_URL || '';
 
 interface ObjectiveFormProps {
   objective?: Objective;
@@ -21,6 +23,9 @@ export function ObjectiveForm({ objective, parentId, defaultLevel, onClose }: Ob
   const [periodId, setPeriodId] = useState(objective?.periodId || '');
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>(objective?.tagIds || []);
   const [isPrivate, setIsPrivate] = useState(objective?.shared === false);
+  const [ownerId, setOwnerId] = useState(objective?.ownerId || '');
+  const [assigneeId, setAssigneeId] = useState(objective?.assigneeId || '');
+  const [orgUsers, setOrgUsers] = useState<User[]>([]);
 
   const { organization, user, isSuperAdmin, isOrgAdmin } = useAuth();
   const teams = useOKRStore((state: OKRStore) => state.teams);
@@ -62,6 +67,34 @@ export function ObjectiveForm({ objective, parentId, defaultLevel, onClose }: Ob
     }
   }, [activePeriodId, orgPeriods, periodId]);
 
+  // Fetch org users for owner/assignee dropdowns
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/users`, {
+          credentials: 'include',
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setOrgUsers(data.users || []);
+        }
+      } catch (err) {
+        console.error('Failed to fetch users:', err);
+      }
+    };
+    fetchUsers();
+  }, []);
+
+  // Set default owner to current user when creating new objective
+  useEffect(() => {
+    if (!objective && user && orgUsers.length > 0 && !ownerId) {
+      const currentUser = orgUsers.find(u => u.email === user.email);
+      if (currentUser) {
+        setOwnerId(currentUser.id);
+      }
+    }
+  }, [objective, user, orgUsers, ownerId]);
+
   const toggleTag = (tagId: string) => {
     setSelectedTagIds((prev) =>
       prev.includes(tagId)
@@ -82,6 +115,8 @@ export function ObjectiveForm({ objective, parentId, defaultLevel, onClose }: Ob
           description: description.trim() || undefined,
           level,
           teamId: teamId || undefined,
+          ownerId: ownerId || undefined,
+          assigneeId: assigneeId || undefined,
           tagIds: selectedTagIds.length > 0 ? selectedTagIds : undefined,
           periodId,
           shared: !isPrivate,
@@ -93,6 +128,8 @@ export function ObjectiveForm({ objective, parentId, defaultLevel, onClose }: Ob
           level,
           parentId,
           teamId: teamId || undefined,
+          ownerId: ownerId || undefined,
+          assigneeId: assigneeId || undefined,
           tagIds: selectedTagIds.length > 0 ? selectedTagIds : undefined,
           periodId,
         }, { orgId, userEmail, shared: !isPrivate });
@@ -195,6 +232,44 @@ export function ObjectiveForm({ objective, parentId, defaultLevel, onClose }: Ob
           </select>
         </div>
       )}
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Owner
+          </label>
+          <select
+            value={ownerId}
+            onChange={(e) => setOwnerId(e.target.value)}
+            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">Select owner</option>
+            {orgUsers.map((u: User) => (
+              <option key={u.id} value={u.id}>
+                {u.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Assignee
+          </label>
+          <select
+            value={assigneeId}
+            onChange={(e) => setAssigneeId(e.target.value)}
+            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">Unassigned</option>
+            {orgUsers.map((u: User) => (
+              <option key={u.id} value={u.id}>
+                {u.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
 
       {orgTags.length > 0 && (
         <div>

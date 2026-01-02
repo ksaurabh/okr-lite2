@@ -22,6 +22,10 @@ export function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [updating, setUpdating] = useState<string | null>(null);
   const [showAllOrgs, setShowAllOrgs] = useState(false);
+  const [showAddUser, setShowAddUser] = useState(false);
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserName, setNewUserName] = useState('');
+  const [creating, setCreating] = useState(false);
 
   const { isSuperAdmin, isOrgAdmin } = useAuth();
   const canManageRoles = isSuperAdmin || isOrgAdmin;
@@ -74,6 +78,42 @@ export function SettingsPage() {
     }
   };
 
+  const createUser = async () => {
+    if (!newUserEmail.trim() || !newUserName.trim()) return;
+
+    try {
+      setCreating(true);
+      setError(null);
+      const response = await fetch(`${API_URL}/api/users`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: newUserEmail.trim(),
+          name: newUserName.trim(),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create user');
+      }
+
+      setUsers([...users, data.user]);
+      setNewUserEmail('');
+      setNewUserName('');
+      setShowAddUser(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create user');
+      console.error('Error creating user:', err);
+    } finally {
+      setCreating(false);
+    }
+  };
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
@@ -93,11 +133,21 @@ export function SettingsPage() {
 
       {/* Users Section */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div className="p-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">Users</h2>
-          <p className="text-sm text-gray-500">
-            {showAllOrgs ? 'All users across all organizations' : 'Members of your organization'}
-          </p>
+        <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Users</h2>
+            <p className="text-sm text-gray-500">
+              {showAllOrgs ? 'All users across all organizations' : 'Members of your organization'}
+            </p>
+          </div>
+          {canManageRoles && (
+            <button
+              onClick={() => setShowAddUser(true)}
+              className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              Add User
+            </button>
+          )}
         </div>
 
         {loading ? (
@@ -211,6 +261,73 @@ export function SettingsPage() {
           </div>
         )}
       </div>
+
+      {/* Add User Modal */}
+      {showAddUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Add New User</h3>
+
+            {error && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
+                <p className="text-sm text-red-600">{error}</p>
+              </div>
+            )}
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email Address *
+                </label>
+                <input
+                  type="email"
+                  value={newUserEmail}
+                  onChange={(e) => setNewUserEmail(e.target.value)}
+                  placeholder="user@example.com"
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={creating}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Full Name *
+                </label>
+                <input
+                  type="text"
+                  value={newUserName}
+                  onChange={(e) => setNewUserName(e.target.value)}
+                  placeholder="John Doe"
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={creating}
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => {
+                  setShowAddUser(false);
+                  setNewUserEmail('');
+                  setNewUserName('');
+                  setError(null);
+                }}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500"
+                disabled={creating}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={createUser}
+                disabled={creating || !newUserEmail.trim() || !newUserName.trim()}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {creating ? 'Creating...' : 'Create User'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
