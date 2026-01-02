@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import type { Objective, ObjectiveLevel, KeyResult, Tag, Team, Period, ObjectiveHistoryEntry, User } from '../../types';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
@@ -34,7 +34,9 @@ export function ObjectiveCard({ objective, depth = 0, showChildren = true }: Obj
   const [showAddChild, setShowAddChild] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [orgUsers, setOrgUsers] = useState<User[]>([]);
-  const [editorWidth, setEditorWidth] = useState<number | undefined>(undefined);
+
+  const editorWidth = useOKRStore((state: OKRStore) => state.editorWidth);
+  const setEditorWidth = useOKRStore((state: OKRStore) => state.setEditorWidth);
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -51,45 +53,6 @@ export function ObjectiveCard({ objective, depth = 0, showChildren = true }: Obj
       }
     };
     fetchUsers();
-  }, []);
-
-  // Load user preferences for editor width
-  useEffect(() => {
-    const fetchPreferences = async () => {
-      try {
-        const response = await fetch(`${API_URL}/api/users/me/preferences`, {
-          credentials: 'include',
-        });
-        if (response.ok) {
-          const data = await response.json();
-          if (data.preferences?.editorWidth) {
-            setEditorWidth(data.preferences.editorWidth);
-          }
-        }
-      } catch (err) {
-        console.error('Failed to fetch preferences:', err);
-      }
-    };
-    fetchPreferences();
-  }, []);
-
-  // Save editor width preference
-  const handleEditorWidthChange = useCallback(async (newWidth: number) => {
-    setEditorWidth(newWidth);
-    try {
-      await fetch(`${API_URL}/api/users/me/preferences`, {
-        method: 'PUT',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          preferences: { editorWidth: newWidth },
-        }),
-      });
-    } catch (err) {
-      console.error('Failed to save editor width preference:', err);
-    }
   }, []);
 
   const allKeyResults = useOKRStore((state: OKRStore) => state.keyResults);
@@ -308,7 +271,7 @@ export function ObjectiveCard({ objective, depth = 0, showChildren = true }: Obj
         title="Edit Objective"
         width="lg"
         customWidth={editorWidth}
-        onWidthChange={handleEditorWidthChange}
+        onWidthChange={setEditorWidth}
       >
         <ObjectiveForm objective={objective} onClose={() => setShowEdit(false)} />
       </SlidePane>
@@ -319,7 +282,7 @@ export function ObjectiveCard({ objective, depth = 0, showChildren = true }: Obj
         title="Add Child Objective"
         width="lg"
         customWidth={editorWidth}
-        onWidthChange={handleEditorWidthChange}
+        onWidthChange={setEditorWidth}
       >
         <ObjectiveForm
           parentId={objective.id}

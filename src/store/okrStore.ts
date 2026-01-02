@@ -3,6 +3,8 @@ import type { Objective, KeyResult, Team, Period, Tag, OKRState, ObjectiveHistor
 import { api } from '../utils/api';
 import { generateId, calculateObjectiveProgress, determineStatus, calculateKeyResultProgress } from '../utils/calculations';
 
+const API_URL = import.meta.env.VITE_API_URL || '';
+
 // Local storage for filter state only
 const FILTER_STORAGE_KEY = 'okr-lite-filters';
 
@@ -79,6 +81,11 @@ interface OKRActions {
 
   // Utilities
   recalculateProgress: () => void;
+
+  // User Preferences
+  editorWidth: number | undefined;
+  setEditorWidth: (width: number) => Promise<void>;
+  fetchUserPreferences: () => Promise<void>;
 }
 
 export interface BackupData {
@@ -132,6 +139,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
   ...loadFilterState(),
   isLoading: false,
   error: null,
+  editorWidth: undefined,
 
   fetchData: async () => {
     set({ isLoading: true, error: null });
@@ -571,5 +579,39 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       saveFilterState({ activePeriodId: null, filterTagIds: [], filterTeamIds: [] });
       return recalculateAllProgress(newState);
     });
+  },
+
+  fetchUserPreferences: async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/users/me/preferences`, {
+        credentials: 'include',
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.preferences?.editorWidth) {
+          set({ editorWidth: data.preferences.editorWidth });
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch user preferences:', err);
+    }
+  },
+
+  setEditorWidth: async (width: number) => {
+    set({ editorWidth: width });
+    try {
+      await fetch(`${API_URL}/api/users/me/preferences`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          preferences: { editorWidth: width },
+        }),
+      });
+    } catch (err) {
+      console.error('Failed to save editor width preference:', err);
+    }
   },
 }));
