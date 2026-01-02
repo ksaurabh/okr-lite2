@@ -222,8 +222,21 @@ export function ObjectiveTree() {
     return result;
   }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, includeAncestorPeriods, includeChildPeriods, getAncestorPeriodIds, getDescendantPeriodIds]);
 
-  // Get root objectives (no parent)
-  const rootObjectives = filteredObjectives.filter((obj: Objective) => !obj.parentId);
+  // Get IDs of all filtered objectives for quick lookup
+  const filteredObjectiveIds = useMemo(
+    () => new Set(filteredObjectives.map((obj: Objective) => obj.id)),
+    [filteredObjectives]
+  );
+
+  // Get root objectives for tree view:
+  // - Objectives with no parent, OR
+  // - Objectives whose parent is not in the filtered results (they become virtual roots)
+  const rootObjectives = useMemo(
+    () => filteredObjectives.filter((obj: Objective) =>
+      !obj.parentId || !filteredObjectiveIds.has(obj.parentId)
+    ),
+    [filteredObjectives, filteredObjectiveIds]
+  );
 
   // Group by level
   const companyObjectives = rootObjectives.filter((obj: Objective) => obj.level === 'company');
@@ -516,7 +529,7 @@ export function ObjectiveTree() {
               </h2>
               <div className="space-y-3">
                 {companyObjectives.map((obj: Objective) => (
-                  <ObjectiveCard key={obj.id} objective={obj} />
+                  <ObjectiveCard key={obj.id} objective={obj} filteredObjectiveIds={filteredObjectiveIds} />
                 ))}
               </div>
             </section>
@@ -530,7 +543,7 @@ export function ObjectiveTree() {
               </h2>
               <div className="space-y-3">
                 {teamObjectives.map((obj: Objective) => (
-                  <ObjectiveCard key={obj.id} objective={obj} />
+                  <ObjectiveCard key={obj.id} objective={obj} filteredObjectiveIds={filteredObjectiveIds} />
                 ))}
               </div>
             </section>
@@ -544,7 +557,7 @@ export function ObjectiveTree() {
               </h2>
               <div className="space-y-3">
                 {individualObjectives.map((obj: Objective) => (
-                  <ObjectiveCard key={obj.id} objective={obj} />
+                  <ObjectiveCard key={obj.id} objective={obj} filteredObjectiveIds={filteredObjectiveIds} />
                 ))}
               </div>
             </section>

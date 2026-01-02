@@ -17,6 +17,7 @@ interface ObjectiveCardProps {
   objective: Objective;
   depth?: number;
   showChildren?: boolean;
+  filteredObjectiveIds?: Set<string>;
 }
 
 const getChildLevel = (parentLevel: ObjectiveLevel): ObjectiveLevel => {
@@ -27,7 +28,7 @@ const getChildLevel = (parentLevel: ObjectiveLevel): ObjectiveLevel => {
   }
 };
 
-export function ObjectiveCard({ objective, depth = 0, showChildren = true }: ObjectiveCardProps) {
+export function ObjectiveCard({ objective, depth = 0, showChildren = true, filteredObjectiveIds }: ObjectiveCardProps) {
   const [isExpanded, setIsExpanded] = useState(true);
   const [showAddKR, setShowAddKR] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
@@ -72,8 +73,11 @@ export function ObjectiveCard({ objective, depth = 0, showChildren = true }: Obj
     [allKeyResults, objective.id]
   );
   const childObjectives = useMemo(
-    () => allObjectives.filter((o: Objective) => o.parentId === objective.id),
-    [allObjectives, objective.id]
+    () => allObjectives.filter((o: Objective) =>
+      o.parentId === objective.id &&
+      (!filteredObjectiveIds || filteredObjectiveIds.has(o.id))
+    ),
+    [allObjectives, objective.id, filteredObjectiveIds]
   );
   const objectiveTags = useMemo(
     () => allTags.filter((tag: Tag) => objective.tagIds?.includes(tag.id)),
@@ -260,6 +264,7 @@ export function ObjectiveCard({ objective, depth = 0, showChildren = true }: Obj
               objective={child}
               depth={depth + 1}
               showChildren={showChildren}
+              filteredObjectiveIds={filteredObjectiveIds}
             />
           ))}
         </div>
