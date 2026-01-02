@@ -183,6 +183,28 @@ function updateUserName(email, name) {
   return users[userIndex];
 }
 
+function getUserPreferences(email) {
+  const users = getUsers();
+  const user = users.find(u => u.email === email);
+  return user?.preferences || {};
+}
+
+function updateUserPreferences(email, preferences) {
+  const users = getUsers();
+  const userIndex = users.findIndex(u => u.email === email);
+
+  if (userIndex === -1) {
+    return null;
+  }
+
+  users[userIndex].preferences = {
+    ...(users[userIndex].preferences || {}),
+    ...preferences,
+  };
+  saveUsers(users);
+  return users[userIndex].preferences;
+}
+
 // Helper functions for OKR data
 function getOKRData() {
   try {
@@ -673,6 +695,27 @@ app.put('/api/users/:email/name', requireOrgAdminOrSuperAdmin, (req, res) => {
   }
 
   res.json({ user: updatedUser });
+});
+
+// User preferences endpoints
+app.get('/api/users/me/preferences', requireAuth, (req, res) => {
+  const preferences = getUserPreferences(req.user.email);
+  res.json({ preferences });
+});
+
+app.put('/api/users/me/preferences', requireAuth, (req, res) => {
+  const { preferences } = req.body;
+
+  if (!preferences || typeof preferences !== 'object') {
+    return res.status(400).json({ error: 'Preferences object is required' });
+  }
+
+  const updatedPreferences = updateUserPreferences(req.user.email, preferences);
+  if (!updatedPreferences) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+
+  res.json({ preferences: updatedPreferences });
 });
 
 app.post('/api/users', requireOrgAdminOrSuperAdmin, (req, res) => {

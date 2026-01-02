@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { useEffect } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Button } from './Button';
 
 interface SlidePaneProps {
@@ -8,15 +8,40 @@ interface SlidePaneProps {
   title: string;
   children: ReactNode;
   width?: 'sm' | 'md' | 'lg';
+  customWidth?: number;
+  onWidthChange?: (width: number) => void;
+  minWidth?: number;
+  maxWidth?: number;
 }
 
-const widthClasses = {
-  sm: 'max-w-sm',
-  md: 'max-w-md',
-  lg: 'max-w-lg',
+const defaultWidths = {
+  sm: 384,  // 24rem
+  md: 448,  // 28rem
+  lg: 512,  // 32rem
 };
 
-export function SlidePane({ isOpen, onClose, title, children, width = 'md' }: SlidePaneProps) {
+export function SlidePane({
+  isOpen,
+  onClose,
+  title,
+  children,
+  width = 'md',
+  customWidth,
+  onWidthChange,
+  minWidth = 320,
+  maxWidth = 800,
+}: SlidePaneProps) {
+  const [currentWidth, setCurrentWidth] = useState(customWidth || defaultWidths[width]);
+  const [isResizing, setIsResizing] = useState(false);
+  const paneRef = useRef<HTMLDivElement>(null);
+
+  // Update width when customWidth prop changes
+  useEffect(() => {
+    if (customWidth) {
+      setCurrentWidth(customWidth);
+    }
+  }, [customWidth]);
+
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -33,6 +58,44 @@ export function SlidePane({ isOpen, onClose, title, children, width = 'md' }: Sl
     };
   }, [isOpen, onClose]);
 
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  }, []);
+
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (!isResizing) return;
+
+    const newWidth = window.innerWidth - e.clientX;
+    const clampedWidth = Math.min(Math.max(newWidth, minWidth), maxWidth);
+    setCurrentWidth(clampedWidth);
+  }, [isResizing, minWidth, maxWidth]);
+
+  const handleMouseUp = useCallback(() => {
+    if (isResizing) {
+      setIsResizing(false);
+      if (onWidthChange) {
+        onWidthChange(currentWidth);
+      }
+    }
+  }, [isResizing, currentWidth, onWidthChange]);
+
+  useEffect(() => {
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = 'ew-resize';
+      document.body.style.userSelect = 'none';
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizing, handleMouseMove, handleMouseUp]);
+
   if (!isOpen) return null;
 
   return (
@@ -45,8 +108,19 @@ export function SlidePane({ isOpen, onClose, title, children, width = 'md' }: Sl
 
       {/* Slide Pane */}
       <div
-        className={`absolute right-0 top-0 h-full w-full ${widthClasses[width]} bg-white shadow-2xl transform transition-transform duration-300 ease-out flex flex-col`}
+        ref={paneRef}
+        style={{ width: currentWidth }}
+        className="absolute right-0 top-0 h-full bg-white shadow-2xl flex flex-col"
       >
+        {/* Resize Handle */}
+        <div
+          onMouseDown={handleMouseDown}
+          className={`absolute left-0 top-0 bottom-0 w-1 cursor-ew-resize hover:bg-blue-500 transition-colors ${
+            isResizing ? 'bg-blue-500' : 'bg-transparent hover:bg-blue-300'
+          }`}
+          title="Drag to resize"
+        />
+
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b bg-gray-50">
           <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
