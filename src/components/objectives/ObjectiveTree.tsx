@@ -1,8 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
 import { ObjectiveCard } from './ObjectiveCard';
-import type { Period, PeriodType, Objective, Team, Tag } from '../../types';
+import type { Period, PeriodType, Objective, Team, Tag, User, FilterOperator } from '../../types';
+
+const API_URL = import.meta.env.VITE_API_URL || '';
 
 const PERIOD_TYPE_BADGES: Record<PeriodType, { label: string; color: string }> = {
   quarter: { label: 'Q', color: 'bg-purple-100 text-purple-700' },
@@ -61,11 +63,30 @@ export function ObjectiveTree() {
   const [isFilterExpanded, setIsFilterExpanded] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>('tree');
   const [includeAncestorPeriods, setIncludeAncestorPeriods] = useState(false);
+  const [orgUsers, setOrgUsers] = useState<User[]>([]);
 
   const { organization, user, isSuperAdmin, isOrgAdmin } = useAuth();
   const orgId = organization?.id || '';
   const userEmail = user?.email || '';
   const isAdmin = isSuperAdmin || isOrgAdmin;
+
+  // Fetch users for owner/assignee filters
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/users`, {
+          credentials: 'include',
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setOrgUsers(data.users || []);
+        }
+      } catch (err) {
+        console.error('Failed to fetch users:', err);
+      }
+    };
+    fetchUsers();
+  }, []);
 
   const objectives = useOKRStore((state: OKRStore) => state.objectives);
   const periods = useOKRStore((state: OKRStore) => state.periods);
@@ -74,9 +95,17 @@ export function ObjectiveTree() {
   const activePeriodId = useOKRStore((state: OKRStore) => state.activePeriodId);
   const filterTagIds = useOKRStore((state: OKRStore) => state.filterTagIds);
   const filterTeamIds = useOKRStore((state: OKRStore) => state.filterTeamIds);
+  const filterOwnerIds = useOKRStore((state: OKRStore) => state.filterOwnerIds);
+  const filterOwnerOperator = useOKRStore((state: OKRStore) => state.filterOwnerOperator);
+  const filterAssigneeIds = useOKRStore((state: OKRStore) => state.filterAssigneeIds);
+  const filterAssigneeOperator = useOKRStore((state: OKRStore) => state.filterAssigneeOperator);
   const setActivePeriod = useOKRStore((state: OKRStore) => state.setActivePeriod);
   const toggleFilterTag = useOKRStore((state: OKRStore) => state.toggleFilterTag);
   const toggleFilterTeam = useOKRStore((state: OKRStore) => state.toggleFilterTeam);
+  const setFilterOwners = useOKRStore((state: OKRStore) => state.setFilterOwners);
+  const setFilterOwnerOperator = useOKRStore((state: OKRStore) => state.setFilterOwnerOperator);
+  const setFilterAssignees = useOKRStore((state: OKRStore) => state.setFilterAssignees);
+  const setFilterAssigneeOperator = useOKRStore((state: OKRStore) => state.setFilterAssigneeOperator);
   const clearAllFilters = useOKRStore((state: OKRStore) => state.clearAllFilters);
 
   // Filter items by organization and visibility (admins see all, others see shared or owned)
@@ -105,7 +134,7 @@ export function ObjectiveTree() {
     [tags, orgId, userEmail, isAdmin]
   );
 
-  const hasActiveFilters = activePeriodId || filterTagIds.length > 0 || filterTeamIds.length > 0;
+  const hasActiveFilters = activePeriodId || filterTagIds.length > 0 || filterTeamIds.length > 0 || filterOwnerIds.length > 0 || filterAssigneeIds.length > 0;
 
   // Get all ancestor period IDs for a given period (including the period itself)
   const getAncestorPeriodIds = useMemo(() => {
@@ -151,8 +180,28 @@ export function ObjectiveTree() {
       );
     }
 
+    // Filter by owners (with operator support)
+    if (filterOwnerIds.length > 0) {
+      if (filterOwnerOperator === 'equals') {
+        result = result.filter((obj: Objective) => obj.ownerId && filterOwnerIds.includes(obj.ownerId));
+      } else {
+        // not_equals: show objectives where owner is NOT in the selected list
+        result = result.filter((obj: Objective) => !obj.ownerId || !filterOwnerIds.includes(obj.ownerId));
+      }
+    }
+
+    // Filter by assignees (with operator support)
+    if (filterAssigneeIds.length > 0) {
+      if (filterAssigneeOperator === 'equals') {
+        result = result.filter((obj: Objective) => obj.assigneeId && filterAssigneeIds.includes(obj.assigneeId));
+      } else {
+        // not_equals: show objectives where assignee is NOT in the selected list
+        result = result.filter((obj: Objective) => !obj.assigneeId || !filterAssigneeIds.includes(obj.assigneeId));
+      }
+    }
+
     return result;
-  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, includeAncestorPeriods, getAncestorPeriodIds]);
+  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, includeAncestorPeriods, getAncestorPeriodIds]);
 
   // Get root objectives (no parent)
   const rootObjectives = filteredObjectives.filter((obj: Objective) => !obj.parentId);
@@ -296,6 +345,78 @@ export function ObjectiveTree() {
                     >
                       <span className={`w-2 h-2 rounded-full ${tag.color}`}></span>
                       {tag.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Owner Filter */}
+            {orgUsers.length > 0 && (
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-2">Owner</label>
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    value={filterOwnerOperator}
+                    onChange={(e) => setFilterOwnerOperator(e.target.value as FilterOperator)}
+                    className="px-2 py-1.5 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="equals">=</option>
+                    <option value="not_equals">!=</option>
+                  </select>
+                  {orgUsers.map((u: User) => (
+                    <button
+                      key={u.id}
+                      onClick={() => {
+                        if (filterOwnerIds.includes(u.id)) {
+                          setFilterOwners(filterOwnerIds.filter(id => id !== u.id));
+                        } else {
+                          setFilterOwners([...filterOwnerIds, u.id]);
+                        }
+                      }}
+                      className={`px-3 py-1.5 rounded-full text-sm transition-colors ${
+                        filterOwnerIds.includes(u.id)
+                          ? 'bg-gray-800 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      {u.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Assignee Filter */}
+            {orgUsers.length > 0 && (
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-2">Assignee</label>
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    value={filterAssigneeOperator}
+                    onChange={(e) => setFilterAssigneeOperator(e.target.value as FilterOperator)}
+                    className="px-2 py-1.5 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="equals">=</option>
+                    <option value="not_equals">!=</option>
+                  </select>
+                  {orgUsers.map((u: User) => (
+                    <button
+                      key={u.id}
+                      onClick={() => {
+                        if (filterAssigneeIds.includes(u.id)) {
+                          setFilterAssignees(filterAssigneeIds.filter(id => id !== u.id));
+                        } else {
+                          setFilterAssignees([...filterAssigneeIds, u.id]);
+                        }
+                      }}
+                      className={`px-3 py-1.5 rounded-full text-sm transition-colors ${
+                        filterAssigneeIds.includes(u.id)
+                          ? 'bg-gray-800 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      {u.name}
                     </button>
                   ))}
                 </div>

@@ -84,6 +84,8 @@ export interface Period {
   isActive: boolean;
 }
 
+export type FilterOperator = 'equals' | 'not_equals';
+
 export interface OKRState {
   objectives: Objective[];
   keyResults: KeyResult[];
@@ -94,6 +96,10 @@ export interface OKRState {
   activePeriodId: string | null;
   filterTagIds: string[];
   filterTeamIds: string[];
+  filterOwnerIds: string[];
+  filterOwnerOperator: FilterOperator;
+  filterAssigneeIds: string[];
+  filterAssigneeOperator: FilterOperator;
 }
 
 // Organization types

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Objective, KeyResult, Team, Period, Tag, OKRState, ObjectiveHistoryEntry, FieldChange } from '../types';
+import type { Objective, KeyResult, Team, Period, Tag, OKRState, ObjectiveHistoryEntry, FieldChange, FilterOperator } from '../types';
 import { api } from '../utils/api';
 import { generateId, calculateObjectiveProgress, determineStatus, calculateKeyResultProgress } from '../utils/calculations';
 
@@ -11,14 +11,33 @@ const FILTER_STORAGE_KEY = 'okr-lite-filters';
 function loadFilterState() {
   try {
     const data = localStorage.getItem(FILTER_STORAGE_KEY);
-    if (!data) return { activePeriodId: null, filterTagIds: [], filterTeamIds: [] };
-    return JSON.parse(data);
+    if (!data) return { activePeriodId: null, filterTagIds: [], filterTeamIds: [], filterOwnerIds: [], filterOwnerOperator: 'equals' as FilterOperator, filterAssigneeIds: [], filterAssigneeOperator: 'equals' as FilterOperator };
+    const parsed = JSON.parse(data);
+    return {
+      activePeriodId: parsed.activePeriodId || null,
+      filterTagIds: parsed.filterTagIds || [],
+      filterTeamIds: parsed.filterTeamIds || [],
+      filterOwnerIds: parsed.filterOwnerIds || [],
+      filterOwnerOperator: (parsed.filterOwnerOperator || 'equals') as FilterOperator,
+      filterAssigneeIds: parsed.filterAssigneeIds || [],
+      filterAssigneeOperator: (parsed.filterAssigneeOperator || 'equals') as FilterOperator,
+    };
   } catch {
-    return { activePeriodId: null, filterTagIds: [], filterTeamIds: [] };
+    return { activePeriodId: null, filterTagIds: [], filterTeamIds: [], filterOwnerIds: [], filterOwnerOperator: 'equals' as FilterOperator, filterAssigneeIds: [], filterAssigneeOperator: 'equals' as FilterOperator };
   }
 }
 
-function saveFilterState(state: { activePeriodId: string | null; filterTagIds: string[]; filterTeamIds: string[] }) {
+interface FilterState {
+  activePeriodId: string | null;
+  filterTagIds: string[];
+  filterTeamIds: string[];
+  filterOwnerIds: string[];
+  filterOwnerOperator: FilterOperator;
+  filterAssigneeIds: string[];
+  filterAssigneeOperator: FilterOperator;
+}
+
+function saveFilterState(state: FilterState) {
   try {
     localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(state));
   } catch (error) {
@@ -69,6 +88,12 @@ interface OKRActions {
   // Filters
   setFilterTeams: (teamIds: string[]) => void;
   toggleFilterTeam: (teamId: string) => void;
+  setFilterOwners: (ownerIds: string[]) => void;
+  toggleFilterOwner: (ownerId: string) => void;
+  setFilterOwnerOperator: (operator: FilterOperator) => void;
+  setFilterAssignees: (assigneeIds: string[]) => void;
+  toggleFilterAssignee: (assigneeId: string) => void;
+  setFilterAssigneeOperator: (operator: FilterOperator) => void;
   clearAllFilters: () => void;
 
   // Allowed Domains (legacy - kept for compatibility)
@@ -132,6 +157,10 @@ const defaultState: OKRState = {
   activePeriodId: null,
   filterTagIds: [],
   filterTeamIds: [],
+  filterOwnerIds: [],
+  filterOwnerOperator: 'equals',
+  filterAssigneeIds: [],
+  filterAssigneeOperator: 'equals',
 };
 
 export const useOKRStore = create<OKRStore>((set, get) => ({
@@ -424,7 +453,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
           periods: state.periods.filter((period: Period) => period.id !== id),
           activePeriodId: state.activePeriodId === id ? null : state.activePeriodId,
         };
-        saveFilterState({ activePeriodId: newState.activePeriodId, filterTagIds: newState.filterTagIds, filterTeamIds: newState.filterTeamIds });
+        saveFilterState({ activePeriodId: newState.activePeriodId, filterTagIds: newState.filterTagIds, filterTeamIds: newState.filterTeamIds, filterOwnerIds: newState.filterOwnerIds, filterOwnerOperator: newState.filterOwnerOperator, filterAssigneeIds: newState.filterAssigneeIds, filterAssigneeOperator: newState.filterAssigneeOperator });
         return newState;
       });
     } catch (error) {
@@ -436,7 +465,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
   setActivePeriod: (id: string | null) => {
     set((state: OKRStore) => {
       const newState = { ...state, activePeriodId: id };
-      saveFilterState({ activePeriodId: id, filterTagIds: state.filterTagIds, filterTeamIds: state.filterTeamIds });
+      saveFilterState({ activePeriodId: id, filterTagIds: state.filterTagIds, filterTeamIds: state.filterTeamIds, filterOwnerIds: state.filterOwnerIds, filterOwnerOperator: state.filterOwnerOperator, filterAssigneeIds: state.filterAssigneeIds, filterAssigneeOperator: state.filterAssigneeOperator });
       return newState;
     });
   },
@@ -482,7 +511,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
           objectives: updatedObjectives,
           filterTagIds: newFilterTagIds,
         };
-        saveFilterState({ activePeriodId: state.activePeriodId, filterTagIds: newFilterTagIds, filterTeamIds: state.filterTeamIds });
+        saveFilterState({ activePeriodId: state.activePeriodId, filterTagIds: newFilterTagIds, filterTeamIds: state.filterTeamIds, filterOwnerIds: state.filterOwnerIds, filterOwnerOperator: state.filterOwnerOperator, filterAssigneeIds: state.filterAssigneeIds, filterAssigneeOperator: state.filterAssigneeOperator });
         return newState;
       });
     } catch (error) {
@@ -493,7 +522,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
 
   setFilterTags: (tagIds: string[]) => {
     set((state: OKRStore) => {
-      saveFilterState({ activePeriodId: state.activePeriodId, filterTagIds: tagIds, filterTeamIds: state.filterTeamIds });
+      saveFilterState({ activePeriodId: state.activePeriodId, filterTagIds: tagIds, filterTeamIds: state.filterTeamIds, filterOwnerIds: state.filterOwnerIds, filterOwnerOperator: state.filterOwnerOperator, filterAssigneeIds: state.filterAssigneeIds, filterAssigneeOperator: state.filterAssigneeOperator });
       return { ...state, filterTagIds: tagIds };
     });
   },
@@ -503,14 +532,14 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       const filterTagIds = state.filterTagIds.includes(tagId)
         ? state.filterTagIds.filter((id: string) => id !== tagId)
         : [...state.filterTagIds, tagId];
-      saveFilterState({ activePeriodId: state.activePeriodId, filterTagIds, filterTeamIds: state.filterTeamIds });
+      saveFilterState({ activePeriodId: state.activePeriodId, filterTagIds, filterTeamIds: state.filterTeamIds, filterOwnerIds: state.filterOwnerIds, filterOwnerOperator: state.filterOwnerOperator, filterAssigneeIds: state.filterAssigneeIds, filterAssigneeOperator: state.filterAssigneeOperator });
       return { ...state, filterTagIds };
     });
   },
 
   setFilterTeams: (teamIds: string[]) => {
     set((state: OKRStore) => {
-      saveFilterState({ activePeriodId: state.activePeriodId, filterTagIds: state.filterTagIds, filterTeamIds: teamIds });
+      saveFilterState({ activePeriodId: state.activePeriodId, filterTagIds: state.filterTagIds, filterTeamIds: teamIds, filterOwnerIds: state.filterOwnerIds, filterOwnerOperator: state.filterOwnerOperator, filterAssigneeIds: state.filterAssigneeIds, filterAssigneeOperator: state.filterAssigneeOperator });
       return { ...state, filterTeamIds: teamIds };
     });
   },
@@ -520,19 +549,71 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       const filterTeamIds = state.filterTeamIds.includes(teamId)
         ? state.filterTeamIds.filter((id: string) => id !== teamId)
         : [...state.filterTeamIds, teamId];
-      saveFilterState({ activePeriodId: state.activePeriodId, filterTagIds: state.filterTagIds, filterTeamIds });
+      saveFilterState({ activePeriodId: state.activePeriodId, filterTagIds: state.filterTagIds, filterTeamIds, filterOwnerIds: state.filterOwnerIds, filterOwnerOperator: state.filterOwnerOperator, filterAssigneeIds: state.filterAssigneeIds, filterAssigneeOperator: state.filterAssigneeOperator });
       return { ...state, filterTeamIds };
+    });
+  },
+
+  setFilterOwners: (ownerIds: string[]) => {
+    set((state: OKRStore) => {
+      saveFilterState({ activePeriodId: state.activePeriodId, filterTagIds: state.filterTagIds, filterTeamIds: state.filterTeamIds, filterOwnerIds: ownerIds, filterOwnerOperator: state.filterOwnerOperator, filterAssigneeIds: state.filterAssigneeIds, filterAssigneeOperator: state.filterAssigneeOperator });
+      return { ...state, filterOwnerIds: ownerIds };
+    });
+  },
+
+  toggleFilterOwner: (ownerId: string) => {
+    set((state: OKRStore) => {
+      const filterOwnerIds = state.filterOwnerIds.includes(ownerId)
+        ? state.filterOwnerIds.filter((id: string) => id !== ownerId)
+        : [...state.filterOwnerIds, ownerId];
+      saveFilterState({ activePeriodId: state.activePeriodId, filterTagIds: state.filterTagIds, filterTeamIds: state.filterTeamIds, filterOwnerIds, filterOwnerOperator: state.filterOwnerOperator, filterAssigneeIds: state.filterAssigneeIds, filterAssigneeOperator: state.filterAssigneeOperator });
+      return { ...state, filterOwnerIds };
+    });
+  },
+
+  setFilterOwnerOperator: (operator: FilterOperator) => {
+    set((state: OKRStore) => {
+      saveFilterState({ activePeriodId: state.activePeriodId, filterTagIds: state.filterTagIds, filterTeamIds: state.filterTeamIds, filterOwnerIds: state.filterOwnerIds, filterOwnerOperator: operator, filterAssigneeIds: state.filterAssigneeIds, filterAssigneeOperator: state.filterAssigneeOperator });
+      return { ...state, filterOwnerOperator: operator };
+    });
+  },
+
+  setFilterAssignees: (assigneeIds: string[]) => {
+    set((state: OKRStore) => {
+      saveFilterState({ activePeriodId: state.activePeriodId, filterTagIds: state.filterTagIds, filterTeamIds: state.filterTeamIds, filterOwnerIds: state.filterOwnerIds, filterOwnerOperator: state.filterOwnerOperator, filterAssigneeIds: assigneeIds, filterAssigneeOperator: state.filterAssigneeOperator });
+      return { ...state, filterAssigneeIds: assigneeIds };
+    });
+  },
+
+  toggleFilterAssignee: (assigneeId: string) => {
+    set((state: OKRStore) => {
+      const filterAssigneeIds = state.filterAssigneeIds.includes(assigneeId)
+        ? state.filterAssigneeIds.filter((id: string) => id !== assigneeId)
+        : [...state.filterAssigneeIds, assigneeId];
+      saveFilterState({ activePeriodId: state.activePeriodId, filterTagIds: state.filterTagIds, filterTeamIds: state.filterTeamIds, filterOwnerIds: state.filterOwnerIds, filterOwnerOperator: state.filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator: state.filterAssigneeOperator });
+      return { ...state, filterAssigneeIds };
+    });
+  },
+
+  setFilterAssigneeOperator: (operator: FilterOperator) => {
+    set((state: OKRStore) => {
+      saveFilterState({ activePeriodId: state.activePeriodId, filterTagIds: state.filterTagIds, filterTeamIds: state.filterTeamIds, filterOwnerIds: state.filterOwnerIds, filterOwnerOperator: state.filterOwnerOperator, filterAssigneeIds: state.filterAssigneeIds, filterAssigneeOperator: operator });
+      return { ...state, filterAssigneeOperator: operator };
     });
   },
 
   clearAllFilters: () => {
     set((state: OKRStore) => {
-      saveFilterState({ activePeriodId: null, filterTagIds: [], filterTeamIds: [] });
+      saveFilterState({ activePeriodId: null, filterTagIds: [], filterTeamIds: [], filterOwnerIds: [], filterOwnerOperator: 'equals', filterAssigneeIds: [], filterAssigneeOperator: 'equals' });
       return {
         ...state,
         activePeriodId: null,
         filterTagIds: [],
         filterTeamIds: [],
+        filterOwnerIds: [],
+        filterOwnerOperator: 'equals',
+        filterAssigneeIds: [],
+        filterAssigneeOperator: 'equals',
       };
     });
   },
@@ -575,8 +656,12 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
         activePeriodId: null,
         filterTagIds: [],
         filterTeamIds: [],
+        filterOwnerIds: [],
+        filterOwnerOperator: 'equals' as FilterOperator,
+        filterAssigneeIds: [],
+        filterAssigneeOperator: 'equals' as FilterOperator,
       };
-      saveFilterState({ activePeriodId: null, filterTagIds: [], filterTeamIds: [] });
+      saveFilterState({ activePeriodId: null, filterTagIds: [], filterTeamIds: [], filterOwnerIds: [], filterOwnerOperator: 'equals', filterAssigneeIds: [], filterAssigneeOperator: 'equals' });
       return recalculateAllProgress(newState);
     });
   },
