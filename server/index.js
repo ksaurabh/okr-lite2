@@ -17,6 +17,7 @@ const DOMAINS_FILE = join(__dirname, 'allowed-domains.json');
 const ORGANIZATIONS_FILE = join(__dirname, 'organizations.json');
 const SUPER_ADMINS_FILE = join(__dirname, 'super-admins.json');
 const USERS_FILE = join(__dirname, 'users.json');
+const OKR_DATA_FILE = join(__dirname, 'okr-data.json');
 
 // Initialize files if they don't exist
 if (!existsSync(DOMAINS_FILE)) {
@@ -30,6 +31,15 @@ if (!existsSync(SUPER_ADMINS_FILE)) {
 }
 if (!existsSync(USERS_FILE)) {
   writeFileSync(USERS_FILE, JSON.stringify({ users: [] }, null, 2));
+}
+if (!existsSync(OKR_DATA_FILE)) {
+  writeFileSync(OKR_DATA_FILE, JSON.stringify({
+    objectives: [],
+    keyResults: [],
+    teams: [],
+    periods: [],
+    tags: [],
+  }, null, 2));
 }
 
 // Helper functions for domains
@@ -158,6 +168,24 @@ function updateUserRole(email, role) {
   users[userIndex].role = role;
   saveUsers(users);
   return users[userIndex];
+}
+
+// Helper functions for OKR data
+function getOKRData() {
+  try {
+    const data = readFileSync(OKR_DATA_FILE, 'utf-8');
+    return JSON.parse(data);
+  } catch {
+    return { objectives: [], keyResults: [], teams: [], periods: [], tags: [] };
+  }
+}
+
+function saveOKRData(data) {
+  writeFileSync(OKR_DATA_FILE, JSON.stringify(data, null, 2));
+}
+
+function generateId() {
+  return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 }
 
 function isDomainAllowed(email) {
@@ -605,6 +633,334 @@ app.put('/api/users/:email/role', requireOrgAdminOrSuperAdmin, (req, res) => {
   }
 
   res.json({ user: updatedUser });
+});
+
+// ============ OKR Data API Routes ============
+
+// Get all OKR data for the user's organization
+app.get('/api/okr-data', requireAuth, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) {
+    return res.json({ objectives: [], keyResults: [], teams: [], periods: [], tags: [] });
+  }
+
+  const data = getOKRData();
+  const orgId = org.id;
+
+  // Filter data by organization
+  res.json({
+    objectives: data.objectives.filter(o => o.orgId === orgId),
+    keyResults: data.keyResults.filter(kr => kr.orgId === orgId),
+    teams: data.teams.filter(t => t.orgId === orgId),
+    periods: data.periods.filter(p => p.orgId === orgId),
+    tags: data.tags.filter(t => t.orgId === orgId),
+  });
+});
+
+// Objectives
+app.post('/api/objectives', requireAuth, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) {
+    return res.status(403).json({ error: 'No organization found' });
+  }
+
+  const data = getOKRData();
+  const now = new Date().toISOString();
+
+  const newObjective = {
+    ...req.body,
+    id: generateId(),
+    orgId: org.id,
+    createdBy: req.user.email,
+    progress: 0,
+    status: 'behind',
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  data.objectives.push(newObjective);
+  saveOKRData(data);
+  res.json(newObjective);
+});
+
+app.put('/api/objectives/:id', requireAuth, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) {
+    return res.status(403).json({ error: 'No organization found' });
+  }
+
+  const data = getOKRData();
+  const index = data.objectives.findIndex(o => o.id === req.params.id && o.orgId === org.id);
+
+  if (index === -1) {
+    return res.status(404).json({ error: 'Objective not found' });
+  }
+
+  data.objectives[index] = {
+    ...data.objectives[index],
+    ...req.body,
+    updatedAt: new Date().toISOString(),
+  };
+
+  saveOKRData(data);
+  res.json(data.objectives[index]);
+});
+
+app.delete('/api/objectives/:id', requireAuth, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) {
+    return res.status(403).json({ error: 'No organization found' });
+  }
+
+  const data = getOKRData();
+  const index = data.objectives.findIndex(o => o.id === req.params.id && o.orgId === org.id);
+
+  if (index === -1) {
+    return res.status(404).json({ error: 'Objective not found' });
+  }
+
+  // Also delete associated key results
+  data.keyResults = data.keyResults.filter(kr => kr.objectiveId !== req.params.id);
+  data.objectives.splice(index, 1);
+
+  saveOKRData(data);
+  res.json({ success: true });
+});
+
+// Key Results
+app.post('/api/key-results', requireAuth, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) {
+    return res.status(403).json({ error: 'No organization found' });
+  }
+
+  const data = getOKRData();
+  const now = new Date().toISOString();
+
+  const newKeyResult = {
+    ...req.body,
+    id: generateId(),
+    orgId: org.id,
+    createdBy: req.user.email,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  data.keyResults.push(newKeyResult);
+  saveOKRData(data);
+  res.json(newKeyResult);
+});
+
+app.put('/api/key-results/:id', requireAuth, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) {
+    return res.status(403).json({ error: 'No organization found' });
+  }
+
+  const data = getOKRData();
+  const index = data.keyResults.findIndex(kr => kr.id === req.params.id && kr.orgId === org.id);
+
+  if (index === -1) {
+    return res.status(404).json({ error: 'Key result not found' });
+  }
+
+  data.keyResults[index] = {
+    ...data.keyResults[index],
+    ...req.body,
+    updatedAt: new Date().toISOString(),
+  };
+
+  saveOKRData(data);
+  res.json(data.keyResults[index]);
+});
+
+app.delete('/api/key-results/:id', requireAuth, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) {
+    return res.status(403).json({ error: 'No organization found' });
+  }
+
+  const data = getOKRData();
+  const index = data.keyResults.findIndex(kr => kr.id === req.params.id && kr.orgId === org.id);
+
+  if (index === -1) {
+    return res.status(404).json({ error: 'Key result not found' });
+  }
+
+  data.keyResults.splice(index, 1);
+  saveOKRData(data);
+  res.json({ success: true });
+});
+
+// Teams
+app.post('/api/teams', requireAuth, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) {
+    return res.status(403).json({ error: 'No organization found' });
+  }
+
+  const data = getOKRData();
+
+  const newTeam = {
+    ...req.body,
+    id: generateId(),
+    orgId: org.id,
+    createdBy: req.user.email,
+  };
+
+  data.teams.push(newTeam);
+  saveOKRData(data);
+  res.json(newTeam);
+});
+
+app.put('/api/teams/:id', requireAuth, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) {
+    return res.status(403).json({ error: 'No organization found' });
+  }
+
+  const data = getOKRData();
+  const index = data.teams.findIndex(t => t.id === req.params.id && t.orgId === org.id);
+
+  if (index === -1) {
+    return res.status(404).json({ error: 'Team not found' });
+  }
+
+  data.teams[index] = { ...data.teams[index], ...req.body };
+  saveOKRData(data);
+  res.json(data.teams[index]);
+});
+
+app.delete('/api/teams/:id', requireAuth, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) {
+    return res.status(403).json({ error: 'No organization found' });
+  }
+
+  const data = getOKRData();
+  const index = data.teams.findIndex(t => t.id === req.params.id && t.orgId === org.id);
+
+  if (index === -1) {
+    return res.status(404).json({ error: 'Team not found' });
+  }
+
+  data.teams.splice(index, 1);
+  saveOKRData(data);
+  res.json({ success: true });
+});
+
+// Periods
+app.post('/api/periods', requireAuth, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) {
+    return res.status(403).json({ error: 'No organization found' });
+  }
+
+  const data = getOKRData();
+
+  const newPeriod = {
+    ...req.body,
+    id: generateId(),
+    orgId: org.id,
+    createdBy: req.user.email,
+  };
+
+  data.periods.push(newPeriod);
+  saveOKRData(data);
+  res.json(newPeriod);
+});
+
+app.put('/api/periods/:id', requireAuth, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) {
+    return res.status(403).json({ error: 'No organization found' });
+  }
+
+  const data = getOKRData();
+  const index = data.periods.findIndex(p => p.id === req.params.id && p.orgId === org.id);
+
+  if (index === -1) {
+    return res.status(404).json({ error: 'Period not found' });
+  }
+
+  data.periods[index] = { ...data.periods[index], ...req.body };
+  saveOKRData(data);
+  res.json(data.periods[index]);
+});
+
+app.delete('/api/periods/:id', requireAuth, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) {
+    return res.status(403).json({ error: 'No organization found' });
+  }
+
+  const data = getOKRData();
+  const index = data.periods.findIndex(p => p.id === req.params.id && p.orgId === org.id);
+
+  if (index === -1) {
+    return res.status(404).json({ error: 'Period not found' });
+  }
+
+  data.periods.splice(index, 1);
+  saveOKRData(data);
+  res.json({ success: true });
+});
+
+// Tags
+app.post('/api/tags', requireAuth, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) {
+    return res.status(403).json({ error: 'No organization found' });
+  }
+
+  const data = getOKRData();
+
+  const newTag = {
+    ...req.body,
+    id: generateId(),
+    orgId: org.id,
+    createdBy: req.user.email,
+  };
+
+  data.tags.push(newTag);
+  saveOKRData(data);
+  res.json(newTag);
+});
+
+app.put('/api/tags/:id', requireAuth, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) {
+    return res.status(403).json({ error: 'No organization found' });
+  }
+
+  const data = getOKRData();
+  const index = data.tags.findIndex(t => t.id === req.params.id && t.orgId === org.id);
+
+  if (index === -1) {
+    return res.status(404).json({ error: 'Tag not found' });
+  }
+
+  data.tags[index] = { ...data.tags[index], ...req.body };
+  saveOKRData(data);
+  res.json(data.tags[index]);
+});
+
+app.delete('/api/tags/:id', requireAuth, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) {
+    return res.status(403).json({ error: 'No organization found' });
+  }
+
+  const data = getOKRData();
+  const index = data.tags.findIndex(t => t.id === req.params.id && t.orgId === org.id);
+
+  if (index === -1) {
+    return res.status(404).json({ error: 'Tag not found' });
+  }
+
+  data.tags.splice(index, 1);
+  saveOKRData(data);
+  res.json({ success: true });
 });
 
 // Health check

@@ -70,34 +70,37 @@ export function ObjectiveForm({ objective, parentId, defaultLevel, onClose }: Ob
     );
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!title.trim() || !periodId) return;
 
-    if (objective) {
-      updateObjective(objective.id, {
-        title: title.trim(),
-        description: description.trim() || undefined,
-        level,
-        teamId: teamId || undefined,
-        tagIds: selectedTagIds.length > 0 ? selectedTagIds : undefined,
-        periodId,
-        shared: !isPrivate,
-      }, userEmail);
-    } else {
-      addObjective({
-        title: title.trim(),
-        description: description.trim() || undefined,
-        level,
-        parentId,
-        teamId: teamId || undefined,
-        tagIds: selectedTagIds.length > 0 ? selectedTagIds : undefined,
-        periodId,
-      }, { orgId, userEmail, shared: !isPrivate });
+    try {
+      if (objective) {
+        await updateObjective(objective.id, {
+          title: title.trim(),
+          description: description.trim() || undefined,
+          level,
+          teamId: teamId || undefined,
+          tagIds: selectedTagIds.length > 0 ? selectedTagIds : undefined,
+          periodId,
+          shared: !isPrivate,
+        }, userEmail);
+      } else {
+        await addObjective({
+          title: title.trim(),
+          description: description.trim() || undefined,
+          level,
+          parentId,
+          teamId: teamId || undefined,
+          tagIds: selectedTagIds.length > 0 ? selectedTagIds : undefined,
+          periodId,
+        }, { orgId, userEmail, shared: !isPrivate });
+      }
+      onClose();
+    } catch (error) {
+      console.error('Failed to save objective:', error);
     }
-
-    onClose();
   };
 
   const levelOptions: { value: ObjectiveLevel; label: string }[] = [

@@ -272,13 +272,17 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
     setShowTeamModal(true);
   };
 
-  const handleAddTeam = () => {
+  const handleAddTeam = async () => {
     if (newTeamName.trim()) {
-      addTeam({ name: newTeamName.trim(), parentId: newTeamParentId }, { orgId, userEmail, shared: !isTeamPrivate });
-      setNewTeamName('');
-      setNewTeamParentId(undefined);
-      setIsTeamPrivate(false);
-      setShowTeamModal(false);
+      try {
+        await addTeam({ name: newTeamName.trim(), parentId: newTeamParentId }, { orgId, userEmail, shared: !isTeamPrivate });
+        setNewTeamName('');
+        setNewTeamParentId(undefined);
+        setIsTeamPrivate(false);
+        setShowTeamModal(false);
+      } catch (error) {
+        console.error('Failed to add team:', error);
+      }
     }
   };
 
@@ -298,32 +302,40 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
     setShowPeriodModal(true);
   };
 
-  const handleAddPeriod = () => {
+  const handleAddPeriod = async () => {
     if (newPeriodName.trim() && newPeriodStart && newPeriodEnd) {
-      addPeriod({
-        name: newPeriodName.trim(),
-        type: newPeriodType,
-        parentId: newPeriodParentId,
-        startDate: newPeriodStart,
-        endDate: newPeriodEnd,
-        isActive: false,
-      }, { orgId, userEmail, shared: !isPeriodPrivate });
-      setNewPeriodName('');
-      setNewPeriodStart('');
-      setNewPeriodEnd('');
-      setNewPeriodParentId(undefined);
-      setIsPeriodPrivate(false);
-      setShowPeriodModal(false);
+      try {
+        await addPeriod({
+          name: newPeriodName.trim(),
+          type: newPeriodType,
+          parentId: newPeriodParentId,
+          startDate: newPeriodStart,
+          endDate: newPeriodEnd,
+          isActive: false,
+        }, { orgId, userEmail, shared: !isPeriodPrivate });
+        setNewPeriodName('');
+        setNewPeriodStart('');
+        setNewPeriodEnd('');
+        setNewPeriodParentId(undefined);
+        setIsPeriodPrivate(false);
+        setShowPeriodModal(false);
+      } catch (error) {
+        console.error('Failed to add period:', error);
+      }
     }
   };
 
-  const handleAddTag = () => {
+  const handleAddTag = async () => {
     if (newTagName.trim()) {
-      addTag({ name: newTagName.trim(), color: newTagColor }, { orgId, userEmail, shared: !isTagPrivate });
-      setNewTagName('');
-      setNewTagColor('bg-blue-500');
-      setIsTagPrivate(false);
-      setShowTagModal(false);
+      try {
+        await addTag({ name: newTagName.trim(), color: newTagColor }, { orgId, userEmail, shared: !isTagPrivate });
+        setNewTagName('');
+        setNewTagColor('bg-blue-500');
+        setIsTagPrivate(false);
+        setShowTagModal(false);
+      } catch (error) {
+        console.error('Failed to add tag:', error);
+      }
     }
   };
 

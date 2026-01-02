@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Layout } from './components/layout';
 import { ObjectiveTree, ObjectiveForm } from './components/objectives';
@@ -6,6 +6,7 @@ import { AdminPage } from './components/admin';
 import { SettingsPage } from './components/settings';
 import { LoginPage, UnauthorizedPage, AuthCallback, AdminInviteAccept } from './components/auth';
 import { Modal } from './components/common';
+import { useOKRStore } from './store/okrStore';
 
 type View = 'objectives' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin';
 
@@ -13,6 +14,15 @@ function AppContent() {
   const [currentView, setCurrentView] = useState<View>('objectives');
   const [showAddObjective, setShowAddObjective] = useState(false);
   const { isLoading, isAuthenticated, isAllowed } = useAuth();
+  const fetchData = useOKRStore((state) => state.fetchData);
+  const isDataLoading = useOKRStore((state) => state.isLoading);
+
+  // Fetch OKR data when authenticated
+  useEffect(() => {
+    if (isAuthenticated && isAllowed) {
+      fetchData();
+    }
+  }, [isAuthenticated, isAllowed, fetchData]);
 
   // Handle OAuth callback
   if (window.location.pathname === '/auth/callback') {
@@ -25,12 +35,12 @@ function AppContent() {
   }
 
   // Show loading state
-  if (isLoading) {
+  if (isLoading || (isAuthenticated && isAllowed && isDataLoading)) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
+          <p className="text-gray-600">{isDataLoading ? 'Loading data...' : 'Loading...'}</p>
         </div>
       </div>
     );

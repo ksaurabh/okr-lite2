@@ -1,0 +1,260 @@
+{
+  "objectives": [
+    {
+      "title": "Improve Case Quality",
+      "level": "team",
+      "teamId": "1767386457647-wvnlzjl",
+      "periodId": "1767386372641-5k1nxum",
+      "shared": true,
+      "history": [
+        {
+          "id": "1767386549361-yijqfnd",
+          "timestamp": "2026-01-02T20:42:29.361Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Improve Case Quality"
+            },
+            {
+              "field": "level",
+              "newValue": "team"
+            },
+            {
+              "field": "period",
+              "newValue": "Jan 2026"
+            },
+            {
+              "field": "team",
+              "newValue": "Product"
+            }
+          ]
+        }
+      ],
+      "id": "1767386549365-1xx5s0c",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-02T20:42:29.365Z",
+      "updatedAt": "2026-01-02T20:42:29.365Z"
+    },
+    {
+      "title": "Improve Investigation Quality",
+      "level": "team",
+      "parentId": "1767386549365-1xx5s0c",
+      "teamId": "1767386457647-wvnlzjl",
+      "periodId": "1767386372641-5k1nxum",
+      "shared": true,
+      "history": [
+        {
+          "id": "1767386574033-ey66ili",
+          "timestamp": "2026-01-02T20:42:54.033Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Improve Investigation Quality"
+            },
+            {
+              "field": "level",
+              "newValue": "team"
+            },
+            {
+              "field": "period",
+              "newValue": "Jan 2026"
+            },
+            {
+              "field": "team",
+              "newValue": "Product"
+            },
+            {
+              "field": "parent",
+              "newValue": "Improve Case Quality"
+            }
+          ]
+        }
+      ],
+      "id": "1767386574043-4pgkeoc",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-02T20:42:54.043Z",
+      "updatedAt": "2026-01-02T20:42:54.043Z"
+    },
+    {
+      "title": "Autonomous Case Scorer",
+      "level": "team",
+      "parentId": "1767386574043-4pgkeoc",
+      "teamId": "1767386457647-wvnlzjl",
+      "periodId": "1767386354197-o1fc4s1",
+      "shared": true,
+      "history": [
+        {
+          "id": "1767386589842-um5qwvh",
+          "timestamp": "2026-01-02T20:43:09.842Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Autonomous Case Scorer"
+            },
+            {
+              "field": "level",
+              "newValue": "team"
+            },
+            {
+              "field": "period",
+              "newValue": "FY26Q4"
+            },
+            {
+              "field": "team",
+              "newValue": "Product"
+            },
+            {
+              "field": "parent",
+              "newValue": "Improve Investigation Quality"
+            }
+          ]
+        }
+      ],
+      "id": "1767386589847-44jid7k",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-02T20:43:09.847Z",
+      "updatedAt": "2026-01-02T20:43:09.847Z"
+    }
+  ],
+  "keyResults": [],
+  "teams": [
+    {
+      "name": "GTM",
+      "shared": true,
+      "id": "1767386414510-91o4pcx",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com"
+    },
+    {
+      "name": "Sales",
+      "parentId": "1767386414510-91o4pcx",
+      "shared": true,
+      "id": "1767386420393-4sehvek",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com"
+    },
+    {
+      "name": "Marketing",
+      "parentId": "1767386414510-91o4pcx",
+      "shared": true,
+      "id": "1767386425827-ios37a4",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com"
+    },
+    {
+      "name": "Services",
+      "shared": true,
+      "id": "1767386431083-lovf9s0",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com"
+    },
+    {
+      "name": "SOC",
+      "parentId": "1767386431083-lovf9s0",
+      "shared": true,
+      "id": "1767386442919-ogbquxv",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com"
+    },
+    {
+      "name": "Security Engineering",
+      "parentId": "1767386431083-lovf9s0",
+      "shared": true,
+      "id": "1767386450465-967fsf4",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com"
+    },
+    {
+      "name": "Product",
+      "shared": true,
+      "id": "1767386457647-wvnlzjl",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com"
+    },
+    {
+      "name": "Ayush Lane",
+      "parentId": "1767386457647-wvnlzjl",
+      "shared": true,
+      "id": "1767386470488-ihsx22j",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com"
+    },
+    {
+      "name": "Amol Lane",
+      "parentId": "1767386457647-wvnlzjl",
+      "shared": true,
+      "id": "1767386493286-xgbbrau",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com"
+    },
+    {
+      "name": "Jatin Lane",
+      "parentId": "1767386457647-wvnlzjl",
+      "shared": true,
+      "id": "1767386499692-hrpjk9k",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com"
+    },
+    {
+      "name": "Anand Lane",
+      "parentId": "1767386457647-wvnlzjl",
+      "shared": true,
+      "id": "1767386507047-om882m8",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com"
+    }
+  ],
+  "periods": [
+    {
+      "name": "FY26Q4",
+      "type": "quarter",
+      "startDate": "2025-11-01",
+      "endDate": "2026-01-31",
+      "isActive": false,
+      "shared": true,
+      "id": "1767386354197-o1fc4s1",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com"
+    },
+    {
+      "name": "Jan 2026",
+      "type": "month",
+      "parentId": "1767386354197-o1fc4s1",
+      "startDate": "2026-01-01",
+      "endDate": "2026-01-31",
+      "isActive": false,
+      "shared": true,
+      "id": "1767386372641-5k1nxum",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com"
+    },
+    {
+      "name": "W-26-01-02",
+      "type": "week",
+      "parentId": "1767386372641-5k1nxum",
+      "startDate": "2025-12-28",
+      "endDate": "2026-01-03",
+      "isActive": false,
+      "shared": true,
+      "id": "1767386398880-7s4q7yv",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com"
+    }
+  ],
+  "tags": []
+}

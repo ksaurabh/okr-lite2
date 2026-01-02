@@ -1,40 +1,66 @@
 import { create } from 'zustand';
 import type { Objective, KeyResult, Team, Period, Tag, OKRState, ObjectiveHistoryEntry, FieldChange } from '../types';
-import { storage } from '../utils/storage';
+import { api } from '../utils/api';
 import { generateId, calculateObjectiveProgress, determineStatus, calculateKeyResultProgress } from '../utils/calculations';
+
+// Local storage for filter state only
+const FILTER_STORAGE_KEY = 'okr-lite-filters';
+
+function loadFilterState() {
+  try {
+    const data = localStorage.getItem(FILTER_STORAGE_KEY);
+    if (!data) return { activePeriodId: null, filterTagIds: [], filterTeamIds: [] };
+    return JSON.parse(data);
+  } catch {
+    return { activePeriodId: null, filterTagIds: [], filterTeamIds: [] };
+  }
+}
+
+function saveFilterState(state: { activePeriodId: string | null; filterTagIds: string[]; filterTeamIds: string[] }) {
+  try {
+    localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(state));
+  } catch (error) {
+    console.error('Failed to save filter state:', error);
+  }
+}
 
 interface CreateContext {
   orgId: string;
   userEmail: string;
-  shared?: boolean; // defaults to true if not provided
+  shared?: boolean;
 }
 
 interface OKRActions {
+  // Data fetching
+  fetchData: () => Promise<void>;
+  isLoading: boolean;
+  error: string | null;
+
   // Objectives
-  addObjective: (objective: Omit<Objective, 'id' | 'orgId' | 'createdBy' | 'shared' | 'progress' | 'status' | 'createdAt' | 'updatedAt' | 'history'>, ctx: CreateContext) => void;
-  updateObjective: (id: string, updates: Partial<Objective>, userEmail: string) => void;
-  deleteObjective: (id: string) => void;
+  addObjective: (objective: Omit<Objective, 'id' | 'orgId' | 'createdBy' | 'shared' | 'progress' | 'status' | 'createdAt' | 'updatedAt' | 'history'>, ctx: CreateContext) => Promise<void>;
+  updateObjective: (id: string, updates: Partial<Objective>, userEmail: string) => Promise<void>;
+  deleteObjective: (id: string) => Promise<void>;
 
   // Key Results
-  addKeyResult: (keyResult: Omit<KeyResult, 'id' | 'orgId' | 'createdBy' | 'shared' | 'progress' | 'createdAt' | 'updatedAt'>, ctx: CreateContext) => void;
-  updateKeyResult: (id: string, updates: Partial<KeyResult>) => void;
-  deleteKeyResult: (id: string) => void;
+  addKeyResult: (keyResult: Omit<KeyResult, 'id' | 'orgId' | 'createdBy' | 'shared' | 'progress' | 'createdAt' | 'updatedAt'>, ctx: CreateContext) => Promise<void>;
+  updateKeyResult: (id: string, updates: Partial<KeyResult>) => Promise<void>;
+  deleteKeyResult: (id: string) => Promise<void>;
 
   // Teams
-  addTeam: (team: Omit<Team, 'id' | 'orgId' | 'createdBy' | 'shared'>, ctx: CreateContext) => void;
-  updateTeam: (id: string, updates: Partial<Team>) => void;
-  deleteTeam: (id: string) => void;
+  addTeam: (team: Omit<Team, 'id' | 'orgId' | 'createdBy' | 'shared'>, ctx: CreateContext) => Promise<void>;
+  updateTeam: (id: string, updates: Partial<Team>) => Promise<void>;
+  deleteTeam: (id: string) => Promise<void>;
 
   // Periods
-  addPeriod: (period: Omit<Period, 'id' | 'orgId' | 'createdBy' | 'shared'>, ctx: CreateContext) => void;
-  updatePeriod: (id: string, updates: Partial<Period>) => void;
-  deletePeriod: (id: string) => void;
+  addPeriod: (period: Omit<Period, 'id' | 'orgId' | 'createdBy' | 'shared'>, ctx: CreateContext) => Promise<void>;
+  updatePeriod: (id: string, updates: Partial<Period>) => Promise<void>;
+  deletePeriod: (id: string) => Promise<void>;
   setActivePeriod: (id: string | null) => void;
 
   // Tags
-  addTag: (tag: Omit<Tag, 'id' | 'orgId' | 'createdBy' | 'shared'>, ctx: CreateContext) => void;
-  updateTag: (id: string, updates: Partial<Tag>) => void;
-  deleteTag: (id: string) => void;
+  addTag: (tag: Omit<Tag, 'id' | 'orgId' | 'createdBy' | 'shared'>, ctx: CreateContext) => Promise<void>;
+  updateTag: (id: string, updates: Partial<Tag>) => Promise<void>;
+  deleteTag: (id: string) => Promise<void>;
   setFilterTags: (tagIds: string[]) => void;
   toggleFilterTag: (tagId: string) => void;
 
@@ -43,7 +69,7 @@ interface OKRActions {
   toggleFilterTeam: (teamId: string) => void;
   clearAllFilters: () => void;
 
-  // Allowed Domains
+  // Allowed Domains (legacy - kept for compatibility)
   addAllowedDomain: (domain: string) => void;
   deleteAllowedDomain: (domain: string) => void;
 
@@ -79,7 +105,6 @@ const recalculateAllProgress = (state: OKRState): OKRState => {
       ...obj,
       progress,
       status: determineStatus(progress),
-      updatedAt: new Date().toISOString(),
     };
   });
 
@@ -90,20 +115,52 @@ const recalculateAllProgress = (state: OKRState): OKRState => {
   };
 };
 
-export const useOKRStore = create<OKRStore>((set, get) => ({
-  ...storage.load(),
+const defaultState: OKRState = {
+  objectives: [],
+  keyResults: [],
+  teams: [],
+  periods: [],
+  tags: [],
+  allowedDomains: [],
+  activePeriodId: null,
+  filterTagIds: [],
+  filterTeamIds: [],
+};
 
-  addObjective: (objective, ctx) => {
-    const now = new Date().toISOString();
-    const objectiveId = generateId();
+export const useOKRStore = create<OKRStore>((set, get) => ({
+  ...defaultState,
+  ...loadFilterState(),
+  isLoading: false,
+  error: null,
+
+  fetchData: async () => {
+    set({ isLoading: true, error: null });
+    try {
+      const data = await api.fetchOKRData();
+      const recalculated = recalculateAllProgress({
+        ...get(),
+        objectives: data.objectives,
+        keyResults: data.keyResults,
+        teams: data.teams,
+        periods: data.periods,
+        tags: data.tags,
+      });
+      set({ ...recalculated, isLoading: false });
+    } catch (error) {
+      set({ error: (error as Error).message, isLoading: false });
+    }
+  },
+
+  addObjective: async (objective, ctx) => {
     const state = get();
+    const now = new Date().toISOString();
 
     // Helper to resolve IDs to names
     const getPeriodName = (id: string) => state.periods.find(p => p.id === id)?.name || id;
     const getTeamName = (id: string) => state.teams.find(t => t.id === id)?.name || id;
     const getObjectiveTitle = (id: string) => state.objectives.find(o => o.id === id)?.title || id;
 
-    // Create initial history entry for creation
+    // Create initial history entry
     const initialHistory: ObjectiveHistoryEntry = {
       id: generateId(),
       timestamp: now,
@@ -119,278 +176,317 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       ],
     };
 
-    const newObjective: Objective = {
-      ...objective,
-      id: objectiveId,
-      orgId: ctx.orgId,
-      createdBy: ctx.userEmail,
-      shared: ctx.shared ?? true,
-      progress: 0,
-      status: 'behind',
-      createdAt: now,
-      updatedAt: now,
-      history: [initialHistory],
-    };
-
-    set((state: OKRStore) => {
-      const newState = { ...state, objectives: [...state.objectives, newObjective] };
-      storage.save(newState);
-      return newState;
-    });
-  },
-
-  updateObjective: (id: string, updates: Partial<Objective>, userEmail: string) => {
-    set((state: OKRStore) => {
-      const now = new Date().toISOString();
-      const existingObj = state.objectives.find((obj: Objective) => obj.id === id);
-      if (!existingObj) return state;
-
-      // Helper to resolve IDs to names
-      const getPeriodName = (id: string | undefined) => id ? state.periods.find(p => p.id === id)?.name || id : undefined;
-      const getTeamName = (id: string | undefined) => id ? state.teams.find(t => t.id === id)?.name || id : undefined;
-      const getTagNames = (ids: string[] | undefined) => ids ? ids.map(id => state.tags.find(t => t.id === id)?.name || id).join(', ') : undefined;
-      const getObjectiveTitle = (id: string | undefined) => id ? state.objectives.find(o => o.id === id)?.title || id : undefined;
-
-      // Track which fields changed (excluding system fields)
-      const changes: FieldChange[] = [];
-
-      // Check each trackable field and resolve IDs to names
-      if ('title' in updates && updates.title !== existingObj.title) {
-        changes.push({ field: 'title', oldValue: existingObj.title, newValue: updates.title });
-      }
-      if ('description' in updates && updates.description !== existingObj.description) {
-        changes.push({ field: 'description', oldValue: existingObj.description || '(empty)', newValue: updates.description || '(empty)' });
-      }
-      if ('level' in updates && updates.level !== existingObj.level) {
-        changes.push({ field: 'level', oldValue: existingObj.level, newValue: updates.level });
-      }
-      if ('periodId' in updates && updates.periodId !== existingObj.periodId) {
-        changes.push({ field: 'period', oldValue: getPeriodName(existingObj.periodId), newValue: getPeriodName(updates.periodId) });
-      }
-      if ('teamId' in updates && updates.teamId !== existingObj.teamId) {
-        changes.push({ field: 'team', oldValue: getTeamName(existingObj.teamId) || '(none)', newValue: getTeamName(updates.teamId) || '(none)' });
-      }
-      if ('tagIds' in updates && JSON.stringify(updates.tagIds) !== JSON.stringify(existingObj.tagIds)) {
-        changes.push({ field: 'tags', oldValue: getTagNames(existingObj.tagIds) || '(none)', newValue: getTagNames(updates.tagIds) || '(none)' });
-      }
-      if ('parentId' in updates && updates.parentId !== existingObj.parentId) {
-        changes.push({ field: 'parent', oldValue: getObjectiveTitle(existingObj.parentId) || '(none)', newValue: getObjectiveTitle(updates.parentId) || '(none)' });
-      }
-      if ('shared' in updates && updates.shared !== existingObj.shared) {
-        changes.push({ field: 'visibility', oldValue: existingObj.shared ? 'Shared' : 'Private', newValue: updates.shared ? 'Shared' : 'Private' });
-      }
-
-      // Only add history entry if there are actual changes
-      let updatedHistory = existingObj.history || [];
-      if (changes.length > 0) {
-        const historyEntry: ObjectiveHistoryEntry = {
-          id: generateId(),
-          timestamp: now,
-          userEmail,
-          action: 'updated',
-          changes,
-        };
-        updatedHistory = [...updatedHistory, historyEntry];
-      }
-
-      const newState = {
+    try {
+      const newObjective = await api.createObjective({
+        ...objective,
+        shared: ctx.shared ?? true,
+        history: [initialHistory],
+      });
+      set((state: OKRStore) => ({
         ...state,
-        objectives: state.objectives.map((obj: Objective) =>
-          obj.id === id ? { ...obj, ...updates, updatedAt: now, history: updatedHistory } : obj
-        ),
-      };
-      const recalculated = recalculateAllProgress(newState);
-      storage.save(recalculated);
-      return recalculated;
-    });
+        objectives: [...state.objectives, newObjective],
+      }));
+    } catch (error) {
+      console.error('Failed to add objective:', error);
+      throw error;
+    }
   },
 
-  deleteObjective: (id: string) => {
-    set((state: OKRStore) => {
-      // Also delete child objectives and their key results
-      const objectivesToDelete = new Set<string>();
-      const findChildren = (parentId: string) => {
-        objectivesToDelete.add(parentId);
-        state.objectives.filter((o: Objective) => o.parentId === parentId).forEach((child: Objective) => findChildren(child.id));
-      };
-      findChildren(id);
-
-      const newState = {
-        ...state,
-        objectives: state.objectives.filter((obj: Objective) => !objectivesToDelete.has(obj.id)),
-        keyResults: state.keyResults.filter((kr: KeyResult) => !objectivesToDelete.has(kr.objectiveId)),
-      };
-      const recalculated = recalculateAllProgress(newState);
-      storage.save(recalculated);
-      return recalculated;
-    });
-  },
-
-  addKeyResult: (keyResult, ctx) => {
+  updateObjective: async (id: string, updates: Partial<Objective>, userEmail: string) => {
+    const state = get();
     const now = new Date().toISOString();
+    const existingObj = state.objectives.find((obj: Objective) => obj.id === id);
+    if (!existingObj) return;
+
+    // Helper to resolve IDs to names
+    const getPeriodName = (id: string | undefined) => id ? state.periods.find(p => p.id === id)?.name || id : undefined;
+    const getTeamName = (id: string | undefined) => id ? state.teams.find(t => t.id === id)?.name || id : undefined;
+    const getTagNames = (ids: string[] | undefined) => ids ? ids.map(id => state.tags.find(t => t.id === id)?.name || id).join(', ') : undefined;
+    const getObjectiveTitle = (id: string | undefined) => id ? state.objectives.find(o => o.id === id)?.title || id : undefined;
+
+    // Track changes
+    const changes: FieldChange[] = [];
+
+    if ('title' in updates && updates.title !== existingObj.title) {
+      changes.push({ field: 'title', oldValue: existingObj.title, newValue: updates.title });
+    }
+    if ('description' in updates && updates.description !== existingObj.description) {
+      changes.push({ field: 'description', oldValue: existingObj.description || '(empty)', newValue: updates.description || '(empty)' });
+    }
+    if ('level' in updates && updates.level !== existingObj.level) {
+      changes.push({ field: 'level', oldValue: existingObj.level, newValue: updates.level });
+    }
+    if ('periodId' in updates && updates.periodId !== existingObj.periodId) {
+      changes.push({ field: 'period', oldValue: getPeriodName(existingObj.periodId), newValue: getPeriodName(updates.periodId) });
+    }
+    if ('teamId' in updates && updates.teamId !== existingObj.teamId) {
+      changes.push({ field: 'team', oldValue: getTeamName(existingObj.teamId) || '(none)', newValue: getTeamName(updates.teamId) || '(none)' });
+    }
+    if ('tagIds' in updates && JSON.stringify(updates.tagIds) !== JSON.stringify(existingObj.tagIds)) {
+      changes.push({ field: 'tags', oldValue: getTagNames(existingObj.tagIds) || '(none)', newValue: getTagNames(updates.tagIds) || '(none)' });
+    }
+    if ('parentId' in updates && updates.parentId !== existingObj.parentId) {
+      changes.push({ field: 'parent', oldValue: getObjectiveTitle(existingObj.parentId) || '(none)', newValue: getObjectiveTitle(updates.parentId) || '(none)' });
+    }
+    if ('shared' in updates && updates.shared !== existingObj.shared) {
+      changes.push({ field: 'visibility', oldValue: existingObj.shared ? 'Shared' : 'Private', newValue: updates.shared ? 'Shared' : 'Private' });
+    }
+
+    // Add history entry if there are changes
+    let updatedHistory = existingObj.history || [];
+    if (changes.length > 0) {
+      const historyEntry: ObjectiveHistoryEntry = {
+        id: generateId(),
+        timestamp: now,
+        userEmail,
+        action: 'updated',
+        changes,
+      };
+      updatedHistory = [...updatedHistory, historyEntry];
+    }
+
+    try {
+      const updatedObjective = await api.updateObjective(id, { ...updates, history: updatedHistory });
+      set((state: OKRStore) => {
+        const newState = {
+          ...state,
+          objectives: state.objectives.map((obj: Objective) =>
+            obj.id === id ? updatedObjective : obj
+          ),
+        };
+        return recalculateAllProgress(newState);
+      });
+    } catch (error) {
+      console.error('Failed to update objective:', error);
+      throw error;
+    }
+  },
+
+  deleteObjective: async (id: string) => {
+    try {
+      await api.deleteObjective(id);
+      set((state: OKRStore) => {
+        // Also delete child objectives locally
+        const objectivesToDelete = new Set<string>();
+        const findChildren = (parentId: string) => {
+          objectivesToDelete.add(parentId);
+          state.objectives.filter((o: Objective) => o.parentId === parentId).forEach((child: Objective) => findChildren(child.id));
+        };
+        findChildren(id);
+
+        const newState = {
+          ...state,
+          objectives: state.objectives.filter((obj: Objective) => !objectivesToDelete.has(obj.id)),
+          keyResults: state.keyResults.filter((kr: KeyResult) => !objectivesToDelete.has(kr.objectiveId)),
+        };
+        return recalculateAllProgress(newState);
+      });
+    } catch (error) {
+      console.error('Failed to delete objective:', error);
+      throw error;
+    }
+  },
+
+  addKeyResult: async (keyResult, ctx) => {
     const progress = keyResult.targetValue > 0
       ? Math.round((keyResult.currentValue / keyResult.targetValue) * 100)
       : 0;
 
-    const newKeyResult: KeyResult = {
-      ...keyResult,
-      id: generateId(),
-      orgId: ctx.orgId,
-      createdBy: ctx.userEmail,
-      shared: ctx.shared ?? true,
-      progress,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    set((state: OKRStore) => {
-      const newState = { ...state, keyResults: [...state.keyResults, newKeyResult] };
-      const recalculated = recalculateAllProgress(newState);
-      storage.save(recalculated);
-      return recalculated;
-    });
+    try {
+      const newKeyResult = await api.createKeyResult({
+        ...keyResult,
+        shared: ctx.shared ?? true,
+        progress,
+      });
+      set((state: OKRStore) => {
+        const newState = { ...state, keyResults: [...state.keyResults, newKeyResult] };
+        return recalculateAllProgress(newState);
+      });
+    } catch (error) {
+      console.error('Failed to add key result:', error);
+      throw error;
+    }
   },
 
-  updateKeyResult: (id: string, updates: Partial<KeyResult>) => {
-    set((state: OKRStore) => {
-      const newState = {
+  updateKeyResult: async (id: string, updates: Partial<KeyResult>) => {
+    try {
+      const updatedKeyResult = await api.updateKeyResult(id, updates);
+      set((state: OKRStore) => {
+        const newState = {
+          ...state,
+          keyResults: state.keyResults.map((kr: KeyResult) =>
+            kr.id === id ? updatedKeyResult : kr
+          ),
+        };
+        return recalculateAllProgress(newState);
+      });
+    } catch (error) {
+      console.error('Failed to update key result:', error);
+      throw error;
+    }
+  },
+
+  deleteKeyResult: async (id: string) => {
+    try {
+      await api.deleteKeyResult(id);
+      set((state: OKRStore) => {
+        const newState = {
+          ...state,
+          keyResults: state.keyResults.filter((kr: KeyResult) => kr.id !== id),
+        };
+        return recalculateAllProgress(newState);
+      });
+    } catch (error) {
+      console.error('Failed to delete key result:', error);
+      throw error;
+    }
+  },
+
+  addTeam: async (team, ctx) => {
+    try {
+      const newTeam = await api.createTeam({ ...team, shared: ctx.shared ?? true });
+      set((state: OKRStore) => ({
         ...state,
-        keyResults: state.keyResults.map((kr: KeyResult) =>
-          kr.id === id ? { ...kr, ...updates, updatedAt: new Date().toISOString() } : kr
-        ),
-      };
-      const recalculated = recalculateAllProgress(newState);
-      storage.save(recalculated);
-      return recalculated;
-    });
+        teams: [...state.teams, newTeam],
+      }));
+    } catch (error) {
+      console.error('Failed to add team:', error);
+      throw error;
+    }
   },
 
-  deleteKeyResult: (id: string) => {
-    set((state: OKRStore) => {
-      const newState = {
+  updateTeam: async (id: string, updates: Partial<Team>) => {
+    try {
+      const updatedTeam = await api.updateTeam(id, updates);
+      set((state: OKRStore) => ({
         ...state,
-        keyResults: state.keyResults.filter((kr: KeyResult) => kr.id !== id),
-      };
-      const recalculated = recalculateAllProgress(newState);
-      storage.save(recalculated);
-      return recalculated;
-    });
+        teams: state.teams.map((team: Team) => (team.id === id ? updatedTeam : team)),
+      }));
+    } catch (error) {
+      console.error('Failed to update team:', error);
+      throw error;
+    }
   },
 
-  addTeam: (team, ctx) => {
-    const newTeam: Team = { ...team, id: generateId(), orgId: ctx.orgId, createdBy: ctx.userEmail, shared: ctx.shared ?? true };
-    set((state: OKRStore) => {
-      const newState = { ...state, teams: [...state.teams, newTeam] };
-      storage.save(newState);
-      return newState;
-    });
-  },
-
-  updateTeam: (id: string, updates: Partial<Team>) => {
-    set((state: OKRStore) => {
-      const newState = {
-        ...state,
-        teams: state.teams.map((team: Team) => (team.id === id ? { ...team, ...updates } : team)),
-      };
-      storage.save(newState);
-      return newState;
-    });
-  },
-
-  deleteTeam: (id: string) => {
-    set((state: OKRStore) => {
-      const newState = {
+  deleteTeam: async (id: string) => {
+    try {
+      await api.deleteTeam(id);
+      set((state: OKRStore) => ({
         ...state,
         teams: state.teams.filter((team: Team) => team.id !== id),
-      };
-      storage.save(newState);
-      return newState;
-    });
+      }));
+    } catch (error) {
+      console.error('Failed to delete team:', error);
+      throw error;
+    }
   },
 
-  addPeriod: (period, ctx) => {
-    const newPeriod: Period = { ...period, id: generateId(), orgId: ctx.orgId, createdBy: ctx.userEmail, shared: ctx.shared ?? true };
-    set((state: OKRStore) => {
-      const newState = { ...state, periods: [...state.periods, newPeriod] };
-      storage.save(newState);
-      return newState;
-    });
-  },
-
-  updatePeriod: (id: string, updates: Partial<Period>) => {
-    set((state: OKRStore) => {
-      const newState = {
+  addPeriod: async (period, ctx) => {
+    try {
+      const newPeriod = await api.createPeriod({ ...period, shared: ctx.shared ?? true });
+      set((state: OKRStore) => ({
         ...state,
-        periods: state.periods.map((period: Period) => (period.id === id ? { ...period, ...updates } : period)),
-      };
-      storage.save(newState);
-      return newState;
-    });
+        periods: [...state.periods, newPeriod],
+      }));
+    } catch (error) {
+      console.error('Failed to add period:', error);
+      throw error;
+    }
   },
 
-  deletePeriod: (id: string) => {
-    set((state: OKRStore) => {
-      const newState = {
+  updatePeriod: async (id: string, updates: Partial<Period>) => {
+    try {
+      const updatedPeriod = await api.updatePeriod(id, updates);
+      set((state: OKRStore) => ({
         ...state,
-        periods: state.periods.filter((period: Period) => period.id !== id),
-        activePeriodId: state.activePeriodId === id ? null : state.activePeriodId,
-      };
-      storage.save(newState);
-      return newState;
-    });
+        periods: state.periods.map((period: Period) => (period.id === id ? updatedPeriod : period)),
+      }));
+    } catch (error) {
+      console.error('Failed to update period:', error);
+      throw error;
+    }
+  },
+
+  deletePeriod: async (id: string) => {
+    try {
+      await api.deletePeriod(id);
+      set((state: OKRStore) => {
+        const newState = {
+          ...state,
+          periods: state.periods.filter((period: Period) => period.id !== id),
+          activePeriodId: state.activePeriodId === id ? null : state.activePeriodId,
+        };
+        saveFilterState({ activePeriodId: newState.activePeriodId, filterTagIds: newState.filterTagIds, filterTeamIds: newState.filterTeamIds });
+        return newState;
+      });
+    } catch (error) {
+      console.error('Failed to delete period:', error);
+      throw error;
+    }
   },
 
   setActivePeriod: (id: string | null) => {
     set((state: OKRStore) => {
       const newState = { ...state, activePeriodId: id };
-      storage.save(newState);
+      saveFilterState({ activePeriodId: id, filterTagIds: state.filterTagIds, filterTeamIds: state.filterTeamIds });
       return newState;
     });
   },
 
-  addTag: (tag, ctx) => {
-    const newTag: Tag = { ...tag, id: generateId(), orgId: ctx.orgId, createdBy: ctx.userEmail, shared: ctx.shared ?? true };
-    set((state: OKRStore) => {
-      const newState = { ...state, tags: [...state.tags, newTag] };
-      storage.save(newState);
-      return newState;
-    });
-  },
-
-  updateTag: (id: string, updates: Partial<Tag>) => {
-    set((state: OKRStore) => {
-      const newState = {
+  addTag: async (tag, ctx) => {
+    try {
+      const newTag = await api.createTag({ ...tag, shared: ctx.shared ?? true });
+      set((state: OKRStore) => ({
         ...state,
-        tags: state.tags.map((tag: Tag) => (tag.id === id ? { ...tag, ...updates } : tag)),
-      };
-      storage.save(newState);
-      return newState;
-    });
-  },
-
-  deleteTag: (id: string) => {
-    set((state: OKRStore) => {
-      // Remove tag from all objectives that have it
-      const updatedObjectives = state.objectives.map((obj: Objective) => ({
-        ...obj,
-        tagIds: obj.tagIds?.filter((tagId: string) => tagId !== id),
+        tags: [...state.tags, newTag],
       }));
-      const newState = {
+    } catch (error) {
+      console.error('Failed to add tag:', error);
+      throw error;
+    }
+  },
+
+  updateTag: async (id: string, updates: Partial<Tag>) => {
+    try {
+      const updatedTag = await api.updateTag(id, updates);
+      set((state: OKRStore) => ({
         ...state,
-        tags: state.tags.filter((tag: Tag) => tag.id !== id),
-        objectives: updatedObjectives,
-        filterTagIds: state.filterTagIds.filter((tagId: string) => tagId !== id),
-      };
-      storage.save(newState);
-      return newState;
-    });
+        tags: state.tags.map((tag: Tag) => (tag.id === id ? updatedTag : tag)),
+      }));
+    } catch (error) {
+      console.error('Failed to update tag:', error);
+      throw error;
+    }
+  },
+
+  deleteTag: async (id: string) => {
+    try {
+      await api.deleteTag(id);
+      set((state: OKRStore) => {
+        const updatedObjectives = state.objectives.map((obj: Objective) => ({
+          ...obj,
+          tagIds: obj.tagIds?.filter((tagId: string) => tagId !== id),
+        }));
+        const newFilterTagIds = state.filterTagIds.filter((tagId: string) => tagId !== id);
+        const newState = {
+          ...state,
+          tags: state.tags.filter((tag: Tag) => tag.id !== id),
+          objectives: updatedObjectives,
+          filterTagIds: newFilterTagIds,
+        };
+        saveFilterState({ activePeriodId: state.activePeriodId, filterTagIds: newFilterTagIds, filterTeamIds: state.filterTeamIds });
+        return newState;
+      });
+    } catch (error) {
+      console.error('Failed to delete tag:', error);
+      throw error;
+    }
   },
 
   setFilterTags: (tagIds: string[]) => {
     set((state: OKRStore) => {
-      const newState = { ...state, filterTagIds: tagIds };
-      storage.save(newState);
-      return newState;
+      saveFilterState({ activePeriodId: state.activePeriodId, filterTagIds: tagIds, filterTeamIds: state.filterTeamIds });
+      return { ...state, filterTagIds: tagIds };
     });
   },
 
@@ -399,17 +495,15 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       const filterTagIds = state.filterTagIds.includes(tagId)
         ? state.filterTagIds.filter((id: string) => id !== tagId)
         : [...state.filterTagIds, tagId];
-      const newState = { ...state, filterTagIds };
-      storage.save(newState);
-      return newState;
+      saveFilterState({ activePeriodId: state.activePeriodId, filterTagIds, filterTeamIds: state.filterTeamIds });
+      return { ...state, filterTagIds };
     });
   },
 
   setFilterTeams: (teamIds: string[]) => {
     set((state: OKRStore) => {
-      const newState = { ...state, filterTeamIds: teamIds };
-      storage.save(newState);
-      return newState;
+      saveFilterState({ activePeriodId: state.activePeriodId, filterTagIds: state.filterTagIds, filterTeamIds: teamIds });
+      return { ...state, filterTeamIds: teamIds };
     });
   },
 
@@ -418,58 +512,34 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       const filterTeamIds = state.filterTeamIds.includes(teamId)
         ? state.filterTeamIds.filter((id: string) => id !== teamId)
         : [...state.filterTeamIds, teamId];
-      const newState = { ...state, filterTeamIds };
-      storage.save(newState);
-      return newState;
+      saveFilterState({ activePeriodId: state.activePeriodId, filterTagIds: state.filterTagIds, filterTeamIds });
+      return { ...state, filterTeamIds };
     });
   },
 
   clearAllFilters: () => {
     set((state: OKRStore) => {
-      const newState = {
+      saveFilterState({ activePeriodId: null, filterTagIds: [], filterTeamIds: [] });
+      return {
         ...state,
         activePeriodId: null,
         filterTagIds: [],
         filterTeamIds: [],
       };
-      storage.save(newState);
-      return newState;
     });
   },
 
   recalculateProgress: () => {
-    set((state: OKRStore) => {
-      const recalculated = recalculateAllProgress(state);
-      storage.save(recalculated);
-      return recalculated;
-    });
+    set((state: OKRStore) => recalculateAllProgress(state));
   },
 
-  addAllowedDomain: (domain: string) => {
-    set((state: OKRStore) => {
-      // Normalize domain (lowercase, trim)
-      const normalizedDomain = domain.toLowerCase().trim();
-      if (!normalizedDomain || state.allowedDomains.includes(normalizedDomain)) {
-        return state;
-      }
-      const newState = {
-        ...state,
-        allowedDomains: [...state.allowedDomains, normalizedDomain],
-      };
-      storage.save(newState);
-      return newState;
-    });
+  // Legacy domain functions - kept for compatibility but not used with server storage
+  addAllowedDomain: (_domain: string) => {
+    // No-op: domains are now managed on the server
   },
 
-  deleteAllowedDomain: (domain: string) => {
-    set((state: OKRStore) => {
-      const newState = {
-        ...state,
-        allowedDomains: state.allowedDomains.filter((d: string) => d !== domain),
-      };
-      storage.save(newState);
-      return newState;
-    });
+  deleteAllowedDomain: (_domain: string) => {
+    // No-op: domains are now managed on the server
   },
 
   exportData: (): BackupData => {
@@ -494,15 +564,12 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
         teams: data.teams || [],
         periods: data.periods || [],
         tags: data.tags || [],
-        // Reset filters
         activePeriodId: null,
         filterTagIds: [],
         filterTeamIds: [],
       };
-      const recalculated = recalculateAllProgress(newState);
-      storage.save(recalculated);
-      return recalculated;
+      saveFilterState({ activePeriodId: null, filterTagIds: [], filterTeamIds: [] });
+      return recalculateAllProgress(newState);
     });
   },
 }));
-
