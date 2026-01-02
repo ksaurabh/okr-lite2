@@ -6,6 +6,7 @@ import { getStatusColor } from '../../utils/calculations';
 import { ProgressBar } from '../common/ProgressBar';
 import { Button } from '../common/Button';
 import { Modal } from '../common/Modal';
+import { SlidePane } from '../common/SlidePane';
 import { KeyResultItem } from '../key-results/KeyResultItem';
 import { KeyResultForm } from '../key-results/KeyResultForm';
 import { ObjectiveForm } from './ObjectiveForm';
@@ -261,17 +262,17 @@ export function ObjectiveCard({ objective, depth = 0, showChildren = true }: Obj
         </div>
       )}
 
-      <Modal isOpen={showEdit} onClose={() => setShowEdit(false)} title="Edit Objective">
+      <SlidePane isOpen={showEdit} onClose={() => setShowEdit(false)} title="Edit Objective" width="lg">
         <ObjectiveForm objective={objective} onClose={() => setShowEdit(false)} />
-      </Modal>
+      </SlidePane>
 
-      <Modal isOpen={showAddChild} onClose={() => setShowAddChild(false)} title="Add Child Objective">
+      <SlidePane isOpen={showAddChild} onClose={() => setShowAddChild(false)} title="Add Child Objective" width="lg">
         <ObjectiveForm
           parentId={objective.id}
           defaultLevel={getChildLevel(objective.level)}
           onClose={() => setShowAddChild(false)}
         />
-      </Modal>
+      </SlidePane>
 
       <Modal isOpen={showHistory} onClose={() => setShowHistory(false)} title="Edit History">
         <div className="space-y-4 max-h-96 overflow-y-auto">
