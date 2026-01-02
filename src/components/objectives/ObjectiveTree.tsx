@@ -62,8 +62,10 @@ export function ObjectiveTree() {
   const [viewMode, setViewMode] = useState<ViewMode>('tree');
   const [includeAncestorPeriods, setIncludeAncestorPeriods] = useState(false);
 
-  const { organization } = useAuth();
+  const { organization, user, isSuperAdmin, isOrgAdmin } = useAuth();
   const orgId = organization?.id || '';
+  const userEmail = user?.email || '';
+  const isAdmin = isSuperAdmin || isOrgAdmin;
 
   const objectives = useOKRStore((state: OKRStore) => state.objectives);
   const periods = useOKRStore((state: OKRStore) => state.periods);
@@ -77,22 +79,30 @@ export function ObjectiveTree() {
   const toggleFilterTeam = useOKRStore((state: OKRStore) => state.toggleFilterTeam);
   const clearAllFilters = useOKRStore((state: OKRStore) => state.clearAllFilters);
 
-  // Filter items by organization (include items with matching orgId or no orgId for backward compatibility)
+  // Filter items by organization and visibility (admins see all, others see shared or owned)
   const orgObjectives = useMemo(
-    () => objectives.filter((o: Objective) => !o.orgId || o.orgId === orgId),
-    [objectives, orgId]
+    () => objectives.filter((o: Objective) =>
+      (!o.orgId || o.orgId === orgId) && (isAdmin || o.shared !== false || o.createdBy === userEmail)
+    ),
+    [objectives, orgId, userEmail, isAdmin]
   );
   const orgPeriods = useMemo(
-    () => periods.filter((p: Period) => !p.orgId || p.orgId === orgId),
-    [periods, orgId]
+    () => periods.filter((p: Period) =>
+      (!p.orgId || p.orgId === orgId) && (isAdmin || p.shared !== false || p.createdBy === userEmail)
+    ),
+    [periods, orgId, userEmail, isAdmin]
   );
   const orgTeams = useMemo(
-    () => teams.filter((t: Team) => !t.orgId || t.orgId === orgId),
-    [teams, orgId]
+    () => teams.filter((t: Team) =>
+      (!t.orgId || t.orgId === orgId) && (isAdmin || t.shared !== false || t.createdBy === userEmail)
+    ),
+    [teams, orgId, userEmail, isAdmin]
   );
   const orgTags = useMemo(
-    () => tags.filter((t: Tag) => !t.orgId || t.orgId === orgId),
-    [tags, orgId]
+    () => tags.filter((t: Tag) =>
+      (!t.orgId || t.orgId === orgId) && (isAdmin || t.shared !== false || t.createdBy === userEmail)
+    ),
+    [tags, orgId, userEmail, isAdmin]
   );
 
   const hasActiveFilters = activePeriodId || filterTagIds.length > 0 || filterTeamIds.length > 0;

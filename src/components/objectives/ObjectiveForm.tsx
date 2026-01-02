@@ -20,8 +20,9 @@ export function ObjectiveForm({ objective, parentId, defaultLevel, onClose }: Ob
   const [teamId, setTeamId] = useState(objective?.teamId || '');
   const [periodId, setPeriodId] = useState(objective?.periodId || '');
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>(objective?.tagIds || []);
+  const [isPrivate, setIsPrivate] = useState(objective?.shared === false);
 
-  const { organization } = useAuth();
+  const { organization, user, isSuperAdmin, isOrgAdmin } = useAuth();
   const teams = useOKRStore((state: OKRStore) => state.teams);
   const periods = useOKRStore((state: OKRStore) => state.periods);
   const tags = useOKRStore((state: OKRStore) => state.tags);
@@ -30,19 +31,27 @@ export function ObjectiveForm({ objective, parentId, defaultLevel, onClose }: Ob
   const updateObjective = useOKRStore((state: OKRStore) => state.updateObjective);
 
   const orgId = organization?.id || '';
+  const userEmail = user?.email || '';
+  const isAdmin = isSuperAdmin || isOrgAdmin;
 
-  // Filter items by organization
+  // Filter items by organization and visibility (admins see all, others see shared or owned)
   const orgTeams = useMemo(
-    () => teams.filter((t: Team) => !t.orgId || t.orgId === orgId),
-    [teams, orgId]
+    () => teams.filter((t: Team) =>
+      (!t.orgId || t.orgId === orgId) && (isAdmin || t.shared !== false || t.createdBy === userEmail)
+    ),
+    [teams, orgId, userEmail, isAdmin]
   );
   const orgPeriods = useMemo(
-    () => periods.filter((p: Period) => !p.orgId || p.orgId === orgId),
-    [periods, orgId]
+    () => periods.filter((p: Period) =>
+      (!p.orgId || p.orgId === orgId) && (isAdmin || p.shared !== false || p.createdBy === userEmail)
+    ),
+    [periods, orgId, userEmail, isAdmin]
   );
   const orgTags = useMemo(
-    () => tags.filter((t: Tag) => !t.orgId || t.orgId === orgId),
-    [tags, orgId]
+    () => tags.filter((t: Tag) =>
+      (!t.orgId || t.orgId === orgId) && (isAdmin || t.shared !== false || t.createdBy === userEmail)
+    ),
+    [tags, orgId, userEmail, isAdmin]
   );
 
   useEffect(() => {
@@ -74,6 +83,7 @@ export function ObjectiveForm({ objective, parentId, defaultLevel, onClose }: Ob
         teamId: teamId || undefined,
         tagIds: selectedTagIds.length > 0 ? selectedTagIds : undefined,
         periodId,
+        shared: !isPrivate,
       });
     } else {
       addObjective({
@@ -84,7 +94,7 @@ export function ObjectiveForm({ objective, parentId, defaultLevel, onClose }: Ob
         teamId: teamId || undefined,
         tagIds: selectedTagIds.length > 0 ? selectedTagIds : undefined,
         periodId,
-      }, orgId);
+      }, { orgId, userEmail, shared: !isPrivate });
     }
 
     onClose();
@@ -207,6 +217,19 @@ export function ObjectiveForm({ objective, parentId, defaultLevel, onClose }: Ob
           </div>
         </div>
       )}
+
+      <div className="flex items-center gap-2 pt-2">
+        <input
+          type="checkbox"
+          id="isPrivate"
+          checked={isPrivate}
+          onChange={(e) => setIsPrivate(e.target.checked)}
+          className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+        />
+        <label htmlFor="isPrivate" className="text-sm text-gray-600">
+          Private (only visible to me)
+        </label>
+      </div>
 
       <div className="flex justify-end gap-2 pt-4">
         <Button type="button" variant="secondary" onClick={onClose}>

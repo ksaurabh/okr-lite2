@@ -4,6 +4,8 @@ export type ObjectiveStatus = 'on-track' | 'at-risk' | 'behind';
 export interface Objective {
   id: string;
   orgId: string;
+  createdBy: string;
+  shared: boolean;
   title: string;
   description?: string;
   level: ObjectiveLevel;
@@ -21,6 +23,8 @@ export interface Objective {
 export interface Tag {
   id: string;
   orgId: string;
+  createdBy: string;
+  shared: boolean;
   name: string;
   color: string;
 }
@@ -28,6 +32,8 @@ export interface Tag {
 export interface KeyResult {
   id: string;
   orgId: string;
+  createdBy: string;
+  shared: boolean;
   objectiveId: string;
   title: string;
   targetValue: number;
@@ -41,6 +47,8 @@ export interface KeyResult {
 export interface Team {
   id: string;
   orgId: string;
+  createdBy: string;
+  shared: boolean;
   name: string;
   parentId?: string;
 }
@@ -50,6 +58,8 @@ export type PeriodType = 'quarter' | 'month' | 'week';
 export interface Period {
   id: string;
   orgId: string;
+  createdBy: string;
+  shared: boolean;
   name: string;
   type: PeriodType;
   parentId?: string;

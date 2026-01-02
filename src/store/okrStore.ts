@@ -3,30 +3,36 @@ import type { Objective, KeyResult, Team, Period, Tag, OKRState } from '../types
 import { storage } from '../utils/storage';
 import { generateId, calculateObjectiveProgress, determineStatus, calculateKeyResultProgress } from '../utils/calculations';
 
+interface CreateContext {
+  orgId: string;
+  userEmail: string;
+  shared?: boolean; // defaults to true if not provided
+}
+
 interface OKRActions {
   // Objectives
-  addObjective: (objective: Omit<Objective, 'id' | 'orgId' | 'progress' | 'status' | 'createdAt' | 'updatedAt'>, orgId: string) => void;
+  addObjective: (objective: Omit<Objective, 'id' | 'orgId' | 'createdBy' | 'shared' | 'progress' | 'status' | 'createdAt' | 'updatedAt'>, ctx: CreateContext) => void;
   updateObjective: (id: string, updates: Partial<Objective>) => void;
   deleteObjective: (id: string) => void;
 
   // Key Results
-  addKeyResult: (keyResult: Omit<KeyResult, 'id' | 'orgId' | 'progress' | 'createdAt' | 'updatedAt'>, orgId: string) => void;
+  addKeyResult: (keyResult: Omit<KeyResult, 'id' | 'orgId' | 'createdBy' | 'shared' | 'progress' | 'createdAt' | 'updatedAt'>, ctx: CreateContext) => void;
   updateKeyResult: (id: string, updates: Partial<KeyResult>) => void;
   deleteKeyResult: (id: string) => void;
 
   // Teams
-  addTeam: (team: Omit<Team, 'id' | 'orgId'>, orgId: string) => void;
+  addTeam: (team: Omit<Team, 'id' | 'orgId' | 'createdBy' | 'shared'>, ctx: CreateContext) => void;
   updateTeam: (id: string, updates: Partial<Team>) => void;
   deleteTeam: (id: string) => void;
 
   // Periods
-  addPeriod: (period: Omit<Period, 'id' | 'orgId'>, orgId: string) => void;
+  addPeriod: (period: Omit<Period, 'id' | 'orgId' | 'createdBy' | 'shared'>, ctx: CreateContext) => void;
   updatePeriod: (id: string, updates: Partial<Period>) => void;
   deletePeriod: (id: string) => void;
   setActivePeriod: (id: string | null) => void;
 
   // Tags
-  addTag: (tag: Omit<Tag, 'id' | 'orgId'>, orgId: string) => void;
+  addTag: (tag: Omit<Tag, 'id' | 'orgId' | 'createdBy' | 'shared'>, ctx: CreateContext) => void;
   updateTag: (id: string, updates: Partial<Tag>) => void;
   deleteTag: (id: string) => void;
   setFilterTags: (tagIds: string[]) => void;
@@ -87,12 +93,14 @@ const recalculateAllProgress = (state: OKRState): OKRState => {
 export const useOKRStore = create<OKRStore>((set, get) => ({
   ...storage.load(),
 
-  addObjective: (objective, orgId) => {
+  addObjective: (objective, ctx) => {
     const now = new Date().toISOString();
     const newObjective: Objective = {
       ...objective,
       id: generateId(),
-      orgId,
+      orgId: ctx.orgId,
+      createdBy: ctx.userEmail,
+      shared: ctx.shared ?? true,
       progress: 0,
       status: 'behind',
       createdAt: now,
@@ -141,7 +149,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     });
   },
 
-  addKeyResult: (keyResult, orgId) => {
+  addKeyResult: (keyResult, ctx) => {
     const now = new Date().toISOString();
     const progress = keyResult.targetValue > 0
       ? Math.round((keyResult.currentValue / keyResult.targetValue) * 100)
@@ -150,7 +158,9 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     const newKeyResult: KeyResult = {
       ...keyResult,
       id: generateId(),
-      orgId,
+      orgId: ctx.orgId,
+      createdBy: ctx.userEmail,
+      shared: ctx.shared ?? true,
       progress,
       createdAt: now,
       updatedAt: now,
@@ -190,8 +200,8 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     });
   },
 
-  addTeam: (team, orgId) => {
-    const newTeam: Team = { ...team, id: generateId(), orgId };
+  addTeam: (team, ctx) => {
+    const newTeam: Team = { ...team, id: generateId(), orgId: ctx.orgId, createdBy: ctx.userEmail, shared: ctx.shared ?? true };
     set((state: OKRStore) => {
       const newState = { ...state, teams: [...state.teams, newTeam] };
       storage.save(newState);
@@ -221,8 +231,8 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     });
   },
 
-  addPeriod: (period, orgId) => {
-    const newPeriod: Period = { ...period, id: generateId(), orgId };
+  addPeriod: (period, ctx) => {
+    const newPeriod: Period = { ...period, id: generateId(), orgId: ctx.orgId, createdBy: ctx.userEmail, shared: ctx.shared ?? true };
     set((state: OKRStore) => {
       const newState = { ...state, periods: [...state.periods, newPeriod] };
       storage.save(newState);
@@ -261,8 +271,8 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     });
   },
 
-  addTag: (tag, orgId) => {
-    const newTag: Tag = { ...tag, id: generateId(), orgId };
+  addTag: (tag, ctx) => {
+    const newTag: Tag = { ...tag, id: generateId(), orgId: ctx.orgId, createdBy: ctx.userEmail, shared: ctx.shared ?? true };
     set((state: OKRStore) => {
       const newState = { ...state, tags: [...state.tags, newTag] };
       storage.save(newState);

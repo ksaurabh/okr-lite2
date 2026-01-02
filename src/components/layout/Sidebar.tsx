@@ -212,9 +212,14 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
   const [newPeriodEnd, setNewPeriodEnd] = useState('');
   const [newTagName, setNewTagName] = useState('');
   const [newTagColor, setNewTagColor] = useState('bg-blue-500');
+  const [isTeamPrivate, setIsTeamPrivate] = useState(false);
+  const [isPeriodPrivate, setIsPeriodPrivate] = useState(false);
+  const [isTagPrivate, setIsTagPrivate] = useState(false);
 
-  const { organization } = useAuth();
+  const { organization, user, isSuperAdmin, isOrgAdmin } = useAuth();
   const orgId = organization?.id || '';
+  const userEmail = user?.email || '';
+  const isAdmin = isSuperAdmin || isOrgAdmin;
 
   const teams = useOKRStore((state: OKRStore) => state.teams);
   const periods = useOKRStore((state: OKRStore) => state.periods);
@@ -226,20 +231,26 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
   const deletePeriod = useOKRStore((state: OKRStore) => state.deletePeriod);
   const deleteTag = useOKRStore((state: OKRStore) => state.deleteTag);
 
-  // Filter items by organization (include items with matching orgId or no orgId for backward compatibility)
+  // Filter items by organization and visibility (admins see all, others see shared or owned)
   const orgTeams = useMemo(
-    () => teams.filter((t: Team) => !t.orgId || t.orgId === orgId),
-    [teams, orgId]
+    () => teams.filter((t: Team) =>
+      (!t.orgId || t.orgId === orgId) && (isAdmin || t.shared !== false || t.createdBy === userEmail)
+    ),
+    [teams, orgId, userEmail, isAdmin]
   );
 
   const orgPeriods = useMemo(
-    () => periods.filter((p: Period) => !p.orgId || p.orgId === orgId),
-    [periods, orgId]
+    () => periods.filter((p: Period) =>
+      (!p.orgId || p.orgId === orgId) && (isAdmin || p.shared !== false || p.createdBy === userEmail)
+    ),
+    [periods, orgId, userEmail, isAdmin]
   );
 
   const orgTags = useMemo(
-    () => tags.filter((t: Tag) => !t.orgId || t.orgId === orgId),
-    [tags, orgId]
+    () => tags.filter((t: Tag) =>
+      (!t.orgId || t.orgId === orgId) && (isAdmin || t.shared !== false || t.createdBy === userEmail)
+    ),
+    [tags, orgId, userEmail, isAdmin]
   );
 
   // Get root periods (quarters with no parent)
@@ -257,14 +268,16 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
   const openAddTeamModal = (parentId?: string) => {
     setNewTeamParentId(parentId);
     setNewTeamName('');
+    setIsTeamPrivate(false);
     setShowTeamModal(true);
   };
 
   const handleAddTeam = () => {
     if (newTeamName.trim()) {
-      addTeam({ name: newTeamName.trim(), parentId: newTeamParentId }, orgId);
+      addTeam({ name: newTeamName.trim(), parentId: newTeamParentId }, { orgId, userEmail, shared: !isTeamPrivate });
       setNewTeamName('');
       setNewTeamParentId(undefined);
+      setIsTeamPrivate(false);
       setShowTeamModal(false);
     }
   };
@@ -281,6 +294,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
     setNewPeriodName('');
     setNewPeriodStart('');
     setNewPeriodEnd('');
+    setIsPeriodPrivate(false);
     setShowPeriodModal(true);
   };
 
@@ -293,22 +307,31 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
         startDate: newPeriodStart,
         endDate: newPeriodEnd,
         isActive: false,
-      }, orgId);
+      }, { orgId, userEmail, shared: !isPeriodPrivate });
       setNewPeriodName('');
       setNewPeriodStart('');
       setNewPeriodEnd('');
       setNewPeriodParentId(undefined);
+      setIsPeriodPrivate(false);
       setShowPeriodModal(false);
     }
   };
 
   const handleAddTag = () => {
     if (newTagName.trim()) {
-      addTag({ name: newTagName.trim(), color: newTagColor }, orgId);
+      addTag({ name: newTagName.trim(), color: newTagColor }, { orgId, userEmail, shared: !isTagPrivate });
       setNewTagName('');
       setNewTagColor('bg-blue-500');
+      setIsTagPrivate(false);
       setShowTagModal(false);
     }
+  };
+
+  const openAddTagModal = () => {
+    setNewTagName('');
+    setNewTagColor('bg-blue-500');
+    setIsTagPrivate(false);
+    setShowTagModal(true);
   };
 
   const getParentPeriodName = () => {
@@ -409,7 +432,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-medium text-gray-500 uppercase">Tags</h3>
               <button
-                onClick={() => setShowTagModal(true)}
+                onClick={openAddTagModal}
                 className="text-blue-600 hover:text-blue-700 text-sm"
               >
                 + Add
@@ -455,6 +478,18 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
             onChange={(e) => setNewTeamName(e.target.value)}
             className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="isTeamPrivate"
+              checked={isTeamPrivate}
+              onChange={(e) => setIsTeamPrivate(e.target.checked)}
+              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <label htmlFor="isTeamPrivate" className="text-sm text-gray-600">
+              Private (only visible to me)
+            </label>
+          </div>
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setShowTeamModal(false)}>
               Cancel
@@ -508,6 +543,18 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
               />
             </div>
           </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="isPeriodPrivate"
+              checked={isPeriodPrivate}
+              onChange={(e) => setIsPeriodPrivate(e.target.checked)}
+              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <label htmlFor="isPeriodPrivate" className="text-sm text-gray-600">
+              Private (only visible to me)
+            </label>
+          </div>
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setShowPeriodModal(false)}>
               Cancel
@@ -541,6 +588,18 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
                 />
               ))}
             </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="isTagPrivate"
+              checked={isTagPrivate}
+              onChange={(e) => setIsTagPrivate(e.target.checked)}
+              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <label htmlFor="isTagPrivate" className="text-sm text-gray-600">
+              Private (only visible to me)
+            </label>
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setShowTagModal(false)}>

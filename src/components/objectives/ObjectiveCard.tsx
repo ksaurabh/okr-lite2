@@ -70,53 +70,68 @@ export function ObjectiveCard({ objective, depth = 0, showChildren = true }: Obj
       <div className={`bg-white rounded-lg shadow-sm border border-gray-200 border-l-4 ${levelColors[objective.level]} p-4`}>
         <div className="flex items-start justify-between">
           <div className="flex-1">
-            <div className="flex items-center gap-2 mb-1">
-              {hasChildren && (
-                <button
-                  onClick={() => setIsExpanded(!isExpanded)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <svg
-                    className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
+            <div className="flex items-center justify-between flex-wrap gap-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                {hasChildren && (
+                  <button
+                    onClick={() => setIsExpanded(!isExpanded)}
+                    className="text-gray-400 hover:text-gray-600"
                   >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </button>
-              )}
-              <span className={`text-xs font-medium px-2 py-0.5 rounded ${getStatusColor(objective.status)}`}>
-                {levelLabels[objective.level]}
-              </span>
-              {team && (
-                <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
-                  {team.name}
+                    <svg
+                      className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                )}
+                <span className={`text-xs font-medium px-2 py-0.5 rounded ${getStatusColor(objective.status)}`}>
+                  {levelLabels[objective.level]}
+                </span>
+                {team && (
+                  <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
+                    {team.name}
+                  </span>
+                )}
+                {period && (
+                  <span className="text-xs text-gray-500 bg-blue-50 px-2 py-0.5 rounded flex items-center gap-1">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    {period.name}
+                  </span>
+                )}
+                {objectiveTags.map((tag: Tag) => (
+                  <span
+                    key={tag.id}
+                    className="inline-flex items-center gap-1 text-xs text-gray-600 bg-gray-100 px-2 py-0.5 rounded"
+                  >
+                    <span className={`w-2 h-2 rounded-full ${tag.color}`}></span>
+                    {tag.name}
+                  </span>
+                ))}
+                {objective.shared === false && (
+                  <span className="text-xs text-orange-600 bg-orange-50 px-2 py-0.5 rounded flex items-center gap-1">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                    Private
+                  </span>
+                )}
+              </div>
+              {objective.createdBy && (
+                <span className="text-xs text-gray-400">
+                  Created by {objective.createdBy}
                 </span>
               )}
-              {period && (
-                <span className="text-xs text-gray-500 bg-blue-50 px-2 py-0.5 rounded flex items-center gap-1">
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  {period.name}
-                </span>
-              )}
-              {objectiveTags.map((tag: Tag) => (
-                <span
-                  key={tag.id}
-                  className="inline-flex items-center gap-1 text-xs text-gray-600 bg-gray-100 px-2 py-0.5 rounded"
-                >
-                  <span className={`w-2 h-2 rounded-full ${tag.color}`}></span>
-                  {tag.name}
-                </span>
-              ))}
             </div>
             <h3 className="text-lg font-medium text-gray-900">{objective.title}</h3>
             {objective.description && (
               <p className="text-sm text-gray-600 mt-1">{objective.description}</p>
             )}
-            <div className="mt-3 max-w-xs">
+            <div className="mt-2 max-w-xs">
               <ProgressBar progress={objective.progress} size="sm" />
             </div>
           </div>
