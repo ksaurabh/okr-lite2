@@ -353,7 +353,11 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
     <aside className="w-64 bg-gray-50 border-r border-gray-200 min-h-screen">
       <nav className="p-4">
         <ul className="space-y-1">
-          {navItems.map((item) => (
+          {navItems.filter(item => {
+            if (item.id === 'admin') return isSuperAdmin;
+            if (item.id === 'settings') return isAdmin;
+            return true;
+          }).map((item) => (
             <li key={item.id}>
               <button
                 onClick={() => onViewChange(item.id)}

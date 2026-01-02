@@ -550,7 +550,7 @@ function requireOrgAdminOrSuperAdmin(req, res, next) {
   return res.status(403).json({ error: 'Admin access required' });
 }
 
-app.get('/api/users', requireAuth, (req, res) => {
+app.get('/api/users', requireOrgAdminOrSuperAdmin, (req, res) => {
   const organizations = getOrganizations();
 
   // Super admins see all users
