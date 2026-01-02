@@ -1,0 +1,7 @@
+- Start the backend server
+  node server/index.js
+
+- Start the frontend (in a separate terminal)
+  npm run dev
+
+

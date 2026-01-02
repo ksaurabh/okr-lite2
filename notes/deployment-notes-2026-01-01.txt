@@ -1,0 +1,46 @@
+⏺ Lightsail Deployment Fixes Summary
+
+  1. Node.js Version
+
+  Upgraded from Node.js 18 to 22 (Vite requires 20.19+ or 22.12+):
+  curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash -
+  sudo dnf install -y nodejs
+
+  2. Nginx Default Server Block
+
+  Commented out the default server block in /etc/nginx/nginx.conf (lines 37-51) that was overriding your config.
+
+  3. Nginx Config for Auth Routes
+
+  Changed /etc/nginx/conf.d/okr-lite.conf to proxy specific auth routes instead of all /auth/*:
+  - /auth/google → backend
+  - /auth/logout → backend
+  - /auth/user → backend
+  - /auth/failure → backend
+  - /auth/callback → frontend (served by try_files)
+
+  4. SELinux Permissions
+
+  sudo setsebool -P httpd_can_network_connect 1
+  sudo setsebool -P httpd_read_user_content 1
+  sudo chcon -R -t httpd_sys_content_t ~/okr-lite2/dist
+
+  5. PM2 Ecosystem Config
+
+  Created ecosystem.config.cjs to explicitly pass environment variables to the server.
+
+  6. Server Callback URL
+
+  Added GOOGLE_CALLBACK_URL=https://okr.airmdr.net/auth/google/callback to .env.
+
+  7. Server Name for SSL
+
+  Changed server_name _; to server_name okr.airmdr.net; in nginx config for certbot.
+
+  8. SSL Setup
+
+  sudo certbot --nginx -d okr.airmdr.net
+
+  9. Frontend API URL Fix (code change)
+
+  Changed fallback in AuthContext.tsx and AdminPage.tsx from 'http://localhost:3001' to '' so it uses relative URLs in production.
