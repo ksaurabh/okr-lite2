@@ -170,6 +170,19 @@ function updateUserRole(email, role) {
   return users[userIndex];
 }
 
+function updateUserName(email, name) {
+  const users = getUsers();
+  const userIndex = users.findIndex(u => u.email === email);
+
+  if (userIndex === -1) {
+    return null;
+  }
+
+  users[userIndex].name = name;
+  saveUsers(users);
+  return users[userIndex];
+}
+
 // Helper functions for OKR data
 function getOKRData() {
   try {
@@ -628,6 +641,33 @@ app.put('/api/users/:email/role', requireOrgAdminOrSuperAdmin, (req, res) => {
   }
 
   const updatedUser = updateUserRole(decodedEmail, role);
+  if (!updatedUser) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+
+  res.json({ user: updatedUser });
+});
+
+app.put('/api/users/:email/name', requireOrgAdminOrSuperAdmin, (req, res) => {
+  const { email } = req.params;
+  const { name } = req.body;
+
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: 'Name is required' });
+  }
+
+  const decodedEmail = decodeURIComponent(email).toLowerCase();
+
+  // Verify user belongs to same org (unless super admin)
+  if (!isSuperAdmin(req.user.email)) {
+    const org = getOrganizationByDomain(req.user.domain);
+    const users = getUsersByOrganization(org?.id);
+    if (!users.some(u => u.email === decodedEmail)) {
+      return res.status(403).json({ error: 'Cannot modify users from other organizations' });
+    }
+  }
+
+  const updatedUser = updateUserName(decodedEmail, name.trim());
   if (!updatedUser) {
     return res.status(404).json({ error: 'User not found' });
   }

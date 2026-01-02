@@ -26,6 +26,8 @@ export function SettingsPage() {
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserName, setNewUserName] = useState('');
   const [creating, setCreating] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [editName, setEditName] = useState('');
 
   const { isSuperAdmin, isOrgAdmin } = useAuth();
   const canManageRoles = isSuperAdmin || isOrgAdmin;
@@ -112,6 +114,43 @@ export function SettingsPage() {
     } finally {
       setCreating(false);
     }
+  };
+
+  const updateName = async () => {
+    if (!editingUser || !editName.trim()) return;
+
+    try {
+      setUpdating(editingUser.email);
+      setError(null);
+      const response = await fetch(`${API_URL}/api/users/${encodeURIComponent(editingUser.email)}/name`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name: editName.trim() }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to update name');
+      }
+
+      setUsers(users.map(u => u.email === editingUser.email ? { ...u, name: data.user.name } : u));
+      setEditingUser(null);
+      setEditName('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update name');
+      console.error('Error updating name:', err);
+    } finally {
+      setUpdating(null);
+    }
+  };
+
+  const startEditingUser = (user: User) => {
+    setEditingUser(user);
+    setEditName(user.name);
   };
 
   const formatDate = (dateString: string) => {
@@ -240,18 +279,29 @@ export function SettingsPage() {
                     </td>
                     {canManageRoles && (
                       <td className="px-4 py-4">
-                        <select
-                          value={user.role}
-                          onChange={(e) => updateRole(user.email, e.target.value as 'admin' | 'user')}
-                          disabled={updating === user.email}
-                          className="text-sm border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-                        >
-                          <option value="user">User</option>
-                          <option value="admin">Admin</option>
-                        </select>
-                        {updating === user.email && (
-                          <span className="ml-2 text-xs text-gray-500">Saving...</span>
-                        )}
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => startEditingUser(user)}
+                            className="p-1 text-gray-400 hover:text-blue-600 rounded"
+                            title="Edit name"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                          </button>
+                          <select
+                            value={user.role}
+                            onChange={(e) => updateRole(user.email, e.target.value as 'admin' | 'user')}
+                            disabled={updating === user.email}
+                            className="text-sm border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                          >
+                            <option value="user">User</option>
+                            <option value="admin">Admin</option>
+                          </select>
+                          {updating === user.email && (
+                            <span className="text-xs text-gray-500">Saving...</span>
+                          )}
+                        </div>
                       </td>
                     )}
                   </tr>
@@ -323,6 +373,70 @@ export function SettingsPage() {
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {creating ? 'Creating...' : 'Create User'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit User Modal */}
+      {editingUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Edit User</h3>
+
+            {error && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
+                <p className="text-sm text-red-600">{error}</p>
+              </div>
+            )}
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  value={editingUser.email}
+                  disabled
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-50 text-gray-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Full Name *
+                </label>
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  placeholder="John Doe"
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={updating === editingUser.email}
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => {
+                  setEditingUser(null);
+                  setEditName('');
+                  setError(null);
+                }}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500"
+                disabled={updating === editingUser.email}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={updateName}
+                disabled={updating === editingUser.email || !editName.trim()}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {updating === editingUser.email ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
           </div>
