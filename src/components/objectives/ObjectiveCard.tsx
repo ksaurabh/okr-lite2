@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import type { Objective, ObjectiveLevel, KeyResult, Tag, Team, Period } from '../../types';
+import type { Objective, ObjectiveLevel, KeyResult, Tag, Team, Period, ObjectiveHistoryEntry } from '../../types';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { getStatusColor } from '../../utils/calculations';
 import { ProgressBar } from '../common/ProgressBar';
@@ -28,6 +28,7 @@ export function ObjectiveCard({ objective, depth = 0, showChildren = true }: Obj
   const [showAddKR, setShowAddKR] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [showAddChild, setShowAddChild] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
 
   const allKeyResults = useOKRStore((state: OKRStore) => state.keyResults);
   const allObjectives = useOKRStore((state: OKRStore) => state.objectives);
@@ -137,6 +138,11 @@ export function ObjectiveCard({ objective, depth = 0, showChildren = true }: Obj
           </div>
 
           <div className="flex items-center gap-1 ml-4">
+            <Button variant="ghost" size="sm" onClick={() => setShowHistory(true)} title="View history">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </Button>
             <Button variant="ghost" size="sm" onClick={() => setShowEdit(true)}>
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -206,6 +212,54 @@ export function ObjectiveCard({ objective, depth = 0, showChildren = true }: Obj
           defaultLevel={getChildLevel(objective.level)}
           onClose={() => setShowAddChild(false)}
         />
+      </Modal>
+
+      <Modal isOpen={showHistory} onClose={() => setShowHistory(false)} title="Edit History">
+        <div className="space-y-4 max-h-96 overflow-y-auto">
+          {(objective.history || []).length === 0 ? (
+            <p className="text-sm text-gray-500">No history available.</p>
+          ) : (
+            [...(objective.history || [])].reverse().map((entry: ObjectiveHistoryEntry) => (
+              <div key={entry.id} className="border-l-2 border-gray-200 pl-4 py-2">
+                <div className="flex items-center justify-between mb-2">
+                  <span className={`text-xs font-medium px-2 py-0.5 rounded ${
+                    entry.action === 'created' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
+                  }`}>
+                    {entry.action === 'created' ? 'Created' : 'Updated'}
+                  </span>
+                  <span className="text-xs text-gray-400">
+                    {new Date(entry.timestamp).toLocaleString()}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-600 mb-2">
+                  by {entry.userEmail}
+                </p>
+                <div className="space-y-1">
+                  {entry.changes.map((change, idx) => (
+                    <div key={idx} className="text-xs bg-gray-50 rounded p-2">
+                      <span className="font-medium text-gray-700">{change.field}:</span>
+                      {entry.action === 'created' ? (
+                        <span className="text-green-600 ml-1">
+                          {String(change.newValue ?? '(empty)')}
+                        </span>
+                      ) : (
+                        <>
+                          <span className="text-red-500 line-through ml-1">
+                            {String(change.oldValue ?? '(empty)')}
+                          </span>
+                          <span className="text-gray-400 mx-1">→</span>
+                          <span className="text-green-600">
+                            {String(change.newValue ?? '(empty)')}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       </Modal>
     </div>
   );

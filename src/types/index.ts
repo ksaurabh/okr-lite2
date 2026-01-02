@@ -1,6 +1,20 @@
 export type ObjectiveLevel = 'company' | 'team' | 'individual';
 export type ObjectiveStatus = 'on-track' | 'at-risk' | 'behind';
 
+export interface FieldChange {
+  field: string;
+  oldValue: string | number | boolean | undefined;
+  newValue: string | number | boolean | undefined;
+}
+
+export interface ObjectiveHistoryEntry {
+  id: string;
+  timestamp: string;
+  userEmail: string;
+  action: 'created' | 'updated';
+  changes: FieldChange[];
+}
+
 export interface Objective {
   id: string;
   orgId: string;
@@ -18,6 +32,7 @@ export interface Objective {
   periodId: string;
   createdAt: string;
   updatedAt: string;
+  history: ObjectiveHistoryEntry[];
 }
 
 export interface Tag {

@@ -84,7 +84,7 @@ export function ObjectiveForm({ objective, parentId, defaultLevel, onClose }: Ob
         tagIds: selectedTagIds.length > 0 ? selectedTagIds : undefined,
         periodId,
         shared: !isPrivate,
-      });
+      }, userEmail);
     } else {
       addObjective({
         title: title.trim(),

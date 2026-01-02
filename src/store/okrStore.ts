@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Objective, KeyResult, Team, Period, Tag, OKRState } from '../types';
+import type { Objective, KeyResult, Team, Period, Tag, OKRState, ObjectiveHistoryEntry, FieldChange } from '../types';
 import { storage } from '../utils/storage';
 import { generateId, calculateObjectiveProgress, determineStatus, calculateKeyResultProgress } from '../utils/calculations';
 
@@ -11,8 +11,8 @@ interface CreateContext {
 
 interface OKRActions {
   // Objectives
-  addObjective: (objective: Omit<Objective, 'id' | 'orgId' | 'createdBy' | 'shared' | 'progress' | 'status' | 'createdAt' | 'updatedAt'>, ctx: CreateContext) => void;
-  updateObjective: (id: string, updates: Partial<Objective>) => void;
+  addObjective: (objective: Omit<Objective, 'id' | 'orgId' | 'createdBy' | 'shared' | 'progress' | 'status' | 'createdAt' | 'updatedAt' | 'history'>, ctx: CreateContext) => void;
+  updateObjective: (id: string, updates: Partial<Objective>, userEmail: string) => void;
   deleteObjective: (id: string) => void;
 
   // Key Results
@@ -95,9 +95,33 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
 
   addObjective: (objective, ctx) => {
     const now = new Date().toISOString();
+    const objectiveId = generateId();
+    const state = get();
+
+    // Helper to resolve IDs to names
+    const getPeriodName = (id: string) => state.periods.find(p => p.id === id)?.name || id;
+    const getTeamName = (id: string) => state.teams.find(t => t.id === id)?.name || id;
+    const getObjectiveTitle = (id: string) => state.objectives.find(o => o.id === id)?.title || id;
+
+    // Create initial history entry for creation
+    const initialHistory: ObjectiveHistoryEntry = {
+      id: generateId(),
+      timestamp: now,
+      userEmail: ctx.userEmail,
+      action: 'created',
+      changes: [
+        { field: 'title', oldValue: undefined, newValue: objective.title },
+        { field: 'level', oldValue: undefined, newValue: objective.level },
+        { field: 'period', oldValue: undefined, newValue: getPeriodName(objective.periodId) },
+        ...(objective.description ? [{ field: 'description', oldValue: undefined, newValue: objective.description }] : []),
+        ...(objective.teamId ? [{ field: 'team', oldValue: undefined, newValue: getTeamName(objective.teamId) }] : []),
+        ...(objective.parentId ? [{ field: 'parent', oldValue: undefined, newValue: getObjectiveTitle(objective.parentId) }] : []),
+      ],
+    };
+
     const newObjective: Objective = {
       ...objective,
-      id: generateId(),
+      id: objectiveId,
       orgId: ctx.orgId,
       createdBy: ctx.userEmail,
       shared: ctx.shared ?? true,
@@ -105,6 +129,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       status: 'behind',
       createdAt: now,
       updatedAt: now,
+      history: [initialHistory],
     };
 
     set((state: OKRStore) => {
@@ -114,12 +139,64 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     });
   },
 
-  updateObjective: (id: string, updates: Partial<Objective>) => {
+  updateObjective: (id: string, updates: Partial<Objective>, userEmail: string) => {
     set((state: OKRStore) => {
+      const now = new Date().toISOString();
+      const existingObj = state.objectives.find((obj: Objective) => obj.id === id);
+      if (!existingObj) return state;
+
+      // Helper to resolve IDs to names
+      const getPeriodName = (id: string | undefined) => id ? state.periods.find(p => p.id === id)?.name || id : undefined;
+      const getTeamName = (id: string | undefined) => id ? state.teams.find(t => t.id === id)?.name || id : undefined;
+      const getTagNames = (ids: string[] | undefined) => ids ? ids.map(id => state.tags.find(t => t.id === id)?.name || id).join(', ') : undefined;
+      const getObjectiveTitle = (id: string | undefined) => id ? state.objectives.find(o => o.id === id)?.title || id : undefined;
+
+      // Track which fields changed (excluding system fields)
+      const changes: FieldChange[] = [];
+
+      // Check each trackable field and resolve IDs to names
+      if ('title' in updates && updates.title !== existingObj.title) {
+        changes.push({ field: 'title', oldValue: existingObj.title, newValue: updates.title });
+      }
+      if ('description' in updates && updates.description !== existingObj.description) {
+        changes.push({ field: 'description', oldValue: existingObj.description || '(empty)', newValue: updates.description || '(empty)' });
+      }
+      if ('level' in updates && updates.level !== existingObj.level) {
+        changes.push({ field: 'level', oldValue: existingObj.level, newValue: updates.level });
+      }
+      if ('periodId' in updates && updates.periodId !== existingObj.periodId) {
+        changes.push({ field: 'period', oldValue: getPeriodName(existingObj.periodId), newValue: getPeriodName(updates.periodId) });
+      }
+      if ('teamId' in updates && updates.teamId !== existingObj.teamId) {
+        changes.push({ field: 'team', oldValue: getTeamName(existingObj.teamId) || '(none)', newValue: getTeamName(updates.teamId) || '(none)' });
+      }
+      if ('tagIds' in updates && JSON.stringify(updates.tagIds) !== JSON.stringify(existingObj.tagIds)) {
+        changes.push({ field: 'tags', oldValue: getTagNames(existingObj.tagIds) || '(none)', newValue: getTagNames(updates.tagIds) || '(none)' });
+      }
+      if ('parentId' in updates && updates.parentId !== existingObj.parentId) {
+        changes.push({ field: 'parent', oldValue: getObjectiveTitle(existingObj.parentId) || '(none)', newValue: getObjectiveTitle(updates.parentId) || '(none)' });
+      }
+      if ('shared' in updates && updates.shared !== existingObj.shared) {
+        changes.push({ field: 'visibility', oldValue: existingObj.shared ? 'Shared' : 'Private', newValue: updates.shared ? 'Shared' : 'Private' });
+      }
+
+      // Only add history entry if there are actual changes
+      let updatedHistory = existingObj.history || [];
+      if (changes.length > 0) {
+        const historyEntry: ObjectiveHistoryEntry = {
+          id: generateId(),
+          timestamp: now,
+          userEmail,
+          action: 'updated',
+          changes,
+        };
+        updatedHistory = [...updatedHistory, historyEntry];
+      }
+
       const newState = {
         ...state,
         objectives: state.objectives.map((obj: Objective) =>
-          obj.id === id ? { ...obj, ...updates, updatedAt: new Date().toISOString() } : obj
+          obj.id === id ? { ...obj, ...updates, updatedAt: now, history: updatedHistory } : obj
         ),
       };
       const recalculated = recalculateAllProgress(newState);
