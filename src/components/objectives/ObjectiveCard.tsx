@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import type { Objective, ObjectiveLevel } from '../../types';
+import type { Objective, ObjectiveLevel, KeyResult, Tag, Team, Period } from '../../types';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { getStatusColor } from '../../utils/calculations';
 import { ProgressBar } from '../common/ProgressBar';
@@ -37,20 +37,20 @@ export function ObjectiveCard({ objective, depth = 0, showChildren = true }: Obj
   const allTags = useOKRStore((state: OKRStore) => state.tags);
 
   const keyResults = useMemo(
-    () => allKeyResults.filter((kr) => kr.objectiveId === objective.id),
+    () => allKeyResults.filter((kr: KeyResult) => kr.objectiveId === objective.id),
     [allKeyResults, objective.id]
   );
   const childObjectives = useMemo(
-    () => allObjectives.filter((o) => o.parentId === objective.id),
+    () => allObjectives.filter((o: Objective) => o.parentId === objective.id),
     [allObjectives, objective.id]
   );
   const objectiveTags = useMemo(
-    () => allTags.filter((tag) => objective.tagIds?.includes(tag.id)),
+    () => allTags.filter((tag: Tag) => objective.tagIds?.includes(tag.id)),
     [allTags, objective.tagIds]
   );
 
-  const team = teams.find((t) => t.id === objective.teamId);
-  const period = periods.find((p) => p.id === objective.periodId);
+  const team = teams.find((t: Team) => t.id === objective.teamId);
+  const period = periods.find((p: Period) => p.id === objective.periodId);
   const hasChildren = (showChildren && childObjectives.length > 0) || keyResults.length > 0;
 
   const levelColors = {
@@ -102,7 +102,7 @@ export function ObjectiveCard({ objective, depth = 0, showChildren = true }: Obj
                   {period.name}
                 </span>
               )}
-              {objectiveTags.map((tag) => (
+              {objectiveTags.map((tag: Tag) => (
                 <span
                   key={tag.id}
                   className="inline-flex items-center gap-1 text-xs text-gray-600 bg-gray-100 px-2 py-0.5 rounded"
@@ -151,7 +151,7 @@ export function ObjectiveCard({ objective, depth = 0, showChildren = true }: Obj
           <div className="mt-4 pt-4 border-t border-gray-100">
             <h4 className="text-sm font-medium text-gray-500 mb-2">Key Results</h4>
             <div className="space-y-2">
-              {keyResults.map((kr) => (
+              {keyResults.map((kr: KeyResult) => (
                 <KeyResultItem key={kr.id} keyResult={kr} />
               ))}
             </div>
@@ -170,7 +170,7 @@ export function ObjectiveCard({ objective, depth = 0, showChildren = true }: Obj
 
       {showChildren && isExpanded && childObjectives.length > 0 && (
         <div className="ml-6 mt-2 space-y-2 border-l-2 border-gray-200 pl-4">
-          {childObjectives.map((child) => (
+          {childObjectives.map((child: Objective) => (
             <ObjectiveCard
               key={child.id}
               objective={child}

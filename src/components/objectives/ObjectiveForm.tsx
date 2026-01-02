@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import type { Objective, ObjectiveLevel } from '../../types';
+import type { Objective, ObjectiveLevel, Period, Team, Tag } from '../../types';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { Button } from '../common/Button';
 
@@ -136,7 +136,7 @@ export function ObjectiveForm({ objective, parentId, defaultLevel, onClose }: Ob
             required
           >
             <option value="">Select period</option>
-            {periods.map((period) => (
+            {periods.map((period: Period) => (
               <option key={period.id} value={period.id}>
                 {period.name}
               </option>
@@ -156,7 +156,7 @@ export function ObjectiveForm({ objective, parentId, defaultLevel, onClose }: Ob
             className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="">Select team (optional)</option>
-            {teams.map((team) => (
+            {teams.map((team: Team) => (
               <option key={team.id} value={team.id}>
                 {team.name}
               </option>
@@ -171,7 +171,7 @@ export function ObjectiveForm({ objective, parentId, defaultLevel, onClose }: Ob
             Tags
           </label>
           <div className="flex flex-wrap gap-2">
-            {tags.map((tag) => (
+            {tags.map((tag: Tag) => (
               <button
                 key={tag.id}
                 type="button"

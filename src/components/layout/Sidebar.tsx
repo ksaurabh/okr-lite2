@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { Button } from '../common/Button';
 import { Modal } from '../common/Modal';
-import type { Period, PeriodType, Team } from '../../types';
+import type { Period, PeriodType, Team, Tag } from '../../types';
 
 type View = 'objectives' | 'teams' | 'periods' | 'tags' | 'admin';
 
@@ -22,7 +22,7 @@ interface TeamItemProps {
 function TeamItem({ team, teams, onAddChild, onDelete, depth = 0 }: TeamItemProps) {
   const [isExpanded, setIsExpanded] = useState(true);
 
-  const childTeams = teams.filter((t) => t.parentId === team.id);
+  const childTeams = teams.filter((t: Team) => t.parentId === team.id);
   const hasChildren = childTeams.length > 0;
 
   return (
@@ -73,7 +73,7 @@ function TeamItem({ team, teams, onAddChild, onDelete, depth = 0 }: TeamItemProp
       </div>
       {isExpanded && hasChildren && (
         <div>
-          {childTeams.map((child) => (
+          {childTeams.map((child: Team) => (
             <TeamItem
               key={child.id}
               team={child}
@@ -123,7 +123,7 @@ interface PeriodItemProps {
 function PeriodItem({ period, periods, onAddChild, onDelete, depth = 0 }: PeriodItemProps) {
   const [isExpanded, setIsExpanded] = useState(true);
 
-  const childPeriods = periods.filter((p) => p.parentId === period.id);
+  const childPeriods = periods.filter((p: Period) => p.parentId === period.id);
   const hasChildren = childPeriods.length > 0;
 
   const canAddChild = period.type === 'quarter' || period.type === 'month';
@@ -182,7 +182,7 @@ function PeriodItem({ period, periods, onAddChild, onDelete, depth = 0 }: Period
       </div>
       {isExpanded && hasChildren && (
         <div>
-          {childPeriods.map((child) => (
+          {childPeriods.map((child: Period) => (
             <PeriodItem
               key={child.id}
               period={child}
@@ -224,13 +224,13 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
 
   // Get root periods (quarters with no parent)
   const rootPeriods = useMemo(
-    () => periods.filter((p) => !p.parentId).sort((a, b) => a.startDate.localeCompare(b.startDate)),
+    () => periods.filter((p: Period) => !p.parentId).sort((a: Period, b: Period) => a.startDate.localeCompare(b.startDate)),
     [periods]
   );
 
   // Get root teams (teams with no parent)
   const rootTeams = useMemo(
-    () => teams.filter((t) => !t.parentId).sort((a, b) => a.name.localeCompare(b.name)),
+    () => teams.filter((t: Team) => !t.parentId).sort((a: Team, b: Team) => a.name.localeCompare(b.name)),
     [teams]
   );
 
@@ -251,7 +251,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
 
   const getParentTeamName = () => {
     if (!newTeamParentId) return null;
-    const parent = teams.find((t) => t.id === newTeamParentId);
+    const parent = teams.find((t: Team) => t.id === newTeamParentId);
     return parent?.name;
   };
 
@@ -293,7 +293,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
 
   const getParentPeriodName = () => {
     if (!newPeriodParentId) return null;
-    const parent = periods.find((p) => p.id === newPeriodParentId);
+    const parent = periods.find((p: Period) => p.id === newPeriodParentId);
     return parent?.name;
   };
 
@@ -340,7 +340,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
               </button>
             </div>
             <div className="space-y-0.5">
-              {rootTeams.map((team) => (
+              {rootTeams.map((team: Team) => (
                 <TeamItem
                   key={team.id}
                   team={team}
@@ -368,7 +368,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
               </button>
             </div>
             <div className="space-y-0.5">
-              {rootPeriods.map((period) => (
+              {rootPeriods.map((period: Period) => (
                 <PeriodItem
                   key={period.id}
                   period={period}
@@ -396,7 +396,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
               </button>
             </div>
             <ul className="space-y-1">
-              {tags.map((tag) => (
+              {tags.map((tag: Tag) => (
                 <li key={tag.id} className="flex items-center justify-between px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-200 rounded">
                   <div className="flex items-center gap-2">
                     <span className={`w-3 h-3 rounded-full ${tag.color}`}></span>

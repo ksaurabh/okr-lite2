@@ -62,12 +62,12 @@ export interface BackupData {
 export type OKRStore = OKRState & OKRActions;
 
 const recalculateAllProgress = (state: OKRState): OKRState => {
-  const updatedKeyResults = state.keyResults.map(kr => ({
+  const updatedKeyResults = state.keyResults.map((kr: KeyResult) => ({
     ...kr,
     progress: calculateKeyResultProgress(kr),
   }));
 
-  const updatedObjectives = state.objectives.map(obj => {
+  const updatedObjectives = state.objectives.map((obj: Objective) => {
     const progress = calculateObjectiveProgress(obj, updatedKeyResults, state.objectives);
     return {
       ...obj,
@@ -98,18 +98,18 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       updatedAt: now,
     };
 
-    set((state) => {
+    set((state: OKRStore) => {
       const newState = { ...state, objectives: [...state.objectives, newObjective] };
       storage.save(newState);
       return newState;
     });
   },
 
-  updateObjective: (id, updates) => {
-    set((state) => {
+  updateObjective: (id: string, updates: Partial<Objective>) => {
+    set((state: OKRStore) => {
       const newState = {
         ...state,
-        objectives: state.objectives.map((obj) =>
+        objectives: state.objectives.map((obj: Objective) =>
           obj.id === id ? { ...obj, ...updates, updatedAt: new Date().toISOString() } : obj
         ),
       };
@@ -119,20 +119,20 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     });
   },
 
-  deleteObjective: (id) => {
-    set((state) => {
+  deleteObjective: (id: string) => {
+    set((state: OKRStore) => {
       // Also delete child objectives and their key results
       const objectivesToDelete = new Set<string>();
       const findChildren = (parentId: string) => {
         objectivesToDelete.add(parentId);
-        state.objectives.filter(o => o.parentId === parentId).forEach(child => findChildren(child.id));
+        state.objectives.filter((o: Objective) => o.parentId === parentId).forEach((child: Objective) => findChildren(child.id));
       };
       findChildren(id);
 
       const newState = {
         ...state,
-        objectives: state.objectives.filter((obj) => !objectivesToDelete.has(obj.id)),
-        keyResults: state.keyResults.filter((kr) => !objectivesToDelete.has(kr.objectiveId)),
+        objectives: state.objectives.filter((obj: Objective) => !objectivesToDelete.has(obj.id)),
+        keyResults: state.keyResults.filter((kr: KeyResult) => !objectivesToDelete.has(kr.objectiveId)),
       };
       const recalculated = recalculateAllProgress(newState);
       storage.save(recalculated);
@@ -154,7 +154,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       updatedAt: now,
     };
 
-    set((state) => {
+    set((state: OKRStore) => {
       const newState = { ...state, keyResults: [...state.keyResults, newKeyResult] };
       const recalculated = recalculateAllProgress(newState);
       storage.save(recalculated);
@@ -162,11 +162,11 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     });
   },
 
-  updateKeyResult: (id, updates) => {
-    set((state) => {
+  updateKeyResult: (id: string, updates: Partial<KeyResult>) => {
+    set((state: OKRStore) => {
       const newState = {
         ...state,
-        keyResults: state.keyResults.map((kr) =>
+        keyResults: state.keyResults.map((kr: KeyResult) =>
           kr.id === id ? { ...kr, ...updates, updatedAt: new Date().toISOString() } : kr
         ),
       };
@@ -176,11 +176,11 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     });
   },
 
-  deleteKeyResult: (id) => {
-    set((state) => {
+  deleteKeyResult: (id: string) => {
+    set((state: OKRStore) => {
       const newState = {
         ...state,
-        keyResults: state.keyResults.filter((kr) => kr.id !== id),
+        keyResults: state.keyResults.filter((kr: KeyResult) => kr.id !== id),
       };
       const recalculated = recalculateAllProgress(newState);
       storage.save(recalculated);
@@ -188,62 +188,62 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     });
   },
 
-  addTeam: (team) => {
+  addTeam: (team: Omit<Team, 'id'>) => {
     const newTeam: Team = { ...team, id: generateId() };
-    set((state) => {
+    set((state: OKRStore) => {
       const newState = { ...state, teams: [...state.teams, newTeam] };
       storage.save(newState);
       return newState;
     });
   },
 
-  updateTeam: (id, updates) => {
-    set((state) => {
+  updateTeam: (id: string, updates: Partial<Team>) => {
+    set((state: OKRStore) => {
       const newState = {
         ...state,
-        teams: state.teams.map((team) => (team.id === id ? { ...team, ...updates } : team)),
+        teams: state.teams.map((team: Team) => (team.id === id ? { ...team, ...updates } : team)),
       };
       storage.save(newState);
       return newState;
     });
   },
 
-  deleteTeam: (id) => {
-    set((state) => {
+  deleteTeam: (id: string) => {
+    set((state: OKRStore) => {
       const newState = {
         ...state,
-        teams: state.teams.filter((team) => team.id !== id),
+        teams: state.teams.filter((team: Team) => team.id !== id),
       };
       storage.save(newState);
       return newState;
     });
   },
 
-  addPeriod: (period) => {
+  addPeriod: (period: Omit<Period, 'id'>) => {
     const newPeriod: Period = { ...period, id: generateId() };
-    set((state) => {
+    set((state: OKRStore) => {
       const newState = { ...state, periods: [...state.periods, newPeriod] };
       storage.save(newState);
       return newState;
     });
   },
 
-  updatePeriod: (id, updates) => {
-    set((state) => {
+  updatePeriod: (id: string, updates: Partial<Period>) => {
+    set((state: OKRStore) => {
       const newState = {
         ...state,
-        periods: state.periods.map((period) => (period.id === id ? { ...period, ...updates } : period)),
+        periods: state.periods.map((period: Period) => (period.id === id ? { ...period, ...updates } : period)),
       };
       storage.save(newState);
       return newState;
     });
   },
 
-  deletePeriod: (id) => {
-    set((state) => {
+  deletePeriod: (id: string) => {
+    set((state: OKRStore) => {
       const newState = {
         ...state,
-        periods: state.periods.filter((period) => period.id !== id),
+        periods: state.periods.filter((period: Period) => period.id !== id),
         activePeriodId: state.activePeriodId === id ? null : state.activePeriodId,
       };
       storage.save(newState);
@@ -251,64 +251,64 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     });
   },
 
-  setActivePeriod: (id) => {
-    set((state) => {
+  setActivePeriod: (id: string | null) => {
+    set((state: OKRStore) => {
       const newState = { ...state, activePeriodId: id };
       storage.save(newState);
       return newState;
     });
   },
 
-  addTag: (tag) => {
+  addTag: (tag: Omit<Tag, 'id'>) => {
     const newTag: Tag = { ...tag, id: generateId() };
-    set((state) => {
+    set((state: OKRStore) => {
       const newState = { ...state, tags: [...state.tags, newTag] };
       storage.save(newState);
       return newState;
     });
   },
 
-  updateTag: (id, updates) => {
-    set((state) => {
+  updateTag: (id: string, updates: Partial<Tag>) => {
+    set((state: OKRStore) => {
       const newState = {
         ...state,
-        tags: state.tags.map((tag) => (tag.id === id ? { ...tag, ...updates } : tag)),
+        tags: state.tags.map((tag: Tag) => (tag.id === id ? { ...tag, ...updates } : tag)),
       };
       storage.save(newState);
       return newState;
     });
   },
 
-  deleteTag: (id) => {
-    set((state) => {
+  deleteTag: (id: string) => {
+    set((state: OKRStore) => {
       // Remove tag from all objectives that have it
-      const updatedObjectives = state.objectives.map((obj) => ({
+      const updatedObjectives = state.objectives.map((obj: Objective) => ({
         ...obj,
-        tagIds: obj.tagIds?.filter((tagId) => tagId !== id),
+        tagIds: obj.tagIds?.filter((tagId: string) => tagId !== id),
       }));
       const newState = {
         ...state,
-        tags: state.tags.filter((tag) => tag.id !== id),
+        tags: state.tags.filter((tag: Tag) => tag.id !== id),
         objectives: updatedObjectives,
-        filterTagIds: state.filterTagIds.filter((tagId) => tagId !== id),
+        filterTagIds: state.filterTagIds.filter((tagId: string) => tagId !== id),
       };
       storage.save(newState);
       return newState;
     });
   },
 
-  setFilterTags: (tagIds) => {
-    set((state) => {
+  setFilterTags: (tagIds: string[]) => {
+    set((state: OKRStore) => {
       const newState = { ...state, filterTagIds: tagIds };
       storage.save(newState);
       return newState;
     });
   },
 
-  toggleFilterTag: (tagId) => {
-    set((state) => {
+  toggleFilterTag: (tagId: string) => {
+    set((state: OKRStore) => {
       const filterTagIds = state.filterTagIds.includes(tagId)
-        ? state.filterTagIds.filter((id) => id !== tagId)
+        ? state.filterTagIds.filter((id: string) => id !== tagId)
         : [...state.filterTagIds, tagId];
       const newState = { ...state, filterTagIds };
       storage.save(newState);
@@ -316,18 +316,18 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     });
   },
 
-  setFilterTeams: (teamIds) => {
-    set((state) => {
+  setFilterTeams: (teamIds: string[]) => {
+    set((state: OKRStore) => {
       const newState = { ...state, filterTeamIds: teamIds };
       storage.save(newState);
       return newState;
     });
   },
 
-  toggleFilterTeam: (teamId) => {
-    set((state) => {
+  toggleFilterTeam: (teamId: string) => {
+    set((state: OKRStore) => {
       const filterTeamIds = state.filterTeamIds.includes(teamId)
-        ? state.filterTeamIds.filter((id) => id !== teamId)
+        ? state.filterTeamIds.filter((id: string) => id !== teamId)
         : [...state.filterTeamIds, teamId];
       const newState = { ...state, filterTeamIds };
       storage.save(newState);
@@ -336,7 +336,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
   },
 
   clearAllFilters: () => {
-    set((state) => {
+    set((state: OKRStore) => {
       const newState = {
         ...state,
         activePeriodId: null,
@@ -349,15 +349,15 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
   },
 
   recalculateProgress: () => {
-    set((state) => {
+    set((state: OKRStore) => {
       const recalculated = recalculateAllProgress(state);
       storage.save(recalculated);
       return recalculated;
     });
   },
 
-  addAllowedDomain: (domain) => {
-    set((state) => {
+  addAllowedDomain: (domain: string) => {
+    set((state: OKRStore) => {
       // Normalize domain (lowercase, trim)
       const normalizedDomain = domain.toLowerCase().trim();
       if (!normalizedDomain || state.allowedDomains.includes(normalizedDomain)) {
@@ -372,11 +372,11 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     });
   },
 
-  deleteAllowedDomain: (domain) => {
-    set((state) => {
+  deleteAllowedDomain: (domain: string) => {
+    set((state: OKRStore) => {
       const newState = {
         ...state,
-        allowedDomains: state.allowedDomains.filter((d) => d !== domain),
+        allowedDomains: state.allowedDomains.filter((d: string) => d !== domain),
       };
       storage.save(newState);
       return newState;
@@ -396,8 +396,8 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     };
   },
 
-  importData: (data) => {
-    set((state) => {
+  importData: (data: BackupData) => {
+    set((state: OKRStore) => {
       const newState = {
         ...state,
         objectives: data.objectives || [],

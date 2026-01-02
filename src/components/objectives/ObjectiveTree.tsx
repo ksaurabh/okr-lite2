@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { ObjectiveCard } from './ObjectiveCard';
-import type { Period, PeriodType } from '../../types';
+import type { Period, PeriodType, Objective, Team, Tag } from '../../types';
 
 const PERIOD_TYPE_BADGES: Record<PeriodType, { label: string; color: string }> = {
   quarter: { label: 'Q', color: 'bg-purple-100 text-purple-700' },
@@ -18,7 +18,7 @@ interface PeriodFilterButtonProps {
 }
 
 function PeriodFilterButton({ period, periods, activePeriodId, onSelect, depth }: PeriodFilterButtonProps) {
-  const childPeriods = periods.filter((p) => p.parentId === period.id);
+  const childPeriods = periods.filter((p: Period) => p.parentId === period.id);
   const isActive = activePeriodId === period.id;
   // Fallback for periods created before type was added
   const periodType = period.type || 'quarter';
@@ -40,7 +40,7 @@ function PeriodFilterButton({ period, periods, activePeriodId, onSelect, depth }
         </span>
         {period.name}
       </button>
-      {childPeriods.map((child) => (
+      {childPeriods.map((child: Period) => (
         <PeriodFilterButton
           key={child.id}
           period={child}
@@ -78,10 +78,10 @@ export function ObjectiveTree() {
   const getAncestorPeriodIds = useMemo(() => {
     return (periodId: string): string[] => {
       const ids: string[] = [periodId];
-      let current = periods.find((p) => p.id === periodId);
+      let current = periods.find((p: Period) => p.id === periodId);
       while (current?.parentId) {
         ids.push(current.parentId);
-        current = periods.find((p) => p.id === current!.parentId);
+        current = periods.find((p: Period) => p.id === current!.parentId);
       }
       return ids;
     };
@@ -89,7 +89,7 @@ export function ObjectiveTree() {
 
   // Get root periods (no parent) for hierarchical display
   const rootPeriods = useMemo(() => {
-    return periods.filter((p) => !p.parentId);
+    return periods.filter((p: Period) => !p.parentId);
   }, [periods]);
 
   // Apply all filters
@@ -100,21 +100,21 @@ export function ObjectiveTree() {
     if (activePeriodId) {
       if (includeAncestorPeriods) {
         const validPeriodIds = getAncestorPeriodIds(activePeriodId);
-        result = result.filter((obj) => validPeriodIds.includes(obj.periodId));
+        result = result.filter((obj: Objective) => validPeriodIds.includes(obj.periodId));
       } else {
-        result = result.filter((obj) => obj.periodId === activePeriodId);
+        result = result.filter((obj: Objective) => obj.periodId === activePeriodId);
       }
     }
 
     // Filter by teams
     if (filterTeamIds.length > 0) {
-      result = result.filter((obj) => obj.teamId && filterTeamIds.includes(obj.teamId));
+      result = result.filter((obj: Objective) => obj.teamId && filterTeamIds.includes(obj.teamId));
     }
 
     // Filter by tags
     if (filterTagIds.length > 0) {
-      result = result.filter((obj) =>
-        obj.tagIds?.some((tagId) => filterTagIds.includes(tagId))
+      result = result.filter((obj: Objective) =>
+        obj.tagIds?.some((tagId: string) => filterTagIds.includes(tagId))
       );
     }
 
@@ -122,12 +122,12 @@ export function ObjectiveTree() {
   }, [objectives, activePeriodId, filterTeamIds, filterTagIds, includeAncestorPeriods, getAncestorPeriodIds]);
 
   // Get root objectives (no parent)
-  const rootObjectives = filteredObjectives.filter((obj) => !obj.parentId);
+  const rootObjectives = filteredObjectives.filter((obj: Objective) => !obj.parentId);
 
   // Group by level
-  const companyObjectives = rootObjectives.filter((obj) => obj.level === 'company');
-  const teamObjectives = rootObjectives.filter((obj) => obj.level === 'team');
-  const individualObjectives = rootObjectives.filter((obj) => obj.level === 'individual');
+  const companyObjectives = rootObjectives.filter((obj: Objective) => obj.level === 'company');
+  const teamObjectives = rootObjectives.filter((obj: Objective) => obj.level === 'team');
+  const individualObjectives = rootObjectives.filter((obj: Objective) => obj.level === 'individual');
 
   if (periods.length === 0) {
     return (
@@ -211,7 +211,7 @@ export function ObjectiveTree() {
                 >
                   All Periods
                 </button>
-                {rootPeriods.map((period) => (
+                {rootPeriods.map((period: Period) => (
                   <PeriodFilterButton
                     key={period.id}
                     period={period}
@@ -229,7 +229,7 @@ export function ObjectiveTree() {
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-2">Team</label>
                 <div className="flex flex-wrap gap-2">
-                  {teams.map((team) => (
+                  {teams.map((team: Team) => (
                     <button
                       key={team.id}
                       onClick={() => toggleFilterTeam(team.id)}
@@ -251,7 +251,7 @@ export function ObjectiveTree() {
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-2">Tags</label>
                 <div className="flex flex-wrap gap-2">
-                  {tags.map((tag) => (
+                  {tags.map((tag: Tag) => (
                     <button
                       key={tag.id}
                       onClick={() => toggleFilterTag(tag.id)}
@@ -331,7 +331,7 @@ export function ObjectiveTree() {
                 Company Objectives
               </h2>
               <div className="space-y-3">
-                {companyObjectives.map((obj) => (
+                {companyObjectives.map((obj: Objective) => (
                   <ObjectiveCard key={obj.id} objective={obj} />
                 ))}
               </div>
@@ -345,7 +345,7 @@ export function ObjectiveTree() {
                 Team Objectives
               </h2>
               <div className="space-y-3">
-                {teamObjectives.map((obj) => (
+                {teamObjectives.map((obj: Objective) => (
                   <ObjectiveCard key={obj.id} objective={obj} />
                 ))}
               </div>
@@ -359,7 +359,7 @@ export function ObjectiveTree() {
                 Individual Objectives
               </h2>
               <div className="space-y-3">
-                {individualObjectives.map((obj) => (
+                {individualObjectives.map((obj: Objective) => (
                   <ObjectiveCard key={obj.id} objective={obj} />
                 ))}
               </div>
@@ -375,7 +375,7 @@ export function ObjectiveTree() {
             All Objectives ({filteredObjectives.length})
           </h2>
           <div className="space-y-3">
-            {filteredObjectives.map((obj) => (
+            {filteredObjectives.map((obj: Objective) => (
               <ObjectiveCard key={obj.id} objective={obj} showChildren={false} />
             ))}
           </div>
