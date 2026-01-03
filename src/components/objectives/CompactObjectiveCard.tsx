@@ -49,6 +49,8 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
   const periodSelectRef = useRef<HTMLSelectElement>(null);
   const parentSearchRef = useRef<HTMLInputElement>(null);
   const parentDropdownRef = useRef<HTMLDivElement>(null);
+  const parentButtonRef = useRef<HTMLButtonElement>(null);
+  const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number } | null>(null);
 
   const allObjectives = useOKRStore((state: OKRStore) => state.objectives);
   const periods = useOKRStore((state: OKRStore) => state.periods);
@@ -194,8 +196,18 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
   }, [editingPeriod]);
 
   useEffect(() => {
-    if (editingParent && parentSearchRef.current) {
-      parentSearchRef.current.focus();
+    if (editingParent) {
+      // Calculate dropdown position based on button location
+      if (parentButtonRef.current) {
+        const rect = parentButtonRef.current.getBoundingClientRect();
+        setDropdownPosition({ top: rect.bottom + 2, left: rect.left });
+      }
+      // Focus the search input after a brief delay to allow positioning
+      setTimeout(() => {
+        parentSearchRef.current?.focus();
+      }, 0);
+    } else {
+      setDropdownPosition(null);
     }
   }, [editingParent]);
 
@@ -364,9 +376,21 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
         </div>
 
         {/* Parent column - editable with search */}
-        <div className="px-1 py-1 flex-shrink-0 relative" style={{ width: columnWidths.parent }}>
-          {editingParent ? (
-            <div ref={parentDropdownRef} className="absolute top-0 left-0 z-50 w-64 bg-white border border-gray-300 rounded shadow-lg">
+        <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.parent }}>
+          <button
+            ref={parentButtonRef}
+            onClick={() => canModify && setEditingParent(true)}
+            className={`w-full text-left text-xs px-1 py-0.5 rounded truncate ${canModify ? 'hover:bg-gray-100 cursor-pointer' : 'cursor-default'} ${parentObjective ? 'text-gray-600' : 'text-gray-300'}`}
+            disabled={!canModify}
+          >
+            {parentObjective?.title || '—'}
+          </button>
+          {editingParent && dropdownPosition && (
+            <div
+              ref={parentDropdownRef}
+              className="fixed z-[100] w-72 bg-white border border-gray-300 rounded shadow-lg"
+              style={{ top: dropdownPosition.top, left: dropdownPosition.left }}
+            >
               <div className="p-1 border-b border-gray-200">
                 <input
                   ref={parentSearchRef}
@@ -383,7 +407,7 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
                   }}
                 />
               </div>
-              <div className="max-h-48 overflow-y-auto">
+              <div className="max-h-80 overflow-y-auto">
                 <button
                   onClick={() => handleParentChange('')}
                   className={`w-full text-left text-xs px-2 py-1.5 hover:bg-gray-100 ${!objective.parentId ? 'bg-blue-50 text-blue-700' : 'text-gray-600'}`}
@@ -405,14 +429,6 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
                 )}
               </div>
             </div>
-          ) : (
-            <button
-              onClick={() => canModify && setEditingParent(true)}
-              className={`w-full text-left text-xs px-1 py-0.5 rounded truncate ${canModify ? 'hover:bg-gray-100 cursor-pointer' : 'cursor-default'} ${parentObjective ? 'text-gray-600' : 'text-gray-300'}`}
-              disabled={!canModify}
-            >
-              {parentObjective?.title || '—'}
-            </button>
           )}
         </div>
 
