@@ -279,13 +279,26 @@ export function ObjectiveTree() {
       }
     }
 
-    // Optionally include direct children of matching objectives
+    // Optionally include all descendants of matching objectives
     if (showDirectChildren && result.length > 0) {
       const matchingIds = new Set(result.map((obj: Objective) => obj.id));
-      const directChildren = orgObjectives.filter((obj: Objective) =>
-        obj.parentId && matchingIds.has(obj.parentId) && !matchingIds.has(obj.id)
-      );
-      result = [...result, ...directChildren];
+      const descendants: Objective[] = [];
+      const findDescendants = (parentIds: Set<string>) => {
+        const children = orgObjectives.filter((obj: Objective) =>
+          obj.parentId && parentIds.has(obj.parentId) && !matchingIds.has(obj.id)
+        );
+        if (children.length > 0) {
+          children.forEach((child: Objective) => {
+            if (!matchingIds.has(child.id)) {
+              descendants.push(child);
+              matchingIds.add(child.id);
+            }
+          });
+          findDescendants(new Set(children.map((c: Objective) => c.id)));
+        }
+      };
+      findDescendants(matchingIds);
+      result = [...result, ...descendants];
     }
 
     return result;
@@ -558,7 +571,7 @@ export function ObjectiveTree() {
                     onChange={(e) => setShowDirectChildren(e.target.checked)}
                     className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                   />
-                  Show direct children of matching objectives
+                  Show children of matching objectives
                 </label>
               </div>
             )}
