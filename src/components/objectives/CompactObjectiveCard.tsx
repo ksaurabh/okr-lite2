@@ -72,9 +72,9 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
     [allObjectives, objective.id, filteredObjectiveIds]
   );
 
-  const assignee = useMemo(
-    () => orgUsers.find((u: User) => u.id === objective.assigneeId),
-    [orgUsers, objective.assigneeId]
+  const owner = useMemo(
+    () => orgUsers.find((u: User) => u.id === objective.ownerId),
+    [orgUsers, objective.ownerId]
   );
 
   const period = useMemo(
@@ -134,52 +134,65 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
   };
 
   return (
-    <div style={{ marginLeft: depth * 16 }}>
-      {/* Main compact row */}
-      <div className="group flex items-center gap-2 py-1.5 px-2 hover:bg-gray-50 rounded-md">
-        {/* Expand/collapse chevron */}
-        <button
-          onClick={() => setIsExpanded(!isExpanded)}
-          className={`w-4 h-4 flex items-center justify-center text-gray-400 hover:text-gray-600 ${!hasChildren ? 'invisible' : ''}`}
-        >
-          <svg
-            className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
+    <div>
+      {/* Main tree table row */}
+      <div className="group flex items-center hover:bg-gray-50 border-b border-gray-100">
+        {/* Tree column - flexible width */}
+        <div className="flex-1 flex items-center gap-1 py-1.5 px-2 min-w-0" style={{ paddingLeft: depth * 20 + 8 }}>
+          {/* Expand/collapse chevron */}
+          <button
+            onClick={() => setIsExpanded(!isExpanded)}
+            className={`w-4 h-4 flex items-center justify-center text-gray-400 hover:text-gray-600 flex-shrink-0 ${!hasChildren ? 'invisible' : ''}`}
           >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-        </button>
+            <svg
+              className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
 
-        {/* Level badge */}
-        <span className={`w-5 h-5 rounded flex items-center justify-center text-xs font-bold flex-shrink-0 ${badge.bgColor} ${badge.textColor}`}>
-          {badge.label}
-        </span>
-
-        {/* Title */}
-        <span className="flex-1 text-sm text-gray-900 truncate min-w-0">{objective.title}</span>
-
-        {/* Assignee */}
-        {assignee && (
-          <span className="flex items-center gap-1 text-xs text-gray-500 flex-shrink-0">
-            <span className="w-4 h-4 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-[10px] font-bold">A</span>
-            <span className="max-w-[80px] truncate">{assignee.name}</span>
+          {/* Level badge */}
+          <span className={`w-5 h-5 rounded flex items-center justify-center text-xs font-bold flex-shrink-0 ${badge.bgColor} ${badge.textColor}`}>
+            {badge.label}
           </span>
-        )}
 
-        {/* Period */}
-        {period && (
-          <span className="text-xs text-gray-500 bg-blue-50 px-1.5 py-0.5 rounded flex-shrink-0 max-w-[80px] truncate">
-            {period.name}
-          </span>
-        )}
+          {/* Title */}
+          <span className="text-sm text-gray-900 truncate">{objective.title}</span>
 
-        {/* Progress percentage */}
-        <span className="text-xs text-gray-500 font-medium w-10 text-right flex-shrink-0">{objective.progress}%</span>
+          {/* Quick add button - inline with title */}
+          {canAddChild && (
+            <button
+              onClick={() => setShowQuickAdd(!showQuickAdd)}
+              className={`p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 ${showQuickAdd ? 'text-blue-600 bg-blue-50 opacity-100' : 'text-gray-400 hover:text-blue-600'}`}
+              title="Add child objective"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+            </button>
+          )}
+        </div>
 
-        {/* Action buttons - visible on hover */}
-        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        {/* Owner column - fixed width */}
+        <div className="w-32 px-2 py-1.5 text-xs text-gray-600 truncate flex-shrink-0">
+          {owner?.name || <span className="text-gray-300">—</span>}
+        </div>
+
+        {/* Period column - fixed width */}
+        <div className="w-28 px-2 py-1.5 text-xs text-gray-600 truncate flex-shrink-0">
+          {period?.name || <span className="text-gray-300">—</span>}
+        </div>
+
+        {/* Progress column - fixed width */}
+        <div className="w-14 px-2 py-1.5 text-xs text-gray-500 font-medium text-right flex-shrink-0">
+          {objective.progress}%
+        </div>
+
+        {/* Actions column - fixed width */}
+        <div className="w-16 px-2 py-1.5 flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
           {canModify && (
             <>
               <button
@@ -202,43 +215,38 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
               </button>
             </>
           )}
-          {canAddChild && (
-            <button
-              onClick={() => setShowQuickAdd(!showQuickAdd)}
-              className={`p-1 rounded ${showQuickAdd ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:text-blue-600'}`}
-              title="Add child objective"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
-            </button>
-          )}
         </div>
       </div>
 
-      {/* Quick add input */}
+      {/* Quick add input row */}
       {showQuickAdd && (
-        <div style={{ marginLeft: (depth + 1) * 16 }} className="flex items-center gap-2 py-1 px-2">
-          <span className="w-4 h-4" /> {/* Spacer for chevron alignment */}
-          <span className={`w-5 h-5 rounded flex items-center justify-center text-xs font-bold opacity-50 ${levelBadges[getChildLevel(objective.level)].bgColor} ${levelBadges[getChildLevel(objective.level)].textColor}`}>
-            {levelBadges[getChildLevel(objective.level)].label}
-          </span>
-          <input
-            ref={quickAddInputRef}
-            type="text"
-            value={quickAddTitle}
-            onChange={(e) => setQuickAddTitle(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Add child objective... (Enter to save, Esc to cancel)"
-            className="flex-1 text-sm px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-            disabled={isAdding}
-          />
+        <div className="flex items-center border-b border-gray-100 bg-blue-50/30">
+          <div className="flex-1 flex items-center gap-1 py-1 px-2 min-w-0" style={{ paddingLeft: (depth + 1) * 20 + 8 }}>
+            <span className="w-4 h-4 flex-shrink-0" /> {/* Spacer for chevron */}
+            <span className={`w-5 h-5 rounded flex items-center justify-center text-xs font-bold opacity-50 flex-shrink-0 ${levelBadges[getChildLevel(objective.level)].bgColor} ${levelBadges[getChildLevel(objective.level)].textColor}`}>
+              {levelBadges[getChildLevel(objective.level)].label}
+            </span>
+            <input
+              ref={quickAddInputRef}
+              type="text"
+              value={quickAddTitle}
+              onChange={(e) => setQuickAddTitle(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Add child... (Enter to save, Esc to cancel)"
+              className="flex-1 text-sm px-2 py-0.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white"
+              disabled={isAdding}
+            />
+          </div>
+          <div className="w-32 px-2" />
+          <div className="w-28 px-2" />
+          <div className="w-14 px-2" />
+          <div className="w-16 px-2" />
         </div>
       )}
 
       {/* Child objectives */}
       {isExpanded && hasChildren && (
-        <div className="border-l border-gray-200" style={{ marginLeft: depth * 16 + 8 }}>
+        <>
           {childObjectives.map((child: Objective) => (
             <CompactObjectiveCard
               key={child.id}
@@ -247,7 +255,7 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
               filteredObjectiveIds={filteredObjectiveIds}
             />
           ))}
-        </div>
+        </>
       )}
 
       {/* Edit slide pane */}

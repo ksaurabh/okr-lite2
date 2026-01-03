@@ -632,42 +632,30 @@ export function ObjectiveTree() {
         </section>
       )}
 
-      {/* Compact View - Single-line objectives with quick-add */}
+      {/* Compact View - Tree table with columns */}
       {viewMode === 'compact' && filteredObjectives.length > 0 && (
-        <section className="bg-white rounded-lg shadow-sm border border-gray-200 p-2">
-          {companyObjectives.length > 0 && (
-            <div className="mb-2">
-              <div className="text-xs font-medium text-gray-500 px-2 py-1 flex items-center gap-1.5">
-                <span className="w-2 h-2 bg-purple-500 rounded-full"></span>
-                Company
-              </div>
-              {companyObjectives.map((obj: Objective) => (
-                <CompactObjectiveCard key={obj.id} objective={obj} filteredObjectiveIds={filteredObjectiveIds} />
-              ))}
-            </div>
-          )}
-          {teamObjectives.length > 0 && (
-            <div className="mb-2">
-              <div className="text-xs font-medium text-gray-500 px-2 py-1 flex items-center gap-1.5">
-                <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
-                Team
-              </div>
-              {teamObjectives.map((obj: Objective) => (
-                <CompactObjectiveCard key={obj.id} objective={obj} filteredObjectiveIds={filteredObjectiveIds} />
-              ))}
-            </div>
-          )}
-          {individualObjectives.length > 0 && (
-            <div>
-              <div className="text-xs font-medium text-gray-500 px-2 py-1 flex items-center gap-1.5">
-                <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                Individual
-              </div>
-              {individualObjectives.map((obj: Objective) => (
-                <CompactObjectiveCard key={obj.id} objective={obj} filteredObjectiveIds={filteredObjectiveIds} />
-              ))}
-            </div>
-          )}
+        <section className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+          {/* Table header */}
+          <div className="flex items-center bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <div className="flex-1 px-2 py-2">Objective</div>
+            <div className="w-32 px-2 py-2">Owner</div>
+            <div className="w-28 px-2 py-2">Period</div>
+            <div className="w-14 px-2 py-2 text-right">Progress</div>
+            <div className="w-16 px-2 py-2"></div>
+          </div>
+
+          {/* Table body */}
+          <div>
+            {companyObjectives.map((obj: Objective) => (
+              <CompactObjectiveCard key={obj.id} objective={obj} filteredObjectiveIds={filteredObjectiveIds} />
+            ))}
+            {teamObjectives.map((obj: Objective) => (
+              <CompactObjectiveCard key={obj.id} objective={obj} filteredObjectiveIds={filteredObjectiveIds} />
+            ))}
+            {individualObjectives.map((obj: Objective) => (
+              <CompactObjectiveCard key={obj.id} objective={obj} filteredObjectiveIds={filteredObjectiveIds} />
+            ))}
+          </div>
         </section>
       )}
     </div>
