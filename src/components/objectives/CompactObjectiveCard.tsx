@@ -37,11 +37,13 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
   const [editingLevel, setEditingLevel] = useState(false);
   const [editingTeam, setEditingTeam] = useState(false);
   const [editingOwner, setEditingOwner] = useState(false);
+  const [editingAssignee, setEditingAssignee] = useState(false);
   const [editingPeriod, setEditingPeriod] = useState(false);
   const quickAddInputRef = useRef<HTMLInputElement>(null);
   const levelSelectRef = useRef<HTMLSelectElement>(null);
   const teamSelectRef = useRef<HTMLSelectElement>(null);
   const ownerSelectRef = useRef<HTMLSelectElement>(null);
+  const assigneeSelectRef = useRef<HTMLSelectElement>(null);
   const periodSelectRef = useRef<HTMLSelectElement>(null);
 
   const allObjectives = useOKRStore((state: OKRStore) => state.objectives);
@@ -85,6 +87,11 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
   const owner = useMemo(
     () => orgUsers.find((u: User) => u.id === objective.ownerId),
     [orgUsers, objective.ownerId]
+  );
+
+  const assignee = useMemo(
+    () => orgUsers.find((u: User) => u.id === objective.assigneeId),
+    [orgUsers, objective.assigneeId]
   );
 
   const team = useMemo(
@@ -132,6 +139,12 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
   }, [editingOwner]);
 
   useEffect(() => {
+    if (editingAssignee && assigneeSelectRef.current) {
+      assigneeSelectRef.current.focus();
+    }
+  }, [editingAssignee]);
+
+  useEffect(() => {
     if (editingPeriod && periodSelectRef.current) {
       periodSelectRef.current.focus();
     }
@@ -155,6 +168,13 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
     setEditingOwner(false);
     if (newOwnerId !== (objective.ownerId || '')) {
       await updateObjective(objective.id, { ownerId: newOwnerId || undefined }, userEmail);
+    }
+  };
+
+  const handleAssigneeChange = async (newAssigneeId: string) => {
+    setEditingAssignee(false);
+    if (newAssigneeId !== (objective.assigneeId || '')) {
+      await updateObjective(objective.id, { assigneeId: newAssigneeId || undefined }, userEmail);
     }
   };
 
@@ -298,7 +318,7 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
         </div>
 
         {/* Owner column - fixed width, editable */}
-        <div className="w-32 px-1 py-1 flex-shrink-0">
+        <div className="w-28 px-1 py-1 flex-shrink-0">
           {editingOwner ? (
             <select
               ref={ownerSelectRef}
@@ -319,6 +339,32 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
               disabled={!canModify}
             >
               {owner?.name || '—'}
+            </button>
+          )}
+        </div>
+
+        {/* Assignee column - fixed width, editable */}
+        <div className="w-28 px-1 py-1 flex-shrink-0">
+          {editingAssignee ? (
+            <select
+              ref={assigneeSelectRef}
+              value={objective.assigneeId || ''}
+              onChange={(e) => handleAssigneeChange(e.target.value)}
+              onBlur={() => setEditingAssignee(false)}
+              className="w-full text-xs px-1 py-0.5 border border-blue-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="">Unassigned</option>
+              {orgUsers.map((u: User) => (
+                <option key={u.id} value={u.id}>{u.name}</option>
+              ))}
+            </select>
+          ) : (
+            <button
+              onClick={() => canModify && setEditingAssignee(true)}
+              className={`w-full text-left text-xs px-1 py-0.5 rounded truncate ${canModify ? 'hover:bg-gray-100 cursor-pointer' : 'cursor-default'} ${assignee ? 'text-gray-600' : 'text-gray-300'}`}
+              disabled={!canModify}
+            >
+              {assignee?.name || '—'}
             </button>
           )}
         </div>
@@ -398,7 +444,8 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
           </div>
           <div className="w-24 px-1" />
           <div className="w-28 px-1" />
-          <div className="w-32 px-1" />
+          <div className="w-28 px-1" />
+          <div className="w-28 px-1" />
           <div className="w-28 px-1" />
           <div className="w-14 px-2" />
           <div className="w-16 px-2" />

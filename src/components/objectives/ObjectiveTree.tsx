@@ -640,7 +640,8 @@ export function ObjectiveTree() {
             <div className="flex-1 px-2 py-2">Objective</div>
             <div className="w-24 px-1 py-2">Level</div>
             <div className="w-28 px-1 py-2">Team</div>
-            <div className="w-32 px-1 py-2">Owner</div>
+            <div className="w-28 px-1 py-2">Owner</div>
+            <div className="w-28 px-1 py-2">Assignee</div>
             <div className="w-28 px-1 py-2">Period</div>
             <div className="w-14 px-2 py-2 text-right">Progress</div>
             <div className="w-16 px-2 py-2"></div>
