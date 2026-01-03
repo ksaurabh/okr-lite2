@@ -50,14 +50,14 @@ function PeriodFilterButton({ period, periods, activePeriodId, onSelect, depth }
     <>
       <button
         onClick={() => onSelect(isActive ? null : period.id)}
-        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm transition-colors ${
+        className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs transition-colors ${
           isActive
             ? 'bg-gray-800 text-white'
             : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
         }`}
-        style={{ marginLeft: depth > 0 ? `${depth * 8}px` : undefined }}
+        style={{ marginLeft: depth > 0 ? `${depth * 6}px` : undefined }}
       >
-        <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${isActive ? 'bg-gray-600' : badge.color}`}>
+        <span className={`text-xs font-medium px-1 rounded ${isActive ? 'bg-gray-600' : badge.color}`}>
           {badge.label}
         </span>
         {period.name}
@@ -454,222 +454,224 @@ export function ObjectiveTree() {
         </div>
 
         {isFilterExpanded && (
-          <div className="px-4 pb-4 space-y-4 border-t border-gray-100 pt-4">
-            {/* Period Filter */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="block text-xs font-medium text-gray-500">Time Period</label>
-                {activePeriodId && (
-                  <div className="flex items-center gap-4">
-                    <label className="inline-flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={includeAncestorPeriods}
-                        onChange={(e) => setIncludeAncestorPeriods(e.target.checked)}
-                        className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          <div className="px-4 pb-4 border-t border-gray-100 pt-4">
+            <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+              {/* Period Filter */}
+              <div className="flex items-start gap-3">
+                <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Period</label>
+                <div className="flex-1">
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      onClick={() => setActivePeriod(null)}
+                      className={`px-2 py-1 rounded-full text-xs transition-colors ${
+                        !activePeriodId
+                          ? 'bg-gray-800 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      All
+                    </button>
+                    {rootPeriods.map((period: Period) => (
+                      <PeriodFilterButton
+                        key={period.id}
+                        period={period}
+                        periods={orgPeriods}
+                        activePeriodId={activePeriodId}
+                        onSelect={setActivePeriod}
+                        depth={0}
                       />
-                      Include parent periods
-                    </label>
-                    <label className="inline-flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={includeChildPeriods}
-                        onChange={(e) => setIncludeChildPeriods(e.target.checked)}
-                        className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      Include child periods
-                    </label>
+                    ))}
                   </div>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => setActivePeriod(null)}
-                  className={`px-3 py-1.5 rounded-full text-sm transition-colors ${
-                    !activePeriodId
-                      ? 'bg-gray-800 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  All Periods
-                </button>
-                {rootPeriods.map((period: Period) => (
-                  <PeriodFilterButton
-                    key={period.id}
-                    period={period}
-                    periods={orgPeriods}
-                    activePeriodId={activePeriodId}
-                    onSelect={setActivePeriod}
-                    depth={0}
-                  />
-                ))}
-              </div>
-            </div>
-
-            {/* Team Filter */}
-            {orgTeams.length > 0 && (
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-xs font-medium text-gray-500">Team</label>
-                  {filterTeamIds.length > 0 && (
-                    <label className="inline-flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={includeChildTeams}
-                        onChange={(e) => setIncludeChildTeams(e.target.checked)}
-                        className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      Include child teams
-                    </label>
+                  {activePeriodId && (
+                    <div className="flex items-center gap-3 mt-1.5">
+                      <label className="inline-flex items-center gap-1 text-xs text-gray-500 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={includeAncestorPeriods}
+                          onChange={(e) => setIncludeAncestorPeriods(e.target.checked)}
+                          className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        Parent
+                      </label>
+                      <label className="inline-flex items-center gap-1 text-xs text-gray-500 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={includeChildPeriods}
+                          onChange={(e) => setIncludeChildPeriods(e.target.checked)}
+                          className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        Child
+                      </label>
+                    </div>
                   )}
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {orgTeams.map((team: Team) => (
+              </div>
+
+              {/* Team Filter */}
+              {orgTeams.length > 0 && (
+                <div className="flex items-start gap-3">
+                  <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Team</label>
+                  <div className="flex-1">
+                    <div className="flex flex-wrap gap-1.5">
+                      {orgTeams.map((team: Team) => (
+                        <button
+                          key={team.id}
+                          onClick={() => toggleFilterTeam(team.id)}
+                          className={`px-2 py-1 rounded-full text-xs transition-colors ${
+                            filterTeamIds.includes(team.id)
+                              ? 'bg-gray-800 text-white'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          }`}
+                        >
+                          {team.name}
+                        </button>
+                      ))}
+                    </div>
+                    {filterTeamIds.length > 0 && (
+                      <label className="inline-flex items-center gap-1 text-xs text-gray-500 cursor-pointer mt-1.5">
+                        <input
+                          type="checkbox"
+                          checked={includeChildTeams}
+                          onChange={(e) => setIncludeChildTeams(e.target.checked)}
+                          className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        Include child teams
+                      </label>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Tag Filter */}
+              {orgTags.length > 0 && (
+                <div className="flex items-start gap-3">
+                  <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Tags</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {orgTags.map((tag: Tag) => (
+                      <button
+                        key={tag.id}
+                        onClick={() => toggleFilterTag(tag.id)}
+                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs transition-colors ${
+                          filterTagIds.includes(tag.id)
+                            ? 'bg-gray-800 text-white'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        <span className={`w-1.5 h-1.5 rounded-full ${tag.color}`}></span>
+                        {tag.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Type Filter */}
+              <div className="flex items-start gap-3">
+                <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Type</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {TYPE_OPTIONS.map((type) => (
                     <button
-                      key={team.id}
-                      onClick={() => toggleFilterTeam(team.id)}
-                      className={`px-3 py-1.5 rounded-full text-sm transition-colors ${
-                        filterTeamIds.includes(team.id)
+                      key={type.value}
+                      onClick={() => toggleFilterType(type.value)}
+                      className={`px-2 py-1 rounded-full text-xs transition-colors ${
+                        filterTypes.includes(type.value)
                           ? 'bg-gray-800 text-white'
                           : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                       }`}
                     >
-                      {team.name}
+                      {type.label}
                     </button>
                   ))}
                 </div>
               </div>
-            )}
 
-            {/* Tag Filter */}
-            {orgTags.length > 0 && (
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-2">Tags</label>
-                <div className="flex flex-wrap gap-2">
-                  {orgTags.map((tag: Tag) => (
-                    <button
-                      key={tag.id}
-                      onClick={() => toggleFilterTag(tag.id)}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm transition-colors ${
-                        filterTagIds.includes(tag.id)
-                          ? 'bg-gray-800 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
+              {/* Next Step Date Filter */}
+              <div className="flex items-center gap-3">
+                <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0">Next Date</label>
+                <select
+                  value={filterNextStepDate || ''}
+                  onChange={(e) => setFilterNextStepDate(e.target.value as NextStepDateFilter || null)}
+                  className="px-2 py-1 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">All</option>
+                  {NEXT_STEP_DATE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Owner Filter */}
+              {orgUsers.length > 0 && (
+                <div className="flex items-start gap-3">
+                  <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Owner</label>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <select
+                      value={filterOwnerOperator}
+                      onChange={(e) => setFilterOwnerOperator(e.target.value as FilterOperator)}
+                      className="px-1.5 py-1 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
-                      <span className={`w-2 h-2 rounded-full ${tag.color}`}></span>
-                      {tag.name}
-                    </button>
-                  ))}
+                      <option value="equals">=</option>
+                      <option value="not_equals">!=</option>
+                    </select>
+                    {orgUsers.map((u: User) => (
+                      <button
+                        key={u.id}
+                        onClick={() => {
+                          if (filterOwnerIds.includes(u.id)) {
+                            setFilterOwners(filterOwnerIds.filter(id => id !== u.id));
+                          } else {
+                            setFilterOwners([...filterOwnerIds, u.id]);
+                          }
+                        }}
+                        className={`px-2 py-1 rounded-full text-xs transition-colors ${
+                          filterOwnerIds.includes(u.id)
+                            ? 'bg-gray-800 text-white'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        {u.name}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Type Filter */}
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-2">Type</label>
-              <div className="flex flex-wrap gap-2">
-                {TYPE_OPTIONS.map((type) => (
-                  <button
-                    key={type.value}
-                    onClick={() => toggleFilterType(type.value)}
-                    className={`px-3 py-1.5 rounded-full text-sm transition-colors ${
-                      filterTypes.includes(type.value)
-                        ? 'bg-gray-800 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    {type.label}
-                  </button>
-                ))}
-              </div>
+              {/* Assignee Filter */}
+              {orgUsers.length > 0 && (
+                <div className="flex items-start gap-3">
+                  <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Assignee</label>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <select
+                      value={filterAssigneeOperator}
+                      onChange={(e) => setFilterAssigneeOperator(e.target.value as FilterOperator)}
+                      className="px-1.5 py-1 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="equals">=</option>
+                      <option value="not_equals">!=</option>
+                    </select>
+                    {orgUsers.map((u: User) => (
+                      <button
+                        key={u.id}
+                        onClick={() => {
+                          if (filterAssigneeIds.includes(u.id)) {
+                            setFilterAssignees(filterAssigneeIds.filter(id => id !== u.id));
+                          } else {
+                            setFilterAssignees([...filterAssigneeIds, u.id]);
+                          }
+                        }}
+                        className={`px-2 py-1 rounded-full text-xs transition-colors ${
+                          filterAssigneeIds.includes(u.id)
+                            ? 'bg-gray-800 text-white'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        {u.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-
-            {/* Next Step Date Filter */}
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-2">Next Step Date</label>
-              <select
-                value={filterNextStepDate || ''}
-                onChange={(e) => setFilterNextStepDate(e.target.value as NextStepDateFilter || null)}
-                className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="">All</option>
-                {NEXT_STEP_DATE_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Owner Filter */}
-            {orgUsers.length > 0 && (
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-2">Owner</label>
-                <div className="flex flex-wrap items-center gap-2">
-                  <select
-                    value={filterOwnerOperator}
-                    onChange={(e) => setFilterOwnerOperator(e.target.value as FilterOperator)}
-                    className="px-2 py-1.5 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  >
-                    <option value="equals">=</option>
-                    <option value="not_equals">!=</option>
-                  </select>
-                  {orgUsers.map((u: User) => (
-                    <button
-                      key={u.id}
-                      onClick={() => {
-                        if (filterOwnerIds.includes(u.id)) {
-                          setFilterOwners(filterOwnerIds.filter(id => id !== u.id));
-                        } else {
-                          setFilterOwners([...filterOwnerIds, u.id]);
-                        }
-                      }}
-                      className={`px-3 py-1.5 rounded-full text-sm transition-colors ${
-                        filterOwnerIds.includes(u.id)
-                          ? 'bg-gray-800 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      {u.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Assignee Filter */}
-            {orgUsers.length > 0 && (
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-2">Assignee</label>
-                <div className="flex flex-wrap items-center gap-2">
-                  <select
-                    value={filterAssigneeOperator}
-                    onChange={(e) => setFilterAssigneeOperator(e.target.value as FilterOperator)}
-                    className="px-2 py-1.5 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  >
-                    <option value="equals">=</option>
-                    <option value="not_equals">!=</option>
-                  </select>
-                  {orgUsers.map((u: User) => (
-                    <button
-                      key={u.id}
-                      onClick={() => {
-                        if (filterAssigneeIds.includes(u.id)) {
-                          setFilterAssignees(filterAssigneeIds.filter(id => id !== u.id));
-                        } else {
-                          setFilterAssignees([...filterAssigneeIds, u.id]);
-                        }
-                      }}
-                      className={`px-3 py-1.5 rounded-full text-sm transition-colors ${
-                        filterAssigneeIds.includes(u.id)
-                          ? 'bg-gray-800 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      {u.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {/* Display Options */}
             {hasActiveFilters && (
