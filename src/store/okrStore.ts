@@ -110,8 +110,30 @@ interface OKRActions {
   // User Preferences
   editorWidth: number | undefined;
   setEditorWidth: (width: number) => Promise<void>;
+  columnWidths: ColumnWidths;
+  setColumnWidths: (widths: Partial<ColumnWidths>) => Promise<void>;
   fetchUserPreferences: () => Promise<void>;
 }
+
+export interface ColumnWidths {
+  level: number;
+  parent: number;
+  team: number;
+  owner: number;
+  assignee: number;
+  period: number;
+  progress: number;
+}
+
+export const DEFAULT_COLUMN_WIDTHS: ColumnWidths = {
+  level: 96,      // w-24
+  parent: 144,    // w-36
+  team: 112,      // w-28
+  owner: 112,     // w-28
+  assignee: 112,  // w-28
+  period: 112,    // w-28
+  progress: 56,   // w-14
+};
 
 export interface BackupUser {
   id: string;
@@ -195,6 +217,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
   isLoading: false,
   error: null,
   editorWidth: undefined,
+  columnWidths: DEFAULT_COLUMN_WIDTHS,
 
   fetchData: async () => {
     set({ isLoading: true, error: null });
@@ -699,8 +722,15 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       });
       if (response.ok) {
         const data = await response.json();
+        const updates: Partial<OKRStore> = {};
         if (data.preferences?.editorWidth) {
-          set({ editorWidth: data.preferences.editorWidth });
+          updates.editorWidth = data.preferences.editorWidth;
+        }
+        if (data.preferences?.columnWidths) {
+          updates.columnWidths = { ...DEFAULT_COLUMN_WIDTHS, ...data.preferences.columnWidths };
+        }
+        if (Object.keys(updates).length > 0) {
+          set(updates);
         }
       }
     } catch (err) {
@@ -723,6 +753,26 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       });
     } catch (err) {
       console.error('Failed to save editor width preference:', err);
+    }
+  },
+
+  setColumnWidths: async (widths: Partial<ColumnWidths>) => {
+    const state = get();
+    const newColumnWidths = { ...state.columnWidths, ...widths };
+    set({ columnWidths: newColumnWidths });
+    try {
+      await fetch(`${API_URL}/api/users/me/preferences`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          preferences: { columnWidths: newColumnWidths },
+        }),
+      });
+    } catch (err) {
+      console.error('Failed to save column widths preference:', err);
     }
   },
 }));

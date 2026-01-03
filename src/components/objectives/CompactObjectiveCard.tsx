@@ -58,6 +58,7 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
   const deleteObjective = useOKRStore((state: OKRStore) => state.deleteObjective);
   const editorWidth = useOKRStore((state: OKRStore) => state.editorWidth);
   const setEditorWidth = useOKRStore((state: OKRStore) => state.setEditorWidth);
+  const columnWidths = useOKRStore((state: OKRStore) => state.columnWidths);
 
   const { user, isSuperAdmin, isOrgAdmin, organization } = useAuth();
   const userEmail = user?.email || '';
@@ -335,8 +336,8 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
           )}
         </div>
 
-        {/* Level column - fixed width, editable */}
-        <div className="w-24 px-1 py-1 flex-shrink-0">
+        {/* Level column - editable */}
+        <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.level }}>
           {editingLevel ? (
             <select
               ref={levelSelectRef}
@@ -362,8 +363,8 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
           )}
         </div>
 
-        {/* Parent column - fixed width, editable with search */}
-        <div className="w-36 px-1 py-1 flex-shrink-0 relative">
+        {/* Parent column - editable with search */}
+        <div className="px-1 py-1 flex-shrink-0 relative" style={{ width: columnWidths.parent }}>
           {editingParent ? (
             <div ref={parentDropdownRef} className="absolute top-0 left-0 z-50 w-64 bg-white border border-gray-300 rounded shadow-lg">
               <div className="p-1 border-b border-gray-200">
@@ -415,8 +416,8 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
           )}
         </div>
 
-        {/* Team column - fixed width, editable */}
-        <div className="w-28 px-1 py-1 flex-shrink-0">
+        {/* Team column - editable */}
+        <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.team }}>
           {editingTeam ? (
             <select
               ref={teamSelectRef}
@@ -441,8 +442,8 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
           )}
         </div>
 
-        {/* Owner column - fixed width, editable */}
-        <div className="w-28 px-1 py-1 flex-shrink-0">
+        {/* Owner column - editable */}
+        <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.owner }}>
           {editingOwner ? (
             <select
               ref={ownerSelectRef}
@@ -467,8 +468,8 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
           )}
         </div>
 
-        {/* Assignee column - fixed width, editable */}
-        <div className="w-28 px-1 py-1 flex-shrink-0">
+        {/* Assignee column - editable */}
+        <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.assignee }}>
           {editingAssignee ? (
             <select
               ref={assigneeSelectRef}
@@ -493,8 +494,8 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
           )}
         </div>
 
-        {/* Period column - fixed width, editable */}
-        <div className="w-28 px-1 py-1 flex-shrink-0">
+        {/* Period column - editable */}
+        <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.period }}>
           {editingPeriod ? (
             <select
               ref={periodSelectRef}
@@ -518,12 +519,12 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
           )}
         </div>
 
-        {/* Progress column - fixed width */}
-        <div className="w-14 px-2 py-1.5 text-xs text-gray-500 font-medium text-right flex-shrink-0">
+        {/* Progress column */}
+        <div className="px-2 py-1.5 text-xs text-gray-500 font-medium text-right flex-shrink-0" style={{ width: columnWidths.progress }}>
           {objective.progress}%
         </div>
 
-        {/* Actions column - fixed width */}
+        {/* Actions column */}
         <div className="w-16 px-2 py-1.5 flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
           {canModify && (
             <>
@@ -566,13 +567,13 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
               disabled={isAdding}
             />
           </div>
-          <div className="w-24 px-1" />
-          <div className="w-36 px-1" />
-          <div className="w-28 px-1" />
-          <div className="w-28 px-1" />
-          <div className="w-28 px-1" />
-          <div className="w-28 px-1" />
-          <div className="w-14 px-2" />
+          <div className="px-1" style={{ width: columnWidths.level }} />
+          <div className="px-1" style={{ width: columnWidths.parent }} />
+          <div className="px-1" style={{ width: columnWidths.team }} />
+          <div className="px-1" style={{ width: columnWidths.owner }} />
+          <div className="px-1" style={{ width: columnWidths.assignee }} />
+          <div className="px-1" style={{ width: columnWidths.period }} />
+          <div className="px-2" style={{ width: columnWidths.progress }} />
           <div className="w-16 px-2" />
         </div>
       )}

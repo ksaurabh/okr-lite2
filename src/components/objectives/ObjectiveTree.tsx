@@ -1,5 +1,5 @@
-import { useMemo, useState, useEffect } from 'react';
-import { useOKRStore, type OKRStore } from '../../store/okrStore';
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import { useOKRStore, type OKRStore, type ColumnWidths } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
 import { ObjectiveCard } from './ObjectiveCard';
 import { CompactObjectiveCard } from './CompactObjectiveCard';
@@ -62,7 +62,7 @@ type ViewMode = 'tree' | 'list' | 'compact';
 
 export function ObjectiveTree() {
   const [isFilterExpanded, setIsFilterExpanded] = useState(true);
-  const [viewMode, setViewMode] = useState<ViewMode>('tree');
+  const [viewMode, setViewMode] = useState<ViewMode>('compact');
   const [includeAncestorPeriods, setIncludeAncestorPeriods] = useState(false);
   const [includeChildPeriods, setIncludeChildPeriods] = useState(true);
   const [includeChildTeams, setIncludeChildTeams] = useState(true);
@@ -110,6 +110,41 @@ export function ObjectiveTree() {
   const setFilterAssignees = useOKRStore((state: OKRStore) => state.setFilterAssignees);
   const setFilterAssigneeOperator = useOKRStore((state: OKRStore) => state.setFilterAssigneeOperator);
   const clearAllFilters = useOKRStore((state: OKRStore) => state.clearAllFilters);
+  const columnWidths = useOKRStore((state: OKRStore) => state.columnWidths);
+  const setColumnWidths = useOKRStore((state: OKRStore) => state.setColumnWidths);
+
+  // Column resize state
+  const [resizingColumn, setResizingColumn] = useState<keyof ColumnWidths | null>(null);
+  const resizeStartX = useRef<number>(0);
+  const resizeStartWidth = useRef<number>(0);
+
+  const handleResizeStart = useCallback((column: keyof ColumnWidths, e: React.MouseEvent) => {
+    e.preventDefault();
+    setResizingColumn(column);
+    resizeStartX.current = e.clientX;
+    resizeStartWidth.current = columnWidths[column];
+  }, [columnWidths]);
+
+  useEffect(() => {
+    if (!resizingColumn) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const delta = e.clientX - resizeStartX.current;
+      const newWidth = Math.max(48, resizeStartWidth.current + delta);
+      setColumnWidths({ [resizingColumn]: newWidth });
+    };
+
+    const handleMouseUp = () => {
+      setResizingColumn(null);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [resizingColumn, setColumnWidths]);
 
   // Filter items by organization and visibility (admins see all, others see shared or owned)
   const orgObjectives = useMemo(
@@ -634,17 +669,59 @@ export function ObjectiveTree() {
 
       {/* Compact View - Tree table with columns */}
       {viewMode === 'compact' && filteredObjectives.length > 0 && (
-        <section className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        <section className={`bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden ${resizingColumn ? 'select-none' : ''}`}>
           {/* Table header */}
           <div className="flex items-center bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500 uppercase tracking-wider">
             <div className="flex-1 px-2 py-2">Objective</div>
-            <div className="w-24 px-1 py-2">Level</div>
-            <div className="w-36 px-1 py-2">Parent</div>
-            <div className="w-28 px-1 py-2">Team</div>
-            <div className="w-28 px-1 py-2">Owner</div>
-            <div className="w-28 px-1 py-2">Assignee</div>
-            <div className="w-28 px-1 py-2">Period</div>
-            <div className="w-14 px-2 py-2 text-right">Progress</div>
+            <div className="relative flex items-center" style={{ width: columnWidths.level }}>
+              <div className="px-1 py-2 flex-1">Level</div>
+              <div
+                className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 z-10"
+                onMouseDown={(e) => handleResizeStart('level', e)}
+              />
+            </div>
+            <div className="relative flex items-center" style={{ width: columnWidths.parent }}>
+              <div className="px-1 py-2 flex-1">Parent</div>
+              <div
+                className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 z-10"
+                onMouseDown={(e) => handleResizeStart('parent', e)}
+              />
+            </div>
+            <div className="relative flex items-center" style={{ width: columnWidths.team }}>
+              <div className="px-1 py-2 flex-1">Team</div>
+              <div
+                className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 z-10"
+                onMouseDown={(e) => handleResizeStart('team', e)}
+              />
+            </div>
+            <div className="relative flex items-center" style={{ width: columnWidths.owner }}>
+              <div className="px-1 py-2 flex-1">Owner</div>
+              <div
+                className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 z-10"
+                onMouseDown={(e) => handleResizeStart('owner', e)}
+              />
+            </div>
+            <div className="relative flex items-center" style={{ width: columnWidths.assignee }}>
+              <div className="px-1 py-2 flex-1">Assignee</div>
+              <div
+                className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 z-10"
+                onMouseDown={(e) => handleResizeStart('assignee', e)}
+              />
+            </div>
+            <div className="relative flex items-center" style={{ width: columnWidths.period }}>
+              <div className="px-1 py-2 flex-1">Period</div>
+              <div
+                className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 z-10"
+                onMouseDown={(e) => handleResizeStart('period', e)}
+              />
+            </div>
+            <div className="relative flex items-center" style={{ width: columnWidths.progress }}>
+              <div className="px-2 py-2 flex-1 text-right">Progress</div>
+              <div
+                className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 z-10"
+                onMouseDown={(e) => handleResizeStart('progress', e)}
+              />
+            </div>
             <div className="w-16 px-2 py-2"></div>
           </div>
 
