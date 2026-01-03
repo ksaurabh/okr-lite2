@@ -639,6 +639,7 @@ export function ObjectiveTree() {
           <div className="flex items-center bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500 uppercase tracking-wider">
             <div className="flex-1 px-2 py-2">Objective</div>
             <div className="w-24 px-1 py-2">Level</div>
+            <div className="w-36 px-1 py-2">Parent</div>
             <div className="w-28 px-1 py-2">Team</div>
             <div className="w-28 px-1 py-2">Owner</div>
             <div className="w-28 px-1 py-2">Assignee</div>

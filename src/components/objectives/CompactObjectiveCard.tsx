@@ -39,12 +39,14 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
   const [editingOwner, setEditingOwner] = useState(false);
   const [editingAssignee, setEditingAssignee] = useState(false);
   const [editingPeriod, setEditingPeriod] = useState(false);
+  const [editingParent, setEditingParent] = useState(false);
   const quickAddInputRef = useRef<HTMLInputElement>(null);
   const levelSelectRef = useRef<HTMLSelectElement>(null);
   const teamSelectRef = useRef<HTMLSelectElement>(null);
   const ownerSelectRef = useRef<HTMLSelectElement>(null);
   const assigneeSelectRef = useRef<HTMLSelectElement>(null);
   const periodSelectRef = useRef<HTMLSelectElement>(null);
+  const parentSelectRef = useRef<HTMLSelectElement>(null);
 
   const allObjectives = useOKRStore((state: OKRStore) => state.objectives);
   const periods = useOKRStore((state: OKRStore) => state.periods);
@@ -82,6 +84,34 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
       (!filteredObjectiveIds || filteredObjectiveIds.has(o.id))
     ),
     [allObjectives, objective.id, filteredObjectiveIds]
+  );
+
+  // Get all descendant IDs to exclude from parent selection
+  const getDescendantIds = useMemo(() => {
+    const descendants = new Set<string>();
+    const findDescendants = (parentId: string) => {
+      allObjectives.forEach((o: Objective) => {
+        if (o.parentId === parentId && !descendants.has(o.id)) {
+          descendants.add(o.id);
+          findDescendants(o.id);
+        }
+      });
+    };
+    findDescendants(objective.id);
+    return descendants;
+  }, [allObjectives, objective.id]);
+
+  // Valid parent objectives: exclude self and all descendants
+  const validParentObjectives = useMemo(
+    () => allObjectives.filter((o: Objective) =>
+      o.id !== objective.id && !getDescendantIds.has(o.id)
+    ),
+    [allObjectives, objective.id, getDescendantIds]
+  );
+
+  const parentObjective = useMemo(
+    () => allObjectives.find((o: Objective) => o.id === objective.parentId),
+    [allObjectives, objective.parentId]
   );
 
   const owner = useMemo(
@@ -150,6 +180,12 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
     }
   }, [editingPeriod]);
 
+  useEffect(() => {
+    if (editingParent && parentSelectRef.current) {
+      parentSelectRef.current.focus();
+    }
+  }, [editingParent]);
+
   const handleLevelChange = async (newLevel: ObjectiveLevel) => {
     setEditingLevel(false);
     if (newLevel !== objective.level) {
@@ -182,6 +218,13 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
     setEditingPeriod(false);
     if (newPeriodId !== objective.periodId) {
       await updateObjective(objective.id, { periodId: newPeriodId }, userEmail);
+    }
+  };
+
+  const handleParentChange = async (newParentId: string) => {
+    setEditingParent(false);
+    if (newParentId !== (objective.parentId || '')) {
+      await updateObjective(objective.id, { parentId: newParentId || undefined }, userEmail);
     }
   };
 
@@ -287,6 +330,32 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
               <span className={`inline-flex items-center justify-center w-5 h-5 rounded text-xs font-bold ${badge.bgColor} ${badge.textColor}`}>
                 {badge.label}
               </span>
+            </button>
+          )}
+        </div>
+
+        {/* Parent column - fixed width, editable */}
+        <div className="w-36 px-1 py-1 flex-shrink-0">
+          {editingParent ? (
+            <select
+              ref={parentSelectRef}
+              value={objective.parentId || ''}
+              onChange={(e) => handleParentChange(e.target.value)}
+              onBlur={() => setEditingParent(false)}
+              className="w-full text-xs px-1 py-0.5 border border-blue-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="">No parent</option>
+              {validParentObjectives.map((o: Objective) => (
+                <option key={o.id} value={o.id}>{o.title.length > 25 ? o.title.substring(0, 25) + '...' : o.title}</option>
+              ))}
+            </select>
+          ) : (
+            <button
+              onClick={() => canModify && setEditingParent(true)}
+              className={`w-full text-left text-xs px-1 py-0.5 rounded truncate ${canModify ? 'hover:bg-gray-100 cursor-pointer' : 'cursor-default'} ${parentObjective ? 'text-gray-600' : 'text-gray-300'}`}
+              disabled={!canModify}
+            >
+              {parentObjective?.title || '—'}
             </button>
           )}
         </div>
@@ -443,6 +512,7 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
             />
           </div>
           <div className="w-24 px-1" />
+          <div className="w-36 px-1" />
           <div className="w-28 px-1" />
           <div className="w-28 px-1" />
           <div className="w-28 px-1" />
