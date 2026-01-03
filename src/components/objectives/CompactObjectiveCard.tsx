@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import type { Objective, ObjectiveLevel, Period, User } from '../../types';
+import type { Objective, ObjectiveLevel, Period, User, Team } from '../../types';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
 import { SlidePane } from '../common/SlidePane';
@@ -34,14 +34,19 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
   const [isAdding, setIsAdding] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [orgUsers, setOrgUsers] = useState<User[]>([]);
+  const [editingLevel, setEditingLevel] = useState(false);
+  const [editingTeam, setEditingTeam] = useState(false);
   const [editingOwner, setEditingOwner] = useState(false);
   const [editingPeriod, setEditingPeriod] = useState(false);
   const quickAddInputRef = useRef<HTMLInputElement>(null);
+  const levelSelectRef = useRef<HTMLSelectElement>(null);
+  const teamSelectRef = useRef<HTMLSelectElement>(null);
   const ownerSelectRef = useRef<HTMLSelectElement>(null);
   const periodSelectRef = useRef<HTMLSelectElement>(null);
 
   const allObjectives = useOKRStore((state: OKRStore) => state.objectives);
   const periods = useOKRStore((state: OKRStore) => state.periods);
+  const teams = useOKRStore((state: OKRStore) => state.teams);
   const addObjective = useOKRStore((state: OKRStore) => state.addObjective);
   const updateObjective = useOKRStore((state: OKRStore) => state.updateObjective);
   const deleteObjective = useOKRStore((state: OKRStore) => state.deleteObjective);
@@ -82,6 +87,11 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
     [orgUsers, objective.ownerId]
   );
 
+  const team = useMemo(
+    () => teams.find((t: Team) => t.id === objective.teamId),
+    [teams, objective.teamId]
+  );
+
   const period = useMemo(
     () => periods.find((p: Period) => p.id === objective.periodId),
     [periods, objective.periodId]
@@ -91,11 +101,29 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
   const badge = levelBadges[objective.level];
   const canAddChild = objective.level !== 'individual';
 
+  const levelOptions: { value: ObjectiveLevel; label: string }[] = [
+    { value: 'company', label: 'Company' },
+    { value: 'team', label: 'Team' },
+    { value: 'individual', label: 'Individual' },
+  ];
+
   useEffect(() => {
     if (showQuickAdd && quickAddInputRef.current) {
       quickAddInputRef.current.focus();
     }
   }, [showQuickAdd]);
+
+  useEffect(() => {
+    if (editingLevel && levelSelectRef.current) {
+      levelSelectRef.current.focus();
+    }
+  }, [editingLevel]);
+
+  useEffect(() => {
+    if (editingTeam && teamSelectRef.current) {
+      teamSelectRef.current.focus();
+    }
+  }, [editingTeam]);
 
   useEffect(() => {
     if (editingOwner && ownerSelectRef.current) {
@@ -108,6 +136,20 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
       periodSelectRef.current.focus();
     }
   }, [editingPeriod]);
+
+  const handleLevelChange = async (newLevel: ObjectiveLevel) => {
+    setEditingLevel(false);
+    if (newLevel !== objective.level) {
+      await updateObjective(objective.id, { level: newLevel }, userEmail);
+    }
+  };
+
+  const handleTeamChange = async (newTeamId: string) => {
+    setEditingTeam(false);
+    if (newTeamId !== (objective.teamId || '')) {
+      await updateObjective(objective.id, { teamId: newTeamId || undefined }, userEmail);
+    }
+  };
 
   const handleOwnerChange = async (newOwnerId: string) => {
     setEditingOwner(false);
@@ -185,11 +227,6 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
             </svg>
           </button>
 
-          {/* Level badge */}
-          <span className={`w-5 h-5 rounded flex items-center justify-center text-xs font-bold flex-shrink-0 ${badge.bgColor} ${badge.textColor}`}>
-            {badge.label}
-          </span>
-
           {/* Title */}
           <span className="text-sm text-gray-900 truncate">{objective.title}</span>
 
@@ -203,6 +240,59 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
               </svg>
+            </button>
+          )}
+        </div>
+
+        {/* Level column - fixed width, editable */}
+        <div className="w-24 px-1 py-1 flex-shrink-0">
+          {editingLevel ? (
+            <select
+              ref={levelSelectRef}
+              value={objective.level}
+              onChange={(e) => handleLevelChange(e.target.value as ObjectiveLevel)}
+              onBlur={() => setEditingLevel(false)}
+              className="w-full text-xs px-1 py-0.5 border border-blue-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              {levelOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          ) : (
+            <button
+              onClick={() => canModify && setEditingLevel(true)}
+              className={`w-full text-left text-xs px-1 py-0.5 rounded truncate ${canModify ? 'hover:bg-gray-100 cursor-pointer' : 'cursor-default'}`}
+              disabled={!canModify}
+            >
+              <span className={`inline-flex items-center justify-center w-5 h-5 rounded text-xs font-bold ${badge.bgColor} ${badge.textColor}`}>
+                {badge.label}
+              </span>
+            </button>
+          )}
+        </div>
+
+        {/* Team column - fixed width, editable */}
+        <div className="w-28 px-1 py-1 flex-shrink-0">
+          {editingTeam ? (
+            <select
+              ref={teamSelectRef}
+              value={objective.teamId || ''}
+              onChange={(e) => handleTeamChange(e.target.value)}
+              onBlur={() => setEditingTeam(false)}
+              className="w-full text-xs px-1 py-0.5 border border-blue-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="">No team</option>
+              {teams.map((t: Team) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+          ) : (
+            <button
+              onClick={() => canModify && setEditingTeam(true)}
+              className={`w-full text-left text-xs px-1 py-0.5 rounded truncate ${canModify ? 'hover:bg-gray-100 cursor-pointer' : 'cursor-default'} ${team ? 'text-gray-600' : 'text-gray-300'}`}
+              disabled={!canModify}
+            >
+              {team?.name || '—'}
             </button>
           )}
         </div>
@@ -295,9 +385,6 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
         <div className="flex items-center border-b border-gray-100 bg-blue-50/30">
           <div className="flex-1 flex items-center gap-1 py-1 px-2 min-w-0" style={{ paddingLeft: (depth + 1) * 20 + 8 }}>
             <span className="w-4 h-4 flex-shrink-0" /> {/* Spacer for chevron */}
-            <span className={`w-5 h-5 rounded flex items-center justify-center text-xs font-bold opacity-50 flex-shrink-0 ${levelBadges[getChildLevel(objective.level)].bgColor} ${levelBadges[getChildLevel(objective.level)].textColor}`}>
-              {levelBadges[getChildLevel(objective.level)].label}
-            </span>
             <input
               ref={quickAddInputRef}
               type="text"
@@ -309,8 +396,10 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
               disabled={isAdding}
             />
           </div>
-          <div className="w-32 px-2" />
-          <div className="w-28 px-2" />
+          <div className="w-24 px-1" />
+          <div className="w-28 px-1" />
+          <div className="w-32 px-1" />
+          <div className="w-28 px-1" />
           <div className="w-14 px-2" />
           <div className="w-16 px-2" />
         </div>
