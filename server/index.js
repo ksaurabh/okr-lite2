@@ -1108,6 +1108,55 @@ app.delete('/api/tags/:id', requireAuth, (req, res) => {
 });
 
 // Bulk import for backup restore (super admin only)
+app.post('/api/import/okr', requireSuperAdmin, (req, res) => {
+  const { objectives, keyResults, teams, periods, tags } = req.body;
+  const org = getOrganizationByDomain(req.user.domain);
+
+  if (!org) {
+    return res.status(403).json({ error: 'No organization found' });
+  }
+
+  const data = getOKRData();
+  const orgId = org.id;
+
+  // Remove existing data for this organization
+  data.objectives = data.objectives.filter(o => o.orgId !== orgId);
+  data.keyResults = data.keyResults.filter(kr => kr.orgId !== orgId);
+  data.teams = data.teams.filter(t => t.orgId !== orgId);
+  data.periods = data.periods.filter(p => p.orgId !== orgId);
+  data.tags = data.tags.filter(t => t.orgId !== orgId);
+
+  // Add imported data with correct orgId
+  if (Array.isArray(objectives)) {
+    data.objectives.push(...objectives.map(o => ({ ...o, orgId })));
+  }
+  if (Array.isArray(keyResults)) {
+    data.keyResults.push(...keyResults.map(kr => ({ ...kr, orgId })));
+  }
+  if (Array.isArray(teams)) {
+    data.teams.push(...teams.map(t => ({ ...t, orgId })));
+  }
+  if (Array.isArray(periods)) {
+    data.periods.push(...periods.map(p => ({ ...p, orgId })));
+  }
+  if (Array.isArray(tags)) {
+    data.tags.push(...tags.map(t => ({ ...t, orgId })));
+  }
+
+  saveOKRData(data);
+
+  res.json({
+    success: true,
+    imported: {
+      objectives: objectives?.length || 0,
+      keyResults: keyResults?.length || 0,
+      teams: teams?.length || 0,
+      periods: periods?.length || 0,
+      tags: tags?.length || 0,
+    }
+  });
+});
+
 app.post('/api/import/users', requireSuperAdmin, (req, res) => {
   const { users } = req.body;
 

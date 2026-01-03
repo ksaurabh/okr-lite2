@@ -199,11 +199,22 @@ export function AdminPage() {
 
   const handleConfirmImport = async () => {
     if (pendingImportData) {
-      // Import OKR data via store
-      importData(pendingImportData);
-
-      // Import users and organizations via API (if present)
       try {
+        // Import OKR data to server first
+        await fetch(`${API_URL}/api/import/okr`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            objectives: pendingImportData.objectives,
+            keyResults: pendingImportData.keyResults,
+            teams: pendingImportData.teams,
+            periods: pendingImportData.periods,
+            tags: pendingImportData.tags,
+          }),
+        });
+
+        // Import users and organizations via API (if present)
         if (pendingImportData.organizations && pendingImportData.organizations.length > 0) {
           await fetch(`${API_URL}/api/import/organizations`, {
             method: 'POST',
@@ -221,8 +232,11 @@ export function AdminPage() {
             body: JSON.stringify({ users: pendingImportData.users }),
           });
         }
+
+        // Update local store after server sync
+        importData(pendingImportData);
       } catch (err) {
-        console.error('Failed to import users/organizations:', err);
+        console.error('Failed to import data:', err);
       }
 
       setShowImportConfirm(false);
