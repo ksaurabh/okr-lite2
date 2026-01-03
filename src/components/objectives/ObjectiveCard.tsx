@@ -291,6 +291,7 @@ export function ObjectiveCard({ objective, depth = 0, showChildren = true, filte
       >
         <ObjectiveForm
           parentId={objective.id}
+          parentObjective={objective}
           defaultLevel={getChildLevel(objective.level)}
           onClose={() => setShowAddChild(false)}
         />

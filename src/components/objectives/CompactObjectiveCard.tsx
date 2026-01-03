@@ -312,6 +312,8 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
           parentId: objective.id,
           periodId: objective.periodId,
           teamId: objective.teamId,
+          ownerId: objective.ownerId,
+          assigneeId: objective.assigneeId,
           tagIds: [],
         },
         {

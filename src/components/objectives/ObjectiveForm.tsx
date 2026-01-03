@@ -9,22 +9,24 @@ const API_URL = import.meta.env.VITE_API_URL || '';
 interface ObjectiveFormProps {
   objective?: Objective;
   parentId?: string;
+  parentObjective?: Objective;
   defaultLevel?: ObjectiveLevel;
   onClose: () => void;
 }
 
-export function ObjectiveForm({ objective, parentId, defaultLevel, onClose }: ObjectiveFormProps) {
+export function ObjectiveForm({ objective, parentId, parentObjective, defaultLevel, onClose }: ObjectiveFormProps) {
+  // When creating a child, copy properties from parent
   const [title, setTitle] = useState(objective?.title || '');
   const [description, setDescription] = useState(objective?.description || '');
   const [level, setLevel] = useState<ObjectiveLevel>(
     objective?.level || defaultLevel || 'company'
   );
-  const [teamId, setTeamId] = useState(objective?.teamId || '');
-  const [periodId, setPeriodId] = useState(objective?.periodId || '');
+  const [teamId, setTeamId] = useState(objective?.teamId || parentObjective?.teamId || '');
+  const [periodId, setPeriodId] = useState(objective?.periodId || parentObjective?.periodId || '');
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>(objective?.tagIds || []);
   const [isPrivate, setIsPrivate] = useState(objective?.shared === false);
-  const [ownerId, setOwnerId] = useState(objective?.ownerId || '');
-  const [assigneeId, setAssigneeId] = useState(objective?.assigneeId || '');
+  const [ownerId, setOwnerId] = useState(objective?.ownerId || parentObjective?.ownerId || '');
+  const [assigneeId, setAssigneeId] = useState(objective?.assigneeId || parentObjective?.assigneeId || '');
   const [orgUsers, setOrgUsers] = useState<User[]>([]);
 
   const { organization, user, isSuperAdmin, isOrgAdmin } = useAuth();
