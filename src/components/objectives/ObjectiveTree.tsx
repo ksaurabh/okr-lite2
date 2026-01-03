@@ -63,7 +63,8 @@ export function ObjectiveTree() {
   const [isFilterExpanded, setIsFilterExpanded] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>('tree');
   const [includeAncestorPeriods, setIncludeAncestorPeriods] = useState(false);
-  const [includeChildPeriods, setIncludeChildPeriods] = useState(false);
+  const [includeChildPeriods, setIncludeChildPeriods] = useState(true);
+  const [includeChildTeams, setIncludeChildTeams] = useState(true);
   const [orgUsers, setOrgUsers] = useState<User[]>([]);
 
   const { organization, user, isSuperAdmin, isOrgAdmin } = useAuth();
@@ -166,6 +167,22 @@ export function ObjectiveTree() {
     };
   }, [orgPeriods]);
 
+  // Get all descendant team IDs for a given team (including the team itself)
+  const getDescendantTeamIds = useMemo(() => {
+    return (teamId: string): string[] => {
+      const ids: string[] = [teamId];
+      const findChildren = (parentId: string) => {
+        const children = orgTeams.filter((t: Team) => t.parentId === parentId);
+        children.forEach((child: Team) => {
+          ids.push(child.id);
+          findChildren(child.id);
+        });
+      };
+      findChildren(teamId);
+      return ids;
+    };
+  }, [orgTeams]);
+
   // Get root periods (no parent) for hierarchical display
   const rootPeriods = useMemo(() => {
     return orgPeriods.filter((p: Period) => !p.parentId);
@@ -187,9 +204,15 @@ export function ObjectiveTree() {
       result = result.filter((obj: Objective) => validPeriodIds.includes(obj.periodId));
     }
 
-    // Filter by teams
+    // Filter by teams (optionally including child teams)
     if (filterTeamIds.length > 0) {
-      result = result.filter((obj: Objective) => obj.teamId && filterTeamIds.includes(obj.teamId));
+      let validTeamIds = [...filterTeamIds];
+      if (includeChildTeams) {
+        filterTeamIds.forEach(teamId => {
+          validTeamIds = [...new Set([...validTeamIds, ...getDescendantTeamIds(teamId)])];
+        });
+      }
+      result = result.filter((obj: Objective) => obj.teamId && validTeamIds.includes(obj.teamId));
     }
 
     // Filter by tags
@@ -220,7 +243,7 @@ export function ObjectiveTree() {
     }
 
     return result;
-  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, includeAncestorPeriods, includeChildPeriods, getAncestorPeriodIds, getDescendantPeriodIds]);
+  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, includeAncestorPeriods, includeChildPeriods, includeChildTeams, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds]);
 
   // Get IDs of all filtered objectives for quick lookup
   const filteredObjectiveIds = useMemo(
@@ -352,7 +375,20 @@ export function ObjectiveTree() {
             {/* Team Filter */}
             {orgTeams.length > 0 && (
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-2">Team</label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-medium text-gray-500">Team</label>
+                  {filterTeamIds.length > 0 && (
+                    <label className="inline-flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={includeChildTeams}
+                        onChange={(e) => setIncludeChildTeams(e.target.checked)}
+                        className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      Include child teams
+                    </label>
+                  )}
+                </div>
                 <div className="flex flex-wrap gap-2">
                   {orgTeams.map((team: Team) => (
                     <button
