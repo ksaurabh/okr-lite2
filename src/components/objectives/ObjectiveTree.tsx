@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { useOKRStore, type OKRStore, type ColumnWidths } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
 import { CompactObjectiveCard } from './CompactObjectiveCard';
-import type { Period, PeriodType, Objective, Team, Tag, User, FilterOperator, ObjectiveType, NextStepDateFilter } from '../../types';
+import type { Period, PeriodType, Objective, Team, Tag, User, FilterOperator, ObjectiveType, NextStepDateFilter, ObjectiveLevel } from '../../types';
 
 const TYPE_OPTIONS: { value: ObjectiveType; label: string }[] = [
   { value: 'initiative', label: 'Initiative' },
@@ -10,6 +10,12 @@ const TYPE_OPTIONS: { value: ObjectiveType; label: string }[] = [
   { value: 'epic', label: 'Epic' },
   { value: 'story', label: 'Story' },
   { value: 'subtask', label: 'SubTask' },
+];
+
+const LEVEL_OPTIONS: { value: ObjectiveLevel; label: string }[] = [
+  { value: 'company', label: 'Company' },
+  { value: 'team', label: 'Team' },
+  { value: 'individual', label: 'Individual' },
 ];
 
 const NEXT_STEP_DATE_OPTIONS: { value: NextStepDateFilter; label: string }[] = [
@@ -130,6 +136,8 @@ export function ObjectiveTree() {
   const setFilterAssigneeOperator = useOKRStore((state: OKRStore) => state.setFilterAssigneeOperator);
   const filterNextStepDate = useOKRStore((state: OKRStore) => state.filterNextStepDate);
   const setFilterNextStepDate = useOKRStore((state: OKRStore) => state.setFilterNextStepDate);
+  const filterLevels = useOKRStore((state: OKRStore) => state.filterLevels);
+  const toggleFilterLevel = useOKRStore((state: OKRStore) => state.toggleFilterLevel);
   const clearAllFilters = useOKRStore((state: OKRStore) => state.clearAllFilters);
   const columnWidths = useOKRStore((state: OKRStore) => state.columnWidths);
   const setColumnWidths = useOKRStore((state: OKRStore) => state.setColumnWidths);
@@ -286,6 +294,13 @@ export function ObjectiveTree() {
       );
     }
 
+    // Filter by level
+    if (filterLevels.length > 0) {
+      result = result.filter((obj: Objective) =>
+        filterLevels.includes(obj.level)
+      );
+    }
+
     // Filter by owners (with operator support)
     if (filterOwnerIds.length > 0) {
       if (filterOwnerOperator === 'equals') {
@@ -377,7 +392,7 @@ export function ObjectiveTree() {
     }
 
     return result;
-  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterNextStepDate, includeAncestorPeriods, includeChildPeriods, includeChildTeams, showChildren, directChildrenOnly, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds]);
+  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterLevels, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterNextStepDate, includeAncestorPeriods, includeChildPeriods, includeChildTeams, showChildren, directChildrenOnly, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds]);
 
   // Get IDs of all filtered objectives for quick lookup
   const filteredObjectiveIds = useMemo(
@@ -580,6 +595,26 @@ export function ObjectiveTree() {
                       }`}
                     >
                       {type.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Level Filter */}
+              <div className="flex items-start gap-3">
+                <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Level</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {LEVEL_OPTIONS.map((level) => (
+                    <button
+                      key={level.value}
+                      onClick={() => toggleFilterLevel(level.value)}
+                      className={`px-2 py-1 rounded-full text-xs transition-colors ${
+                        filterLevels.includes(level.value)
+                          ? 'bg-gray-800 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      {level.label}
                     </button>
                   ))}
                 </div>
@@ -789,6 +824,20 @@ export function ObjectiveTree() {
               <div
                 className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
                 onMouseDown={(e) => handleResizeStart('nextStep', e)}
+              />
+            </div>
+            <div className="relative flex items-center" style={{ width: columnWidths.storyPoints }}>
+              <div className="px-1 py-2 flex-1 text-right">SP</div>
+              <div
+                className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                onMouseDown={(e) => handleResizeStart('storyPoints', e)}
+              />
+            </div>
+            <div className="relative flex items-center" style={{ width: columnWidths.valuePoints }}>
+              <div className="px-1 py-2 flex-1 text-right">VP</div>
+              <div
+                className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                onMouseDown={(e) => handleResizeStart('valuePoints', e)}
               />
             </div>
             <div className="relative flex items-center" style={{ width: columnWidths.tags }}>

@@ -1,8 +1,19 @@
 import { useState, useEffect, useMemo } from 'react';
-import type { Objective, ObjectiveLevel, Period, Team, Tag, User } from '../../types';
+import type { Objective, ObjectiveLevel, Period, Team, Tag, User, ObjectiveHistoryEntry } from '../../types';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../common/Button';
+
+function formatDate(dateString: string): string {
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -27,7 +38,10 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
   const [isPrivate, setIsPrivate] = useState(objective?.shared === false);
   const [ownerId, setOwnerId] = useState(objective?.ownerId || parentObjective?.ownerId || '');
   const [assigneeId, setAssigneeId] = useState(objective?.assigneeId || parentObjective?.assigneeId || '');
+  const [storyPoints, setStoryPoints] = useState(objective?.storyPoints?.toString() || '');
+  const [valuePoints, setValuePoints] = useState(objective?.valuePoints?.toString() || '');
   const [orgUsers, setOrgUsers] = useState<User[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
 
   const { organization, user, isSuperAdmin, isOrgAdmin } = useAuth();
   const teams = useOKRStore((state: OKRStore) => state.teams);
@@ -40,6 +54,16 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
   const orgId = organization?.id || '';
   const userEmail = user?.email || '';
   const isAdmin = isSuperAdmin || isOrgAdmin;
+
+  // Find current user's ID from orgUsers (for owner/assignee permission checks)
+  const currentUserId = useMemo(
+    () => orgUsers.find((u: User) => u.email === userEmail)?.id,
+    [orgUsers, userEmail]
+  );
+
+  // Permission checks for story points and value points
+  const canEditStoryPoints = currentUserId === assigneeId;
+  const canEditValuePoints = currentUserId === ownerId;
 
   // Filter items by organization and visibility (admins see all, others see shared or owned)
   const orgTeams = useMemo(
@@ -111,8 +135,12 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
     if (!title.trim() || !periodId) return;
 
     try {
+      // Parse story points and value points
+      const parsedStoryPoints = storyPoints.trim() ? parseFloat(storyPoints) : undefined;
+      const parsedValuePoints = valuePoints.trim() ? parseFloat(valuePoints) : undefined;
+
       if (objective) {
-        await updateObjective(objective.id, {
+        const updates: Partial<Objective> = {
           title: title.trim(),
           description: description.trim() || undefined,
           level,
@@ -122,7 +150,15 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
           tagIds: selectedTagIds.length > 0 ? selectedTagIds : undefined,
           periodId,
           shared: !isPrivate,
-        }, userEmail);
+        };
+        // Only include points if user has permission to edit them
+        if (canEditStoryPoints && parsedStoryPoints !== undefined && !isNaN(parsedStoryPoints) && parsedStoryPoints >= 0) {
+          updates.storyPoints = parsedStoryPoints;
+        }
+        if (canEditValuePoints && parsedValuePoints !== undefined && !isNaN(parsedValuePoints) && parsedValuePoints >= 0) {
+          updates.valuePoints = parsedValuePoints;
+        }
+        await updateObjective(objective.id, updates, userEmail);
       } else {
         await addObjective({
           title: title.trim(),
@@ -134,6 +170,8 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
           assigneeId: assigneeId || undefined,
           tagIds: selectedTagIds.length > 0 ? selectedTagIds : undefined,
           periodId,
+          storyPoints: parsedStoryPoints !== undefined && !isNaN(parsedStoryPoints) && parsedStoryPoints >= 0 ? parsedStoryPoints : undefined,
+          valuePoints: parsedValuePoints !== undefined && !isNaN(parsedValuePoints) && parsedValuePoints >= 0 ? parsedValuePoints : undefined,
         }, { orgId, userEmail, shared: !isPrivate });
       }
       onClose();
@@ -273,6 +311,50 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
         </div>
       </div>
 
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Story Points
+            {!canEditStoryPoints && assigneeId && (
+              <span className="text-xs text-gray-400 ml-1">(assignee only)</span>
+            )}
+          </label>
+          <input
+            type="number"
+            step="0.1"
+            min="0"
+            value={storyPoints}
+            onChange={(e) => setStoryPoints(e.target.value)}
+            placeholder="0"
+            disabled={!canEditStoryPoints && !!assigneeId}
+            className={`w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+              !canEditStoryPoints && assigneeId ? 'bg-gray-50 text-gray-500' : ''
+            }`}
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Value Points
+            {!canEditValuePoints && ownerId && (
+              <span className="text-xs text-gray-400 ml-1">(owner only)</span>
+            )}
+          </label>
+          <input
+            type="number"
+            step="0.1"
+            min="0"
+            value={valuePoints}
+            onChange={(e) => setValuePoints(e.target.value)}
+            placeholder="0"
+            disabled={!canEditValuePoints && !!ownerId}
+            className={`w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+              !canEditValuePoints && ownerId ? 'bg-gray-50 text-gray-500' : ''
+            }`}
+          />
+        </div>
+      </div>
+
       {orgTags.length > 0 && (
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -310,6 +392,60 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
           Private (only visible to me)
         </label>
       </div>
+
+      {/* History Section */}
+      {objective && objective.history && objective.history.length > 0 && (
+        <div className="pt-4 border-t border-gray-200">
+          <button
+            type="button"
+            onClick={() => setShowHistory(!showHistory)}
+            className="flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900"
+          >
+            <svg
+              className={`w-4 h-4 transition-transform ${showHistory ? 'rotate-90' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+            History ({objective.history.length} {objective.history.length === 1 ? 'entry' : 'entries'})
+          </button>
+          {showHistory && (
+            <div className="mt-3 space-y-3 max-h-64 overflow-y-auto">
+              {[...objective.history].reverse().map((entry: ObjectiveHistoryEntry) => (
+                <div key={entry.id} className="bg-gray-50 rounded-md p-3 text-sm">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-medium text-gray-900">
+                      {entry.action === 'created' ? 'Created' : 'Updated'}
+                    </span>
+                    <span className="text-xs text-gray-500">{formatDate(entry.timestamp)}</span>
+                  </div>
+                  <div className="text-xs text-gray-500 mb-2">by {entry.userEmail}</div>
+                  {entry.changes.length > 0 && (
+                    <ul className="space-y-1">
+                      {entry.changes.map((change, idx) => (
+                        <li key={idx} className="text-gray-600">
+                          <span className="font-medium capitalize">{change.field}</span>
+                          {change.oldValue !== undefined ? (
+                            <>
+                              : <span className="text-red-600 line-through">{String(change.oldValue)}</span>
+                              {' → '}
+                              <span className="text-green-600">{String(change.newValue)}</span>
+                            </>
+                          ) : (
+                            <>: <span className="text-green-600">{String(change.newValue)}</span></>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="flex justify-end gap-2 pt-4">
         <Button type="button" variant="secondary" onClick={onClose}>

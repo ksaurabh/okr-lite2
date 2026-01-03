@@ -33,6 +33,8 @@ export interface Objective {
   tagIds?: string[];
   nextStepDate?: string;
   nextStep?: string;
+  storyPoints?: number;
+  valuePoints?: number;
   progress: number;
   status: ObjectiveStatus;
   periodId: string;
@@ -107,6 +109,7 @@ export interface OKRState {
   filterAssigneeIds: string[];
   filterAssigneeOperator: FilterOperator;
   filterNextStepDate: NextStepDateFilter | null;
+  filterLevels: ObjectiveLevel[];
 }
 
 // Organization types

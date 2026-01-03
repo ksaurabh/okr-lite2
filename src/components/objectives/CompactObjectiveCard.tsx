@@ -45,6 +45,10 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   const [editingNextStepDate, setEditingNextStepDate] = useState(false);
   const [editingNextStep, setEditingNextStep] = useState(false);
   const [nextStepValue, setNextStepValue] = useState(objectiveProp.nextStep || '');
+  const [editingStoryPoints, setEditingStoryPoints] = useState(false);
+  const [storyPointsValue, setStoryPointsValue] = useState(objectiveProp.storyPoints?.toString() || '');
+  const [editingValuePoints, setEditingValuePoints] = useState(false);
+  const [valuePointsValue, setValuePointsValue] = useState(objectiveProp.valuePoints?.toString() || '');
   const [editingParent, setEditingParent] = useState(false);
   const [parentSearch, setParentSearch] = useState('');
   const [editingTags, setEditingTags] = useState(false);
@@ -61,6 +65,8 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   const periodSelectRef = useRef<HTMLSelectElement>(null);
   const nextStepDateInputRef = useRef<HTMLInputElement>(null);
   const nextStepInputRef = useRef<HTMLInputElement>(null);
+  const storyPointsInputRef = useRef<HTMLInputElement>(null);
+  const valuePointsInputRef = useRef<HTMLInputElement>(null);
   const parentSearchRef = useRef<HTMLInputElement>(null);
   const parentDropdownRef = useRef<HTMLDivElement>(null);
   const parentButtonRef = useRef<HTMLButtonElement>(null);
@@ -86,6 +92,12 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   const userEmail = user?.email || '';
   const isAdmin = isSuperAdmin || isOrgAdmin;
   const canModify = isAdmin || objective.createdBy === userEmail;
+
+  // Find current user's ID from orgUsers (for owner/assignee comparison)
+  const currentUserId = useMemo(
+    () => orgUsers.find((u: User) => u.email === userEmail)?.id,
+    [orgUsers, userEmail]
+  );
 
   // Fetch users for assignee display
   useEffect(() => {
@@ -276,6 +288,34 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   }, [objective.nextStep, editingNextStep]);
 
   useEffect(() => {
+    if (editingStoryPoints && storyPointsInputRef.current) {
+      storyPointsInputRef.current.focus();
+      storyPointsInputRef.current.select();
+    }
+  }, [editingStoryPoints]);
+
+  // Sync storyPointsValue when objective changes externally
+  useEffect(() => {
+    if (!editingStoryPoints) {
+      setStoryPointsValue(objective.storyPoints?.toString() || '');
+    }
+  }, [objective.storyPoints, editingStoryPoints]);
+
+  useEffect(() => {
+    if (editingValuePoints && valuePointsInputRef.current) {
+      valuePointsInputRef.current.focus();
+      valuePointsInputRef.current.select();
+    }
+  }, [editingValuePoints]);
+
+  // Sync valuePointsValue when objective changes externally
+  useEffect(() => {
+    if (!editingValuePoints) {
+      setValuePointsValue(objective.valuePoints?.toString() || '');
+    }
+  }, [objective.valuePoints, editingValuePoints]);
+
+  useEffect(() => {
     if (editingParent) {
       // Calculate dropdown position based on button location
       if (parentButtonRef.current) {
@@ -417,6 +457,52 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
     } else if (e.key === 'Escape') {
       setEditingNextStep(false);
       setNextStepValue(objective.nextStep || '');
+    }
+  };
+
+  const handleStoryPointsSave = async () => {
+    setEditingStoryPoints(false);
+    const trimmedValue = storyPointsValue.trim();
+    const numValue = trimmedValue ? parseFloat(trimmedValue) : undefined;
+    if (numValue !== objective.storyPoints) {
+      if (numValue === undefined || (!isNaN(numValue) && numValue >= 0)) {
+        await updateObjective(objective.id, { storyPoints: numValue }, userEmail);
+      } else {
+        setStoryPointsValue(objective.storyPoints?.toString() || '');
+      }
+    }
+  };
+
+  const handleStoryPointsKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleStoryPointsSave();
+    } else if (e.key === 'Escape') {
+      setEditingStoryPoints(false);
+      setStoryPointsValue(objective.storyPoints?.toString() || '');
+    }
+  };
+
+  const handleValuePointsSave = async () => {
+    setEditingValuePoints(false);
+    const trimmedValue = valuePointsValue.trim();
+    const numValue = trimmedValue ? parseFloat(trimmedValue) : undefined;
+    if (numValue !== objective.valuePoints) {
+      if (numValue === undefined || (!isNaN(numValue) && numValue >= 0)) {
+        await updateObjective(objective.id, { valuePoints: numValue }, userEmail);
+      } else {
+        setValuePointsValue(objective.valuePoints?.toString() || '');
+      }
+    }
+  };
+
+  const handleValuePointsKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleValuePointsSave();
+    } else if (e.key === 'Escape') {
+      setEditingValuePoints(false);
+      setValuePointsValue(objective.valuePoints?.toString() || '');
     }
   };
 
@@ -799,6 +885,64 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           )}
         </div>
 
+        {/* Story Points column - editable only by assignee */}
+        <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.storyPoints }}>
+          {(() => {
+            const canEditStoryPoints = currentUserId === objective.assigneeId;
+            return editingStoryPoints ? (
+              <input
+                ref={storyPointsInputRef}
+                type="number"
+                step="0.1"
+                min="0"
+                value={storyPointsValue}
+                onChange={(e) => setStoryPointsValue(e.target.value)}
+                onBlur={handleStoryPointsSave}
+                onKeyDown={handleStoryPointsKeyDown}
+                className="w-full text-xs px-1 py-0.5 border border-blue-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 text-right"
+              />
+            ) : (
+              <button
+                onClick={() => canEditStoryPoints && setEditingStoryPoints(true)}
+                className={`w-full text-right text-xs px-1 py-0.5 rounded truncate ${canEditStoryPoints ? 'hover:bg-gray-100 cursor-pointer' : 'cursor-default'} ${objective.storyPoints !== undefined ? 'text-gray-600' : 'text-gray-300'}`}
+                disabled={!canEditStoryPoints}
+                title={canEditStoryPoints ? 'Click to edit' : 'Only assignee can edit'}
+              >
+                {objective.storyPoints !== undefined ? objective.storyPoints : '—'}
+              </button>
+            );
+          })()}
+        </div>
+
+        {/* Value Points column - editable only by owner */}
+        <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.valuePoints }}>
+          {(() => {
+            const canEditValuePoints = currentUserId === objective.ownerId;
+            return editingValuePoints ? (
+              <input
+                ref={valuePointsInputRef}
+                type="number"
+                step="0.1"
+                min="0"
+                value={valuePointsValue}
+                onChange={(e) => setValuePointsValue(e.target.value)}
+                onBlur={handleValuePointsSave}
+                onKeyDown={handleValuePointsKeyDown}
+                className="w-full text-xs px-1 py-0.5 border border-blue-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 text-right"
+              />
+            ) : (
+              <button
+                onClick={() => canEditValuePoints && setEditingValuePoints(true)}
+                className={`w-full text-right text-xs px-1 py-0.5 rounded truncate ${canEditValuePoints ? 'hover:bg-gray-100 cursor-pointer' : 'cursor-default'} ${objective.valuePoints !== undefined ? 'text-gray-600' : 'text-gray-300'}`}
+                disabled={!canEditValuePoints}
+                title={canEditValuePoints ? 'Click to edit' : 'Only owner can edit'}
+              >
+                {objective.valuePoints !== undefined ? objective.valuePoints : '—'}
+              </button>
+            );
+          })()}
+        </div>
+
         {/* Tags column - editable */}
         <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.tags }}>
           <div className="flex items-center gap-1 flex-wrap">
@@ -910,6 +1054,8 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           <div className="px-1" style={{ width: columnWidths.period }} />
           <div className="px-1" style={{ width: columnWidths.nextStepDate }} />
           <div className="px-1" style={{ width: columnWidths.nextStep }} />
+          <div className="px-1" style={{ width: columnWidths.storyPoints }} />
+          <div className="px-1" style={{ width: columnWidths.valuePoints }} />
           <div className="px-1" style={{ width: columnWidths.tags }} />
           <div className="px-2" style={{ width: columnWidths.progress }} />
           <div className="w-16 px-2" />

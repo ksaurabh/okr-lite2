@@ -18,6 +18,7 @@ const defaultState: OKRState = {
   filterAssigneeIds: [],
   filterAssigneeOperator: 'equals',
   filterNextStepDate: null,
+  filterLevels: [],
 };
 
 export const storage = {
