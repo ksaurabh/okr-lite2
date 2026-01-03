@@ -1107,6 +1107,95 @@ app.delete('/api/tags/:id', requireAuth, (req, res) => {
   res.json({ success: true });
 });
 
+// Bulk import for backup restore (super admin only)
+app.post('/api/import/users', requireSuperAdmin, (req, res) => {
+  const { users } = req.body;
+
+  if (!Array.isArray(users)) {
+    return res.status(400).json({ error: 'Users array is required' });
+  }
+
+  const existingUsers = getUsers();
+  const existingEmails = new Set(existingUsers.map(u => u.email));
+  let imported = 0;
+  let skipped = 0;
+
+  for (const user of users) {
+    if (!user.email || existingEmails.has(user.email)) {
+      skipped++;
+      continue;
+    }
+
+    existingUsers.push({
+      id: user.id || `user-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      email: user.email,
+      name: user.name || user.email.split('@')[0],
+      picture: user.picture,
+      domain: user.domain || user.email.split('@')[1],
+      organizationId: user.organizationId,
+      role: user.role || 'user',
+      createdAt: user.createdAt || new Date().toISOString(),
+      lastLoginAt: user.lastLoginAt || new Date().toISOString(),
+    });
+    existingEmails.add(user.email);
+    imported++;
+  }
+
+  saveUsers(existingUsers);
+  res.json({ success: true, imported, skipped, total: existingUsers.length });
+});
+
+app.post('/api/import/organizations', requireSuperAdmin, (req, res) => {
+  const { organizations } = req.body;
+
+  if (!Array.isArray(organizations)) {
+    return res.status(400).json({ error: 'Organizations array is required' });
+  }
+
+  const existingOrgs = getOrganizations();
+  const existingDomains = new Set(existingOrgs.map(o => o.domain));
+  const existingIds = new Set(existingOrgs.map(o => o.id));
+  let imported = 0;
+  let skipped = 0;
+
+  for (const org of organizations) {
+    // Skip if domain or ID already exists
+    if (!org.domain || existingDomains.has(org.domain) || existingIds.has(org.id)) {
+      skipped++;
+      continue;
+    }
+
+    const now = new Date().toISOString();
+    existingOrgs.push({
+      id: org.id || `org-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      name: org.name,
+      domain: org.domain,
+      admins: (org.admins || []).map(a => ({
+        email: a.email,
+        inviteToken: generateInviteToken(),
+        inviteCreatedAt: now,
+        status: a.status || 'pending',
+        ...(a.status === 'accepted' ? { acceptedAt: now } : {}),
+      })),
+      createdAt: org.createdAt || now,
+      updatedAt: now,
+    });
+    existingDomains.add(org.domain);
+    existingIds.add(org.id);
+    imported++;
+
+    // Also add domain to allowed domains
+    const allowedDomains = getAllowedDomains();
+    if (!allowedDomains.includes(org.domain) && !ALWAYS_ALLOWED_DOMAINS.includes(org.domain)) {
+      allowedDomains.push(org.domain);
+      saveAllowedDomains(allowedDomains);
+    }
+  }
+
+  saveOrganizations(existingOrgs);
+  res.json({ success: true, imported, skipped, total: existingOrgs.length });
+});
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });

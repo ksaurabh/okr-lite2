@@ -113,6 +113,30 @@ interface OKRActions {
   fetchUserPreferences: () => Promise<void>;
 }
 
+export interface BackupUser {
+  id: string;
+  email: string;
+  name: string;
+  picture?: string;
+  domain: string;
+  organizationId: string;
+  role: 'admin' | 'user';
+  createdAt: string;
+  lastLoginAt: string;
+}
+
+export interface BackupOrganization {
+  id: string;
+  name: string;
+  domain: string;
+  admins: Array<{
+    email: string;
+    status: 'pending' | 'accepted';
+  }>;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface BackupData {
   version: number;
   exportedAt: string;
@@ -121,6 +145,8 @@ export interface BackupData {
   teams: Team[];
   periods: Period[];
   tags: Tag[];
+  users?: BackupUser[];
+  organizations?: BackupOrganization[];
 }
 
 export type OKRStore = OKRState & OKRActions;

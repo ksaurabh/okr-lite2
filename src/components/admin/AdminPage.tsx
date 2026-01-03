@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Button } from '../common/Button';
 import { Modal } from '../common/Modal';
-import { useOKRStore, type BackupData, type OKRStore } from '../../store/okrStore';
+import { useOKRStore, type BackupData, type BackupUser, type BackupOrganization, type OKRStore } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
 import { OrganizationManagement } from './OrganizationManagement';
 
@@ -18,6 +18,8 @@ export function AdminPage() {
   const [showImportConfirm, setShowImportConfirm] = useState(false);
   const [pendingImportData, setPendingImportData] = useState<BackupData | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const [usersCount, setUsersCount] = useState<number>(0);
+  const [orgsCount, setOrgsCount] = useState<number>(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const exportData = useOKRStore((state: OKRStore) => state.exportData);
@@ -48,6 +50,29 @@ export function AdminPage() {
   useEffect(() => {
     fetchDomains();
   }, [fetchDomains]);
+
+  // Fetch users and organizations counts for export summary
+  useEffect(() => {
+    const fetchCounts = async () => {
+      try {
+        const [usersRes, orgsRes] = await Promise.all([
+          fetch(`${API_URL}/api/users`, { credentials: 'include' }),
+          fetch(`${API_URL}/api/organizations`, { credentials: 'include' }),
+        ]);
+        if (usersRes.ok) {
+          const data = await usersRes.json();
+          setUsersCount(data.users?.length || 0);
+        }
+        if (orgsRes.ok) {
+          const data = await orgsRes.json();
+          setOrgsCount(data.organizations?.length || 0);
+        }
+      } catch (err) {
+        console.error('Failed to fetch counts:', err);
+      }
+    };
+    fetchCounts();
+  }, []);
 
   const handleAddDomain = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,8 +114,49 @@ export function AdminPage() {
     }
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
     const data = exportData();
+
+    // Fetch users and organizations for the backup
+    try {
+      const [usersResponse, orgsResponse] = await Promise.all([
+        fetch(`${API_URL}/api/users`, { credentials: 'include' }),
+        fetch(`${API_URL}/api/organizations`, { credentials: 'include' }),
+      ]);
+
+      if (usersResponse.ok) {
+        const usersData = await usersResponse.json();
+        // Strip sensitive fields and normalize for backup
+        data.users = (usersData.users || []).map((u: BackupUser & { organizationName?: string }) => ({
+          id: u.id,
+          email: u.email,
+          name: u.name,
+          picture: u.picture,
+          domain: u.domain,
+          organizationId: u.organizationId,
+          role: u.role,
+          createdAt: u.createdAt,
+          lastLoginAt: u.lastLoginAt,
+        }));
+      }
+
+      if (orgsResponse.ok) {
+        const orgsData = await orgsResponse.json();
+        // Strip sensitive invite tokens from backup
+        data.organizations = (orgsData.organizations || []).map((org: BackupOrganization & { admins: Array<{ email: string; status: string; inviteToken?: string }> }) => ({
+          id: org.id,
+          name: org.name,
+          domain: org.domain,
+          admins: (org.admins || []).map(a => ({ email: a.email, status: a.status })),
+          createdAt: org.createdAt,
+          updatedAt: org.updatedAt,
+        }));
+      }
+    } catch (err) {
+      console.error('Failed to fetch users/organizations for backup:', err);
+      // Continue with OKR data only
+    }
+
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -131,9 +197,34 @@ export function AdminPage() {
     }
   };
 
-  const handleConfirmImport = () => {
+  const handleConfirmImport = async () => {
     if (pendingImportData) {
+      // Import OKR data via store
       importData(pendingImportData);
+
+      // Import users and organizations via API (if present)
+      try {
+        if (pendingImportData.organizations && pendingImportData.organizations.length > 0) {
+          await fetch(`${API_URL}/api/import/organizations`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ organizations: pendingImportData.organizations }),
+          });
+        }
+
+        if (pendingImportData.users && pendingImportData.users.length > 0) {
+          await fetch(`${API_URL}/api/import/users`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ users: pendingImportData.users }),
+          });
+        }
+      } catch (err) {
+        console.error('Failed to import users/organizations:', err);
+      }
+
       setShowImportConfirm(false);
       setPendingImportData(null);
     }
@@ -261,6 +352,8 @@ export function AdminPage() {
                 <li>{teams.length} teams</li>
                 <li>{periods.length} periods</li>
                 <li>{tags.length} tags</li>
+                <li>{usersCount} users</li>
+                <li>{orgsCount} organizations</li>
               </ul>
             </div>
             <Button onClick={handleExport} className="w-full">
@@ -338,6 +431,8 @@ export function AdminPage() {
                 <li>{pendingImportData.teams.length} teams</li>
                 <li>{pendingImportData.periods.length} periods</li>
                 <li>{pendingImportData.tags.length} tags</li>
+                {pendingImportData.users && <li>{pendingImportData.users.length} users</li>}
+                {pendingImportData.organizations && <li>{pendingImportData.organizations.length} organizations</li>}
               </ul>
               {pendingImportData.exportedAt && (
                 <p className="mt-2 text-xs text-gray-400">
