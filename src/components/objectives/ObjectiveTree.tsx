@@ -66,6 +66,7 @@ export function ObjectiveTree() {
   const [includeAncestorPeriods, setIncludeAncestorPeriods] = useState(false);
   const [includeChildPeriods, setIncludeChildPeriods] = useState(true);
   const [includeChildTeams, setIncludeChildTeams] = useState(true);
+  const [showDirectChildren, setShowDirectChildren] = useState(false);
   const [orgUsers, setOrgUsers] = useState<User[]>([]);
 
   const { organization, user, isSuperAdmin, isOrgAdmin } = useAuth();
@@ -278,8 +279,17 @@ export function ObjectiveTree() {
       }
     }
 
+    // Optionally include direct children of matching objectives
+    if (showDirectChildren && result.length > 0) {
+      const matchingIds = new Set(result.map((obj: Objective) => obj.id));
+      const directChildren = orgObjectives.filter((obj: Objective) =>
+        obj.parentId && matchingIds.has(obj.parentId) && !matchingIds.has(obj.id)
+      );
+      result = [...result, ...directChildren];
+    }
+
     return result;
-  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, includeAncestorPeriods, includeChildPeriods, includeChildTeams, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds]);
+  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, includeAncestorPeriods, includeChildPeriods, includeChildTeams, showDirectChildren, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds]);
 
   // Get IDs of all filtered objectives for quick lookup
   const filteredObjectiveIds = useMemo(
@@ -535,6 +545,21 @@ export function ObjectiveTree() {
                     </button>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* Display Options */}
+            {hasActiveFilters && (
+              <div className="pt-3 border-t border-gray-200">
+                <label className="inline-flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={showDirectChildren}
+                    onChange={(e) => setShowDirectChildren(e.target.checked)}
+                    className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  Show direct children of matching objectives
+                </label>
               </div>
             )}
           </div>
