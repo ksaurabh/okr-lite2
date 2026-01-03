@@ -27,7 +27,7 @@ const levelBadges: Record<ObjectiveLevel, { label: string; bgColor: string; text
   individual: { label: 'I', bgColor: 'bg-green-100', textColor: 'text-green-700' },
 };
 
-export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveIds }: CompactObjectiveCardProps) {
+export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filteredObjectiveIds }: CompactObjectiveCardProps) {
   const [isExpanded, setIsExpanded] = useState(true);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [quickAddTitle, setQuickAddTitle] = useState('');
@@ -35,7 +35,7 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
   const [showEdit, setShowEdit] = useState(false);
   const [orgUsers, setOrgUsers] = useState<User[]>([]);
   const [editingTitle, setEditingTitle] = useState(false);
-  const [editTitleValue, setEditTitleValue] = useState(objective.title);
+  const [editTitleValue, setEditTitleValue] = useState(objectiveProp.title);
   const [editingLevel, setEditingLevel] = useState(false);
   const [editingTeam, setEditingTeam] = useState(false);
   const [editingOwner, setEditingOwner] = useState(false);
@@ -63,6 +63,11 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
   const periods = useOKRStore((state: OKRStore) => state.periods);
   const teams = useOKRStore((state: OKRStore) => state.teams);
   const allTags = useOKRStore((state: OKRStore) => state.tags);
+
+  // Subscribe directly to this objective from the store to get real-time updates
+  const objective = useOKRStore((state: OKRStore) =>
+    state.objectives.find((o: Objective) => o.id === objectiveProp.id)
+  ) || objectiveProp;
   const addObjective = useOKRStore((state: OKRStore) => state.addObjective);
   const updateObjective = useOKRStore((state: OKRStore) => state.updateObjective);
   const deleteObjective = useOKRStore((state: OKRStore) => state.deleteObjective);
@@ -140,13 +145,13 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
   // Get objective's current tags
   const objectiveTags = useMemo(
     () => allTags.filter((tag: Tag) => objective.tagIds?.includes(tag.id)),
-    [allTags, objective.tagIds]
+    [allTags, objective]
   );
 
   // Get available tags (not already on this objective)
   const availableTags = useMemo(
     () => allTags.filter((tag: Tag) => !objective.tagIds?.includes(tag.id)),
-    [allTags, objective.tagIds]
+    [allTags, objective]
   );
 
   const owner = useMemo(
@@ -184,6 +189,13 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
       quickAddInputRef.current.focus();
     }
   }, [showQuickAdd]);
+
+  // Sync editTitleValue when objective title changes externally
+  useEffect(() => {
+    if (!editingTitle) {
+      setEditTitleValue(objective.title);
+    }
+  }, [objective.title, editingTitle]);
 
   useEffect(() => {
     if (editingTitle && titleInputRef.current) {
@@ -642,7 +654,7 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
             {objectiveTags.map((tag: Tag) => (
               <span
                 key={tag.id}
-                className={`inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded ${tag.color} ${canModify ? 'cursor-pointer hover:opacity-80' : ''}`}
+                className={`inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded text-white ${tag.color} ${canModify ? 'cursor-pointer hover:opacity-80' : ''}`}
                 onClick={() => canModify && handleRemoveTag(tag.id)}
                 title={canModify ? 'Click to remove' : tag.name}
               >
@@ -676,9 +688,9 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
               {availableTags.map((tag: Tag) => (
                 <button
                   key={tag.id}
-                  onClick={() => {
-                    handleAddTag(tag.id);
+                  onClick={async () => {
                     setEditingTags(false);
+                    await handleAddTag(tag.id);
                   }}
                   className="w-full text-left text-xs px-2 py-1.5 hover:bg-gray-100 flex items-center gap-1.5"
                 >

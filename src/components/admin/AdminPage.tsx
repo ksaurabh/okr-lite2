@@ -203,7 +203,7 @@ export function AdminPage() {
     if (pendingImportData) {
       try {
         // Import OKR data to server first
-        await fetch(`${API_URL}/api/import/okr`, {
+        const okrResponse = await fetch(`${API_URL}/api/import/okr`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
@@ -216,33 +216,46 @@ export function AdminPage() {
           }),
         });
 
+        if (!okrResponse.ok) {
+          const errorData = await okrResponse.json().catch(() => ({}));
+          throw new Error(errorData.error || 'Failed to import OKR data to server');
+        }
+
         // Import users and organizations via API (if present)
         if (pendingImportData.organizations && pendingImportData.organizations.length > 0) {
-          await fetch(`${API_URL}/api/import/organizations`, {
+          const orgsResponse = await fetch(`${API_URL}/api/import/organizations`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
             body: JSON.stringify({ organizations: pendingImportData.organizations }),
           });
+          if (!orgsResponse.ok) {
+            console.warn('Failed to import organizations');
+          }
         }
 
         if (pendingImportData.users && pendingImportData.users.length > 0) {
-          await fetch(`${API_URL}/api/import/users`, {
+          const usersResponse = await fetch(`${API_URL}/api/import/users`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
             body: JSON.stringify({ users: pendingImportData.users }),
           });
+          if (!usersResponse.ok) {
+            console.warn('Failed to import users');
+          }
         }
 
         // Update local store after server sync
         importData(pendingImportData);
+        setShowImportConfirm(false);
+        setPendingImportData(null);
       } catch (err) {
         console.error('Failed to import data:', err);
+        setImportError(err instanceof Error ? err.message : 'Failed to import data');
+        setShowImportConfirm(false);
+        setPendingImportData(null);
       }
-
-      setShowImportConfirm(false);
-      setPendingImportData(null);
     }
   };
 
