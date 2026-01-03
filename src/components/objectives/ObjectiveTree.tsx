@@ -17,6 +17,7 @@ const NEXT_STEP_DATE_OPTIONS: { value: NextStepDateFilter; label: string }[] = [
   { value: 'last_7d', label: 'In Last 7d' },
   { value: 'last_30d', label: 'In Last 30d' },
   { value: 'past', label: 'In the Past' },
+  { value: 'today', label: 'Today' },
   { value: 'next_7d', label: 'In Next 7d' },
   { value: 'next_30d', label: 'In Next 30d' },
   { value: 'future', label: 'In the Future' },
@@ -328,6 +329,8 @@ export function ObjectiveTree() {
               return diffDays >= -30 && diffDays < 0;
             case 'past':
               return diffDays < 0;
+            case 'today':
+              return diffDays === 0;
             case 'next_7d':
               return diffDays >= 0 && diffDays <= 7;
             case 'next_30d':
