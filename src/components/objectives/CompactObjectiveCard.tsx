@@ -766,7 +766,10 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
               className={`w-full text-left text-xs px-1 py-0.5 rounded truncate ${canModify ? 'hover:bg-gray-100 cursor-pointer' : 'cursor-default'} ${objective.nextStepDate ? 'text-gray-600' : 'text-gray-300'}`}
               disabled={!canModify}
             >
-              {objective.nextStepDate ? new Date(objective.nextStepDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}
+              {objective.nextStepDate ? (() => {
+                const [year, month, day] = objective.nextStepDate.split('-').map(Number);
+                return new Date(year, month - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+              })() : '—'}
             </button>
           )}
         </div>
