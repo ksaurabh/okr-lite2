@@ -12,6 +12,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const app = express();
+app.set('trust proxy', 1); // Trust nginx reverse proxy for secure cookies
 const PORT = process.env.PORT || 3001;
 const DOMAINS_FILE = join(__dirname, 'allowed-domains.json');
 const ORGANIZATIONS_FILE = join(__dirname, 'organizations.json');
