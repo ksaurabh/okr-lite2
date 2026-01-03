@@ -1,7 +1,6 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { useOKRStore, type OKRStore, type ColumnWidths } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
-import { ObjectiveCard } from './ObjectiveCard';
 import { CompactObjectiveCard } from './CompactObjectiveCard';
 import type { Period, PeriodType, Objective, Team, Tag, User, FilterOperator } from '../../types';
 
@@ -58,11 +57,8 @@ function PeriodFilterButton({ period, periods, activePeriodId, onSelect, depth }
   );
 }
 
-type ViewMode = 'tree' | 'list' | 'compact';
-
 export function ObjectiveTree() {
   const [isFilterExpanded, setIsFilterExpanded] = useState(true);
-  const [viewMode, setViewMode] = useState<ViewMode>('compact');
   const [includeAncestorPeriods, setIncludeAncestorPeriods] = useState(false);
   const [includeChildPeriods, setIncludeChildPeriods] = useState(true);
   const [includeChildTeams, setIncludeChildTeams] = useState(true);
@@ -579,54 +575,6 @@ export function ObjectiveTree() {
         )}
       </div>
 
-      {/* View Toggle */}
-      <div className="flex justify-end">
-        <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1">
-          <button
-            onClick={() => setViewMode('tree')}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors ${
-              viewMode === 'tree'
-                ? 'bg-gray-100 text-gray-900'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-            title="Tree view"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-            </svg>
-            Tree
-          </button>
-          <button
-            onClick={() => setViewMode('list')}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors ${
-              viewMode === 'list'
-                ? 'bg-gray-100 text-gray-900'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-            title="List view"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-            </svg>
-            List
-          </button>
-          <button
-            onClick={() => setViewMode('compact')}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors ${
-              viewMode === 'compact'
-                ? 'bg-gray-100 text-gray-900'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-            title="Compact view"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-            Compact
-          </button>
-        </div>
-      </div>
-
       {/* Empty state for filtered results */}
       {filteredObjectives.length === 0 && (
         <div className="text-center py-12">
@@ -644,69 +592,8 @@ export function ObjectiveTree() {
         </div>
       )}
 
-      {/* Tree View - Hierarchical grouped by level */}
-      {viewMode === 'tree' && (
-        <>
-          {companyObjectives.length > 0 && (
-            <section>
-              <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <span className="w-3 h-3 bg-purple-500 rounded-full"></span>
-                Company Objectives
-              </h2>
-              <div className="space-y-3">
-                {companyObjectives.map((obj: Objective) => (
-                  <ObjectiveCard key={obj.id} objective={obj} filteredObjectiveIds={filteredObjectiveIds} />
-                ))}
-              </div>
-            </section>
-          )}
-
-          {teamObjectives.length > 0 && (
-            <section>
-              <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <span className="w-3 h-3 bg-blue-500 rounded-full"></span>
-                Team Objectives
-              </h2>
-              <div className="space-y-3">
-                {teamObjectives.map((obj: Objective) => (
-                  <ObjectiveCard key={obj.id} objective={obj} filteredObjectiveIds={filteredObjectiveIds} />
-                ))}
-              </div>
-            </section>
-          )}
-
-          {individualObjectives.length > 0 && (
-            <section>
-              <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <span className="w-3 h-3 bg-green-500 rounded-full"></span>
-                Individual Objectives
-              </h2>
-              <div className="space-y-3">
-                {individualObjectives.map((obj: Objective) => (
-                  <ObjectiveCard key={obj.id} objective={obj} filteredObjectiveIds={filteredObjectiveIds} />
-                ))}
-              </div>
-            </section>
-          )}
-        </>
-      )}
-
-      {/* List View - Flat list of all objectives */}
-      {viewMode === 'list' && filteredObjectives.length > 0 && (
-        <section>
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
-            All Objectives ({filteredObjectives.length})
-          </h2>
-          <div className="space-y-3">
-            {filteredObjectives.map((obj: Objective) => (
-              <ObjectiveCard key={obj.id} objective={obj} showChildren={false} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* Compact View - Tree table with columns */}
-      {viewMode === 'compact' && filteredObjectives.length > 0 && (
+      {/* Objectives Table */}
+      {filteredObjectives.length > 0 && (
         <section className={`bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden ${resizingColumn ? 'select-none' : ''}`}>
           {/* Table header */}
           <div className="flex items-center bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500 uppercase tracking-wider">
