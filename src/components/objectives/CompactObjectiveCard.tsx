@@ -34,11 +34,16 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
   const [isAdding, setIsAdding] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [orgUsers, setOrgUsers] = useState<User[]>([]);
+  const [editingOwner, setEditingOwner] = useState(false);
+  const [editingPeriod, setEditingPeriod] = useState(false);
   const quickAddInputRef = useRef<HTMLInputElement>(null);
+  const ownerSelectRef = useRef<HTMLSelectElement>(null);
+  const periodSelectRef = useRef<HTMLSelectElement>(null);
 
   const allObjectives = useOKRStore((state: OKRStore) => state.objectives);
   const periods = useOKRStore((state: OKRStore) => state.periods);
   const addObjective = useOKRStore((state: OKRStore) => state.addObjective);
+  const updateObjective = useOKRStore((state: OKRStore) => state.updateObjective);
   const deleteObjective = useOKRStore((state: OKRStore) => state.deleteObjective);
   const editorWidth = useOKRStore((state: OKRStore) => state.editorWidth);
   const setEditorWidth = useOKRStore((state: OKRStore) => state.setEditorWidth);
@@ -91,6 +96,32 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
       quickAddInputRef.current.focus();
     }
   }, [showQuickAdd]);
+
+  useEffect(() => {
+    if (editingOwner && ownerSelectRef.current) {
+      ownerSelectRef.current.focus();
+    }
+  }, [editingOwner]);
+
+  useEffect(() => {
+    if (editingPeriod && periodSelectRef.current) {
+      periodSelectRef.current.focus();
+    }
+  }, [editingPeriod]);
+
+  const handleOwnerChange = async (newOwnerId: string) => {
+    setEditingOwner(false);
+    if (newOwnerId !== (objective.ownerId || '')) {
+      await updateObjective(objective.id, { ownerId: newOwnerId || undefined }, userEmail);
+    }
+  };
+
+  const handlePeriodChange = async (newPeriodId: string) => {
+    setEditingPeriod(false);
+    if (newPeriodId !== objective.periodId) {
+      await updateObjective(objective.id, { periodId: newPeriodId }, userEmail);
+    }
+  };
 
   const handleQuickAdd = async () => {
     if (!quickAddTitle.trim() || isAdding) return;
@@ -176,14 +207,55 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
           )}
         </div>
 
-        {/* Owner column - fixed width */}
-        <div className="w-32 px-2 py-1.5 text-xs text-gray-600 truncate flex-shrink-0">
-          {owner?.name || <span className="text-gray-300">—</span>}
+        {/* Owner column - fixed width, editable */}
+        <div className="w-32 px-1 py-1 flex-shrink-0">
+          {editingOwner ? (
+            <select
+              ref={ownerSelectRef}
+              value={objective.ownerId || ''}
+              onChange={(e) => handleOwnerChange(e.target.value)}
+              onBlur={() => setEditingOwner(false)}
+              className="w-full text-xs px-1 py-0.5 border border-blue-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="">Unassigned</option>
+              {orgUsers.map((u: User) => (
+                <option key={u.id} value={u.id}>{u.name}</option>
+              ))}
+            </select>
+          ) : (
+            <button
+              onClick={() => canModify && setEditingOwner(true)}
+              className={`w-full text-left text-xs px-1 py-0.5 rounded truncate ${canModify ? 'hover:bg-gray-100 cursor-pointer' : 'cursor-default'} ${owner ? 'text-gray-600' : 'text-gray-300'}`}
+              disabled={!canModify}
+            >
+              {owner?.name || '—'}
+            </button>
+          )}
         </div>
 
-        {/* Period column - fixed width */}
-        <div className="w-28 px-2 py-1.5 text-xs text-gray-600 truncate flex-shrink-0">
-          {period?.name || <span className="text-gray-300">—</span>}
+        {/* Period column - fixed width, editable */}
+        <div className="w-28 px-1 py-1 flex-shrink-0">
+          {editingPeriod ? (
+            <select
+              ref={periodSelectRef}
+              value={objective.periodId}
+              onChange={(e) => handlePeriodChange(e.target.value)}
+              onBlur={() => setEditingPeriod(false)}
+              className="w-full text-xs px-1 py-0.5 border border-blue-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              {periods.map((p: Period) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          ) : (
+            <button
+              onClick={() => canModify && setEditingPeriod(true)}
+              className={`w-full text-left text-xs px-1 py-0.5 rounded truncate ${canModify ? 'hover:bg-gray-100 cursor-pointer' : 'cursor-default'} ${period ? 'text-gray-600' : 'text-gray-300'}`}
+              disabled={!canModify}
+            >
+              {period?.name || '—'}
+            </button>
+          )}
         </div>
 
         {/* Progress column - fixed width */}
