@@ -40,13 +40,15 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
   const [editingAssignee, setEditingAssignee] = useState(false);
   const [editingPeriod, setEditingPeriod] = useState(false);
   const [editingParent, setEditingParent] = useState(false);
+  const [parentSearch, setParentSearch] = useState('');
   const quickAddInputRef = useRef<HTMLInputElement>(null);
   const levelSelectRef = useRef<HTMLSelectElement>(null);
   const teamSelectRef = useRef<HTMLSelectElement>(null);
   const ownerSelectRef = useRef<HTMLSelectElement>(null);
   const assigneeSelectRef = useRef<HTMLSelectElement>(null);
   const periodSelectRef = useRef<HTMLSelectElement>(null);
-  const parentSelectRef = useRef<HTMLSelectElement>(null);
+  const parentSearchRef = useRef<HTMLInputElement>(null);
+  const parentDropdownRef = useRef<HTMLDivElement>(null);
 
   const allObjectives = useOKRStore((state: OKRStore) => state.objectives);
   const periods = useOKRStore((state: OKRStore) => state.periods);
@@ -107,6 +109,16 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
       o.id !== objective.id && !getDescendantIds.has(o.id)
     ),
     [allObjectives, objective.id, getDescendantIds]
+  );
+
+  // Filtered parent objectives based on search
+  const filteredParentObjectives = useMemo(
+    () => parentSearch.trim()
+      ? validParentObjectives.filter((o: Objective) =>
+          o.title.toLowerCase().includes(parentSearch.toLowerCase())
+        )
+      : validParentObjectives,
+    [validParentObjectives, parentSearch]
   );
 
   const parentObjective = useMemo(
@@ -181,9 +193,24 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
   }, [editingPeriod]);
 
   useEffect(() => {
-    if (editingParent && parentSelectRef.current) {
-      parentSelectRef.current.focus();
+    if (editingParent && parentSearchRef.current) {
+      parentSearchRef.current.focus();
     }
+  }, [editingParent]);
+
+  // Close parent dropdown when clicking outside
+  useEffect(() => {
+    if (!editingParent) return;
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (parentDropdownRef.current && !parentDropdownRef.current.contains(e.target as Node)) {
+        setEditingParent(false);
+        setParentSearch('');
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [editingParent]);
 
   const handleLevelChange = async (newLevel: ObjectiveLevel) => {
@@ -223,6 +250,7 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
 
   const handleParentChange = async (newParentId: string) => {
     setEditingParent(false);
+    setParentSearch('');
     if (newParentId !== (objective.parentId || '')) {
       await updateObjective(objective.id, { parentId: newParentId || undefined }, userEmail);
     }
@@ -334,21 +362,48 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
           )}
         </div>
 
-        {/* Parent column - fixed width, editable */}
-        <div className="w-36 px-1 py-1 flex-shrink-0">
+        {/* Parent column - fixed width, editable with search */}
+        <div className="w-36 px-1 py-1 flex-shrink-0 relative">
           {editingParent ? (
-            <select
-              ref={parentSelectRef}
-              value={objective.parentId || ''}
-              onChange={(e) => handleParentChange(e.target.value)}
-              onBlur={() => setEditingParent(false)}
-              className="w-full text-xs px-1 py-0.5 border border-blue-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-            >
-              <option value="">No parent</option>
-              {validParentObjectives.map((o: Objective) => (
-                <option key={o.id} value={o.id}>{o.title.length > 25 ? o.title.substring(0, 25) + '...' : o.title}</option>
-              ))}
-            </select>
+            <div ref={parentDropdownRef} className="absolute top-0 left-0 z-50 w-64 bg-white border border-gray-300 rounded shadow-lg">
+              <div className="p-1 border-b border-gray-200">
+                <input
+                  ref={parentSearchRef}
+                  type="text"
+                  value={parentSearch}
+                  onChange={(e) => setParentSearch(e.target.value)}
+                  placeholder="Search objectives..."
+                  className="w-full text-xs px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      setEditingParent(false);
+                      setParentSearch('');
+                    }
+                  }}
+                />
+              </div>
+              <div className="max-h-48 overflow-y-auto">
+                <button
+                  onClick={() => handleParentChange('')}
+                  className={`w-full text-left text-xs px-2 py-1.5 hover:bg-gray-100 ${!objective.parentId ? 'bg-blue-50 text-blue-700' : 'text-gray-600'}`}
+                >
+                  No parent
+                </button>
+                {filteredParentObjectives.map((o: Objective) => (
+                  <button
+                    key={o.id}
+                    onClick={() => handleParentChange(o.id)}
+                    className={`w-full text-left text-xs px-2 py-1.5 hover:bg-gray-100 truncate ${objective.parentId === o.id ? 'bg-blue-50 text-blue-700' : 'text-gray-700'}`}
+                    title={o.title}
+                  >
+                    {o.title}
+                  </button>
+                ))}
+                {filteredParentObjectives.length === 0 && parentSearch.trim() && (
+                  <div className="text-xs text-gray-400 px-2 py-1.5">No matches found</div>
+                )}
+              </div>
+            </div>
           ) : (
             <button
               onClick={() => canModify && setEditingParent(true)}
