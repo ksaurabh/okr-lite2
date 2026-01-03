@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import type { Objective, ObjectiveLevel, Period, User, Team } from '../../types';
+import type { Objective, ObjectiveLevel, Period, User, Team, Tag } from '../../types';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
 import { SlidePane } from '../common/SlidePane';
@@ -43,6 +43,10 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
   const [editingPeriod, setEditingPeriod] = useState(false);
   const [editingParent, setEditingParent] = useState(false);
   const [parentSearch, setParentSearch] = useState('');
+  const [editingTags, setEditingTags] = useState(false);
+  const tagsDropdownRef = useRef<HTMLDivElement>(null);
+  const tagsButtonRef = useRef<HTMLButtonElement>(null);
+  const [tagsDropdownPosition, setTagsDropdownPosition] = useState<{ top: number; left: number } | null>(null);
   const quickAddInputRef = useRef<HTMLInputElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const levelSelectRef = useRef<HTMLSelectElement>(null);
@@ -58,6 +62,7 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
   const allObjectives = useOKRStore((state: OKRStore) => state.objectives);
   const periods = useOKRStore((state: OKRStore) => state.periods);
   const teams = useOKRStore((state: OKRStore) => state.teams);
+  const allTags = useOKRStore((state: OKRStore) => state.tags);
   const addObjective = useOKRStore((state: OKRStore) => state.addObjective);
   const updateObjective = useOKRStore((state: OKRStore) => state.updateObjective);
   const deleteObjective = useOKRStore((state: OKRStore) => state.deleteObjective);
@@ -130,6 +135,18 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
   const parentObjective = useMemo(
     () => allObjectives.find((o: Objective) => o.id === objective.parentId),
     [allObjectives, objective.parentId]
+  );
+
+  // Get objective's current tags
+  const objectiveTags = useMemo(
+    () => allTags.filter((tag: Tag) => objective.tagIds?.includes(tag.id)),
+    [allTags, objective.tagIds]
+  );
+
+  // Get available tags (not already on this objective)
+  const availableTags = useMemo(
+    () => allTags.filter((tag: Tag) => !objective.tagIds?.includes(tag.id)),
+    [allTags, objective.tagIds]
   );
 
   const owner = useMemo(
@@ -236,6 +253,31 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [editingParent]);
 
+  // Tags dropdown positioning
+  useEffect(() => {
+    if (editingTags && tagsButtonRef.current) {
+      const rect = tagsButtonRef.current.getBoundingClientRect();
+      setTagsDropdownPosition({ top: rect.bottom + 2, left: rect.left });
+    } else {
+      setTagsDropdownPosition(null);
+    }
+  }, [editingTags]);
+
+  // Close tags dropdown when clicking outside
+  useEffect(() => {
+    if (!editingTags) return;
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (tagsDropdownRef.current && !tagsDropdownRef.current.contains(e.target as Node) &&
+          tagsButtonRef.current && !tagsButtonRef.current.contains(e.target as Node)) {
+        setEditingTags(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [editingTags]);
+
   const handleTitleSave = async () => {
     setEditingTitle(false);
     const trimmedTitle = editTitleValue.trim();
@@ -297,6 +339,16 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
     if (newParentId !== (objective.parentId || '')) {
       await updateObjective(objective.id, { parentId: newParentId || undefined }, userEmail);
     }
+  };
+
+  const handleAddTag = async (tagId: string) => {
+    const newTagIds = [...(objective.tagIds || []), tagId];
+    await updateObjective(objective.id, { tagIds: newTagIds }, userEmail);
+  };
+
+  const handleRemoveTag = async (tagId: string) => {
+    const newTagIds = (objective.tagIds || []).filter(id => id !== tagId);
+    await updateObjective(objective.id, { tagIds: newTagIds }, userEmail);
   };
 
   const handleQuickAdd = async () => {
@@ -584,6 +636,60 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
           )}
         </div>
 
+        {/* Tags column - editable */}
+        <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.tags }}>
+          <div className="flex items-center gap-1 flex-wrap">
+            {objectiveTags.map((tag: Tag) => (
+              <span
+                key={tag.id}
+                className={`inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded ${tag.color} ${canModify ? 'cursor-pointer hover:opacity-80' : ''}`}
+                onClick={() => canModify && handleRemoveTag(tag.id)}
+                title={canModify ? 'Click to remove' : tag.name}
+              >
+                {tag.name}
+                {canModify && (
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                )}
+              </span>
+            ))}
+            {canModify && availableTags.length > 0 && (
+              <button
+                ref={tagsButtonRef}
+                onClick={() => setEditingTags(!editingTags)}
+                className="text-gray-400 hover:text-gray-600 p-0.5"
+                title="Add tag"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+              </button>
+            )}
+          </div>
+          {editingTags && tagsDropdownPosition && (
+            <div
+              ref={tagsDropdownRef}
+              className="fixed z-[100] bg-white border border-gray-300 rounded shadow-lg max-h-48 overflow-y-auto"
+              style={{ top: tagsDropdownPosition.top, left: tagsDropdownPosition.left, minWidth: 120 }}
+            >
+              {availableTags.map((tag: Tag) => (
+                <button
+                  key={tag.id}
+                  onClick={() => {
+                    handleAddTag(tag.id);
+                    setEditingTags(false);
+                  }}
+                  className="w-full text-left text-xs px-2 py-1.5 hover:bg-gray-100 flex items-center gap-1.5"
+                >
+                  <span className={`w-2 h-2 rounded-full ${tag.color}`}></span>
+                  {tag.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Progress column */}
         <div className="px-2 py-1.5 text-xs text-gray-500 font-medium text-right flex-shrink-0" style={{ width: columnWidths.progress }}>
           {objective.progress}%
@@ -638,6 +744,7 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
           <div className="px-1" style={{ width: columnWidths.owner }} />
           <div className="px-1" style={{ width: columnWidths.assignee }} />
           <div className="px-1" style={{ width: columnWidths.period }} />
+          <div className="px-1" style={{ width: columnWidths.tags }} />
           <div className="px-2" style={{ width: columnWidths.progress }} />
           <div className="w-16 px-2" />
         </div>

@@ -640,6 +640,13 @@ export function ObjectiveTree() {
                 onMouseDown={(e) => handleResizeStart('period', e)}
               />
             </div>
+            <div className="relative flex items-center" style={{ width: columnWidths.tags }}>
+              <div className="px-1 py-2 flex-1">Tags</div>
+              <div
+                className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 z-10"
+                onMouseDown={(e) => handleResizeStart('tags', e)}
+              />
+            </div>
             <div className="relative flex items-center" style={{ width: columnWidths.progress }}>
               <div className="px-2 py-2 flex-1 text-right">Progress</div>
               <div

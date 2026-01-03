@@ -122,6 +122,7 @@ export interface ColumnWidths {
   owner: number;
   assignee: number;
   period: number;
+  tags: number;
   progress: number;
 }
 
@@ -132,6 +133,7 @@ export const DEFAULT_COLUMN_WIDTHS: ColumnWidths = {
   owner: 112,     // w-28
   assignee: 112,  // w-28
   period: 112,    // w-28
+  tags: 160,      // w-40
   progress: 56,   // w-14
 };
 
