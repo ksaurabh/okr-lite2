@@ -1,6 +1,7 @@
 export type ObjectiveLevel = 'company' | 'team' | 'individual';
 export type ObjectiveStatus = 'on-track' | 'at-risk' | 'behind';
 export type ObjectiveType = 'initiative' | 'saga' | 'epic' | 'story' | 'subtask';
+export type NextStepDateFilter = 'last_7d' | 'last_30d' | 'past' | 'next_7d' | 'next_30d' | 'future';
 
 export interface FieldChange {
   field: string;
@@ -30,6 +31,8 @@ export interface Objective {
   ownerId?: string;
   assigneeId?: string;
   tagIds?: string[];
+  nextStepDate?: string;
+  nextStep?: string;
   progress: number;
   status: ObjectiveStatus;
   periodId: string;
@@ -103,6 +106,7 @@ export interface OKRState {
   filterOwnerOperator: FilterOperator;
   filterAssigneeIds: string[];
   filterAssigneeOperator: FilterOperator;
+  filterNextStepDate: NextStepDateFilter | null;
 }
 
 // Organization types

@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { useOKRStore, type OKRStore, type ColumnWidths } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
 import { CompactObjectiveCard } from './CompactObjectiveCard';
-import type { Period, PeriodType, Objective, Team, Tag, User, FilterOperator, ObjectiveType } from '../../types';
+import type { Period, PeriodType, Objective, Team, Tag, User, FilterOperator, ObjectiveType, NextStepDateFilter } from '../../types';
 
 const TYPE_OPTIONS: { value: ObjectiveType; label: string }[] = [
   { value: 'initiative', label: 'Initiative' },
@@ -10,6 +10,15 @@ const TYPE_OPTIONS: { value: ObjectiveType; label: string }[] = [
   { value: 'epic', label: 'Epic' },
   { value: 'story', label: 'Story' },
   { value: 'subtask', label: 'SubTask' },
+];
+
+const NEXT_STEP_DATE_OPTIONS: { value: NextStepDateFilter; label: string }[] = [
+  { value: 'last_7d', label: 'In Last 7d' },
+  { value: 'last_30d', label: 'In Last 30d' },
+  { value: 'past', label: 'In the Past' },
+  { value: 'next_7d', label: 'In Next 7d' },
+  { value: 'next_30d', label: 'In Next 30d' },
+  { value: 'future', label: 'In the Future' },
 ];
 
 const API_URL = import.meta.env.VITE_API_URL || '';
@@ -117,6 +126,8 @@ export function ObjectiveTree() {
   const setFilterOwnerOperator = useOKRStore((state: OKRStore) => state.setFilterOwnerOperator);
   const setFilterAssignees = useOKRStore((state: OKRStore) => state.setFilterAssignees);
   const setFilterAssigneeOperator = useOKRStore((state: OKRStore) => state.setFilterAssigneeOperator);
+  const filterNextStepDate = useOKRStore((state: OKRStore) => state.filterNextStepDate);
+  const setFilterNextStepDate = useOKRStore((state: OKRStore) => state.setFilterNextStepDate);
   const clearAllFilters = useOKRStore((state: OKRStore) => state.clearAllFilters);
   const columnWidths = useOKRStore((state: OKRStore) => state.columnWidths);
   const setColumnWidths = useOKRStore((state: OKRStore) => state.setColumnWidths);
@@ -293,6 +304,38 @@ export function ObjectiveTree() {
       }
     }
 
+    // Filter by next step date
+    if (filterNextStepDate) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayMs = today.getTime();
+
+      result = result.filter((obj: Objective) => {
+        if (!obj.nextStepDate) return false;
+        const stepDate = new Date(obj.nextStepDate);
+        stepDate.setHours(0, 0, 0, 0);
+        const stepMs = stepDate.getTime();
+        const diffDays = (stepMs - todayMs) / (1000 * 60 * 60 * 24);
+
+        switch (filterNextStepDate) {
+          case 'last_7d':
+            return diffDays >= -7 && diffDays < 0;
+          case 'last_30d':
+            return diffDays >= -30 && diffDays < 0;
+          case 'past':
+            return diffDays < 0;
+          case 'next_7d':
+            return diffDays >= 0 && diffDays <= 7;
+          case 'next_30d':
+            return diffDays >= 0 && diffDays <= 30;
+          case 'future':
+            return diffDays >= 0;
+          default:
+            return true;
+        }
+      });
+    }
+
     // Optionally include children of matching objectives
     if (showChildren && result.length > 0) {
       const matchingIds = new Set(result.map((obj: Objective) => obj.id));
@@ -326,7 +369,7 @@ export function ObjectiveTree() {
     }
 
     return result;
-  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, includeAncestorPeriods, includeChildPeriods, includeChildTeams, showChildren, directChildrenOnly, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds]);
+  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterNextStepDate, includeAncestorPeriods, includeChildPeriods, includeChildTeams, showChildren, directChildrenOnly, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds]);
 
   // Get IDs of all filtered objectives for quick lookup
   const filteredObjectiveIds = useMemo(
@@ -533,6 +576,21 @@ export function ObjectiveTree() {
               </div>
             </div>
 
+            {/* Next Step Date Filter */}
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-2">Next Step Date</label>
+              <select
+                value={filterNextStepDate || ''}
+                onChange={(e) => setFilterNextStepDate(e.target.value as NextStepDateFilter || null)}
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">All</option>
+                {NEXT_STEP_DATE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+
             {/* Owner Filter */}
             {orgUsers.length > 0 && (
               <div>
@@ -612,7 +670,10 @@ export function ObjectiveTree() {
                   <input
                     type="checkbox"
                     checked={showChildren}
-                    onChange={(e) => setShowChildren(e.target.checked)}
+                    onChange={(e) => {
+                      setShowChildren(e.target.checked);
+                      if (e.target.checked) setDirectChildrenOnly(true);
+                    }}
                     className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                   />
                   Show children of matching objectives
@@ -660,63 +721,77 @@ export function ObjectiveTree() {
             <div className="relative flex items-center" style={{ width: columnWidths.level }}>
               <div className="px-1 py-2 flex-1">Level</div>
               <div
-                className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 z-10"
+                className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
                 onMouseDown={(e) => handleResizeStart('level', e)}
               />
             </div>
             <div className="relative flex items-center" style={{ width: columnWidths.type }}>
               <div className="px-1 py-2 flex-1">Type</div>
               <div
-                className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 z-10"
+                className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
                 onMouseDown={(e) => handleResizeStart('type', e)}
               />
             </div>
             <div className="relative flex items-center" style={{ width: columnWidths.parent }}>
               <div className="px-1 py-2 flex-1">Parent</div>
               <div
-                className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 z-10"
+                className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
                 onMouseDown={(e) => handleResizeStart('parent', e)}
               />
             </div>
             <div className="relative flex items-center" style={{ width: columnWidths.team }}>
               <div className="px-1 py-2 flex-1">Team</div>
               <div
-                className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 z-10"
+                className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
                 onMouseDown={(e) => handleResizeStart('team', e)}
               />
             </div>
             <div className="relative flex items-center" style={{ width: columnWidths.owner }}>
               <div className="px-1 py-2 flex-1">Owner</div>
               <div
-                className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 z-10"
+                className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
                 onMouseDown={(e) => handleResizeStart('owner', e)}
               />
             </div>
             <div className="relative flex items-center" style={{ width: columnWidths.assignee }}>
               <div className="px-1 py-2 flex-1">Assignee</div>
               <div
-                className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 z-10"
+                className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
                 onMouseDown={(e) => handleResizeStart('assignee', e)}
               />
             </div>
             <div className="relative flex items-center" style={{ width: columnWidths.period }}>
               <div className="px-1 py-2 flex-1">Period</div>
               <div
-                className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 z-10"
+                className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
                 onMouseDown={(e) => handleResizeStart('period', e)}
+              />
+            </div>
+            <div className="relative flex items-center" style={{ width: columnWidths.nextStepDate }}>
+              <div className="px-1 py-2 flex-1">Next Date</div>
+              <div
+                className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                onMouseDown={(e) => handleResizeStart('nextStepDate', e)}
+              />
+            </div>
+            <div className="relative flex items-center" style={{ width: columnWidths.nextStep }}>
+              <div className="px-1 py-2 flex-1">Next Step</div>
+              <div
+                className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                onMouseDown={(e) => handleResizeStart('nextStep', e)}
               />
             </div>
             <div className="relative flex items-center" style={{ width: columnWidths.tags }}>
               <div className="px-1 py-2 flex-1">Tags</div>
               <div
-                className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 z-10"
+                className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
                 onMouseDown={(e) => handleResizeStart('tags', e)}
               />
             </div>
             <div className="relative flex items-center" style={{ width: columnWidths.progress }}>
               <div className="px-2 py-2 flex-1 text-right">Progress</div>
               <div
-                className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 z-10"
+                className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
                 onMouseDown={(e) => handleResizeStart('progress', e)}
               />
             </div>

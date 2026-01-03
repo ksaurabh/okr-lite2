@@ -42,6 +42,9 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   const [editingOwner, setEditingOwner] = useState(false);
   const [editingAssignee, setEditingAssignee] = useState(false);
   const [editingPeriod, setEditingPeriod] = useState(false);
+  const [editingNextStepDate, setEditingNextStepDate] = useState(false);
+  const [editingNextStep, setEditingNextStep] = useState(false);
+  const [nextStepValue, setNextStepValue] = useState(objectiveProp.nextStep || '');
   const [editingParent, setEditingParent] = useState(false);
   const [parentSearch, setParentSearch] = useState('');
   const [editingTags, setEditingTags] = useState(false);
@@ -56,6 +59,8 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   const ownerSelectRef = useRef<HTMLSelectElement>(null);
   const assigneeSelectRef = useRef<HTMLSelectElement>(null);
   const periodSelectRef = useRef<HTMLSelectElement>(null);
+  const nextStepDateInputRef = useRef<HTMLInputElement>(null);
+  const nextStepInputRef = useRef<HTMLInputElement>(null);
   const parentSearchRef = useRef<HTMLInputElement>(null);
   const parentDropdownRef = useRef<HTMLDivElement>(null);
   const parentButtonRef = useRef<HTMLButtonElement>(null);
@@ -251,6 +256,26 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   }, [editingPeriod]);
 
   useEffect(() => {
+    if (editingNextStepDate && nextStepDateInputRef.current) {
+      nextStepDateInputRef.current.focus();
+    }
+  }, [editingNextStepDate]);
+
+  useEffect(() => {
+    if (editingNextStep && nextStepInputRef.current) {
+      nextStepInputRef.current.focus();
+      nextStepInputRef.current.select();
+    }
+  }, [editingNextStep]);
+
+  // Sync nextStepValue when objective changes externally
+  useEffect(() => {
+    if (!editingNextStep) {
+      setNextStepValue(objective.nextStep || '');
+    }
+  }, [objective.nextStep, editingNextStep]);
+
+  useEffect(() => {
     if (editingParent) {
       // Calculate dropdown position based on button location
       if (parentButtonRef.current) {
@@ -365,6 +390,33 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
     setEditingPeriod(false);
     if (newPeriodId !== objective.periodId) {
       await updateObjective(objective.id, { periodId: newPeriodId }, userEmail);
+    }
+  };
+
+  const handleNextStepDateChange = async (newDate: string) => {
+    setEditingNextStepDate(false);
+    if (newDate !== (objective.nextStepDate || '')) {
+      await updateObjective(objective.id, { nextStepDate: newDate || undefined }, userEmail);
+    }
+  };
+
+  const handleNextStepSave = async () => {
+    setEditingNextStep(false);
+    const trimmedValue = nextStepValue.trim();
+    if (trimmedValue !== (objective.nextStep || '')) {
+      await updateObjective(objective.id, { nextStep: trimmedValue || undefined }, userEmail);
+    } else {
+      setNextStepValue(objective.nextStep || '');
+    }
+  };
+
+  const handleNextStepKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleNextStepSave();
+    } else if (e.key === 'Escape') {
+      setEditingNextStep(false);
+      setNextStepValue(objective.nextStep || '');
     }
   };
 
@@ -697,6 +749,53 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           )}
         </div>
 
+        {/* Next Step Date column - editable with date picker */}
+        <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.nextStepDate }}>
+          {editingNextStepDate ? (
+            <input
+              ref={nextStepDateInputRef}
+              type="date"
+              value={objective.nextStepDate || ''}
+              onChange={(e) => handleNextStepDateChange(e.target.value)}
+              onBlur={() => setEditingNextStepDate(false)}
+              className="w-full text-xs px-1 py-0.5 border border-blue-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          ) : (
+            <button
+              onClick={() => canModify && setEditingNextStepDate(true)}
+              className={`w-full text-left text-xs px-1 py-0.5 rounded truncate ${canModify ? 'hover:bg-gray-100 cursor-pointer' : 'cursor-default'} ${objective.nextStepDate ? 'text-gray-600' : 'text-gray-300'}`}
+              disabled={!canModify}
+            >
+              {objective.nextStepDate ? new Date(objective.nextStepDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}
+            </button>
+          )}
+        </div>
+
+        {/* Next Step column - editable text */}
+        <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.nextStep }}>
+          {editingNextStep ? (
+            <input
+              ref={nextStepInputRef}
+              type="text"
+              value={nextStepValue}
+              onChange={(e) => setNextStepValue(e.target.value)}
+              onBlur={handleNextStepSave}
+              onKeyDown={handleNextStepKeyDown}
+              className="w-full text-xs px-1 py-0.5 border border-blue-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+              placeholder="Next step..."
+            />
+          ) : (
+            <button
+              onClick={() => canModify && setEditingNextStep(true)}
+              className={`w-full text-left text-xs px-1 py-0.5 rounded truncate ${canModify ? 'hover:bg-gray-100 cursor-pointer' : 'cursor-default'} ${objective.nextStep ? 'text-gray-600' : 'text-gray-300'}`}
+              disabled={!canModify}
+              title={objective.nextStep || ''}
+            >
+              {objective.nextStep || '—'}
+            </button>
+          )}
+        </div>
+
         {/* Tags column - editable */}
         <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.tags }}>
           <div className="flex items-center gap-1 flex-wrap">
@@ -806,6 +905,8 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           <div className="px-1" style={{ width: columnWidths.owner }} />
           <div className="px-1" style={{ width: columnWidths.assignee }} />
           <div className="px-1" style={{ width: columnWidths.period }} />
+          <div className="px-1" style={{ width: columnWidths.nextStepDate }} />
+          <div className="px-1" style={{ width: columnWidths.nextStep }} />
           <div className="px-1" style={{ width: columnWidths.tags }} />
           <div className="px-2" style={{ width: columnWidths.progress }} />
           <div className="w-16 px-2" />
