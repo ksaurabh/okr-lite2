@@ -1,9 +1,11 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import type { Objective, ObjectiveLevel } from '../../types';
+import type { Objective, ObjectiveLevel, Period, User } from '../../types';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
 import { SlidePane } from '../common/SlidePane';
 import { ObjectiveForm } from './ObjectiveForm';
+
+const API_URL = import.meta.env.VITE_API_URL || '';
 
 interface CompactObjectiveCardProps {
   objective: Objective;
@@ -31,9 +33,11 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
   const [quickAddTitle, setQuickAddTitle] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [orgUsers, setOrgUsers] = useState<User[]>([]);
   const quickAddInputRef = useRef<HTMLInputElement>(null);
 
   const allObjectives = useOKRStore((state: OKRStore) => state.objectives);
+  const periods = useOKRStore((state: OKRStore) => state.periods);
   const addObjective = useOKRStore((state: OKRStore) => state.addObjective);
   const deleteObjective = useOKRStore((state: OKRStore) => state.deleteObjective);
   const editorWidth = useOKRStore((state: OKRStore) => state.editorWidth);
@@ -44,12 +48,38 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
   const isAdmin = isSuperAdmin || isOrgAdmin;
   const canModify = isAdmin || objective.createdBy === userEmail;
 
+  // Fetch users for assignee display
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/users`, { credentials: 'include' });
+        if (response.ok) {
+          const data = await response.json();
+          setOrgUsers(data.users || []);
+        }
+      } catch (err) {
+        console.error('Failed to fetch users:', err);
+      }
+    };
+    fetchUsers();
+  }, []);
+
   const childObjectives = useMemo(
     () => allObjectives.filter((o: Objective) =>
       o.parentId === objective.id &&
       (!filteredObjectiveIds || filteredObjectiveIds.has(o.id))
     ),
     [allObjectives, objective.id, filteredObjectiveIds]
+  );
+
+  const assignee = useMemo(
+    () => orgUsers.find((u: User) => u.id === objective.assigneeId),
+    [orgUsers, objective.assigneeId]
+  );
+
+  const period = useMemo(
+    () => periods.find((p: Period) => p.id === objective.periodId),
+    [periods, objective.periodId]
   );
 
   const hasChildren = childObjectives.length > 0;
@@ -123,15 +153,30 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
         </button>
 
         {/* Level badge */}
-        <span className={`w-5 h-5 rounded flex items-center justify-center text-xs font-bold ${badge.bgColor} ${badge.textColor}`}>
+        <span className={`w-5 h-5 rounded flex items-center justify-center text-xs font-bold flex-shrink-0 ${badge.bgColor} ${badge.textColor}`}>
           {badge.label}
         </span>
 
         {/* Title */}
-        <span className="flex-1 text-sm text-gray-900 truncate">{objective.title}</span>
+        <span className="flex-1 text-sm text-gray-900 truncate min-w-0">{objective.title}</span>
+
+        {/* Assignee */}
+        {assignee && (
+          <span className="flex items-center gap-1 text-xs text-gray-500 flex-shrink-0">
+            <span className="w-4 h-4 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-[10px] font-bold">A</span>
+            <span className="max-w-[80px] truncate">{assignee.name}</span>
+          </span>
+        )}
+
+        {/* Period */}
+        {period && (
+          <span className="text-xs text-gray-500 bg-blue-50 px-1.5 py-0.5 rounded flex-shrink-0 max-w-[80px] truncate">
+            {period.name}
+          </span>
+        )}
 
         {/* Progress percentage */}
-        <span className="text-xs text-gray-500 font-medium w-10 text-right">{objective.progress}%</span>
+        <span className="text-xs text-gray-500 font-medium w-10 text-right flex-shrink-0">{objective.progress}%</span>
 
         {/* Action buttons - visible on hover */}
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
