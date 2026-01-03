@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect } from 'react';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
 import { ObjectiveCard } from './ObjectiveCard';
+import { CompactObjectiveCard } from './CompactObjectiveCard';
 import type { Period, PeriodType, Objective, Team, Tag, User, FilterOperator } from '../../types';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
@@ -57,7 +58,7 @@ function PeriodFilterButton({ period, periods, activePeriodId, onSelect, depth }
   );
 }
 
-type ViewMode = 'tree' | 'list';
+type ViewMode = 'tree' | 'list' | 'compact';
 
 export function ObjectiveTree() {
   const [isFilterExpanded, setIsFilterExpanded] = useState(true);
@@ -515,6 +516,7 @@ export function ObjectiveTree() {
                 ? 'bg-gray-100 text-gray-900'
                 : 'text-gray-500 hover:text-gray-700'
             }`}
+            title="Tree view"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
@@ -528,11 +530,26 @@ export function ObjectiveTree() {
                 ? 'bg-gray-100 text-gray-900'
                 : 'text-gray-500 hover:text-gray-700'
             }`}
+            title="List view"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
             </svg>
             List
+          </button>
+          <button
+            onClick={() => setViewMode('compact')}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors ${
+              viewMode === 'compact'
+                ? 'bg-gray-100 text-gray-900'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+            title="Compact view"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+            Compact
           </button>
         </div>
       </div>
@@ -612,6 +629,45 @@ export function ObjectiveTree() {
               <ObjectiveCard key={obj.id} objective={obj} showChildren={false} />
             ))}
           </div>
+        </section>
+      )}
+
+      {/* Compact View - Single-line objectives with quick-add */}
+      {viewMode === 'compact' && filteredObjectives.length > 0 && (
+        <section className="bg-white rounded-lg shadow-sm border border-gray-200 p-2">
+          {companyObjectives.length > 0 && (
+            <div className="mb-2">
+              <div className="text-xs font-medium text-gray-500 px-2 py-1 flex items-center gap-1.5">
+                <span className="w-2 h-2 bg-purple-500 rounded-full"></span>
+                Company
+              </div>
+              {companyObjectives.map((obj: Objective) => (
+                <CompactObjectiveCard key={obj.id} objective={obj} filteredObjectiveIds={filteredObjectiveIds} />
+              ))}
+            </div>
+          )}
+          {teamObjectives.length > 0 && (
+            <div className="mb-2">
+              <div className="text-xs font-medium text-gray-500 px-2 py-1 flex items-center gap-1.5">
+                <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                Team
+              </div>
+              {teamObjectives.map((obj: Objective) => (
+                <CompactObjectiveCard key={obj.id} objective={obj} filteredObjectiveIds={filteredObjectiveIds} />
+              ))}
+            </div>
+          )}
+          {individualObjectives.length > 0 && (
+            <div>
+              <div className="text-xs font-medium text-gray-500 px-2 py-1 flex items-center gap-1.5">
+                <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                Individual
+              </div>
+              {individualObjectives.map((obj: Objective) => (
+                <CompactObjectiveCard key={obj.id} objective={obj} filteredObjectiveIds={filteredObjectiveIds} />
+              ))}
+            </div>
+          )}
         </section>
       )}
     </div>
