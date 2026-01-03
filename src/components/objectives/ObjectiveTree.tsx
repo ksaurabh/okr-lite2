@@ -13,6 +13,7 @@ const TYPE_OPTIONS: { value: ObjectiveType; label: string }[] = [
 ];
 
 const NEXT_STEP_DATE_OPTIONS: { value: NextStepDateFilter; label: string }[] = [
+  { value: 'not_set', label: 'Not Set' },
   { value: 'last_7d', label: 'In Last 7d' },
   { value: 'last_30d', label: 'In Last 30d' },
   { value: 'past', label: 'In the Past' },
@@ -306,34 +307,38 @@ export function ObjectiveTree() {
 
     // Filter by next step date
     if (filterNextStepDate) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const todayMs = today.getTime();
+      if (filterNextStepDate === 'not_set') {
+        result = result.filter((obj: Objective) => !obj.nextStepDate);
+      } else {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const todayMs = today.getTime();
 
-      result = result.filter((obj: Objective) => {
-        if (!obj.nextStepDate) return false;
-        const stepDate = new Date(obj.nextStepDate);
-        stepDate.setHours(0, 0, 0, 0);
-        const stepMs = stepDate.getTime();
-        const diffDays = (stepMs - todayMs) / (1000 * 60 * 60 * 24);
+        result = result.filter((obj: Objective) => {
+          if (!obj.nextStepDate) return false;
+          const stepDate = new Date(obj.nextStepDate);
+          stepDate.setHours(0, 0, 0, 0);
+          const stepMs = stepDate.getTime();
+          const diffDays = (stepMs - todayMs) / (1000 * 60 * 60 * 24);
 
-        switch (filterNextStepDate) {
-          case 'last_7d':
-            return diffDays >= -7 && diffDays < 0;
-          case 'last_30d':
-            return diffDays >= -30 && diffDays < 0;
-          case 'past':
-            return diffDays < 0;
-          case 'next_7d':
-            return diffDays >= 0 && diffDays <= 7;
-          case 'next_30d':
-            return diffDays >= 0 && diffDays <= 30;
-          case 'future':
-            return diffDays >= 0;
-          default:
-            return true;
-        }
-      });
+          switch (filterNextStepDate) {
+            case 'last_7d':
+              return diffDays >= -7 && diffDays < 0;
+            case 'last_30d':
+              return diffDays >= -30 && diffDays < 0;
+            case 'past':
+              return diffDays < 0;
+            case 'next_7d':
+              return diffDays >= 0 && diffDays <= 7;
+            case 'next_30d':
+              return diffDays >= 0 && diffDays <= 30;
+            case 'future':
+              return diffDays >= 0;
+            default:
+              return true;
+          }
+        });
+      }
     }
 
     // Optionally include children of matching objectives

@@ -1,7 +1,7 @@
 export type ObjectiveLevel = 'company' | 'team' | 'individual';
 export type ObjectiveStatus = 'on-track' | 'at-risk' | 'behind';
 export type ObjectiveType = 'initiative' | 'saga' | 'epic' | 'story' | 'subtask';
-export type NextStepDateFilter = 'last_7d' | 'last_30d' | 'past' | 'next_7d' | 'next_30d' | 'future';
+export type NextStepDateFilter = 'not_set' | 'last_7d' | 'last_30d' | 'past' | 'next_7d' | 'next_30d' | 'future';
 
 export interface FieldChange {
   field: string;
