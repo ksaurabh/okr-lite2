@@ -218,7 +218,7 @@ export function AdminPage() {
 
         if (!okrResponse.ok) {
           const errorData = await okrResponse.json().catch(() => ({}));
-          throw new Error(errorData.error || 'Failed to import OKR data to server');
+          throw new Error(errorData.error || `Failed to import OKR data (HTTP ${okrResponse.status})`);
         }
 
         // Import users and organizations via API (if present)
