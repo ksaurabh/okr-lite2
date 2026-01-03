@@ -12,6 +12,7 @@ const defaultState: OKRState = {
   activePeriodId: null,
   filterTagIds: [],
   filterTeamIds: [],
+  filterTypes: [],
   filterOwnerIds: [],
   filterOwnerOperator: 'equals',
   filterAssigneeIds: [],

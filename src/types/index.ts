@@ -1,5 +1,6 @@
 export type ObjectiveLevel = 'company' | 'team' | 'individual';
 export type ObjectiveStatus = 'on-track' | 'at-risk' | 'behind';
+export type ObjectiveType = 'initiative' | 'saga' | 'epic' | 'story' | 'subtask';
 
 export interface FieldChange {
   field: string;
@@ -23,6 +24,7 @@ export interface Objective {
   title: string;
   description?: string;
   level: ObjectiveLevel;
+  type?: ObjectiveType;
   parentId?: string;
   teamId?: string;
   ownerId?: string;
@@ -96,6 +98,7 @@ export interface OKRState {
   activePeriodId: string | null;
   filterTagIds: string[];
   filterTeamIds: string[];
+  filterTypes: ObjectiveType[];
   filterOwnerIds: string[];
   filterOwnerOperator: FilterOperator;
   filterAssigneeIds: string[];

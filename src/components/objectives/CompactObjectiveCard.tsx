@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import type { Objective, ObjectiveLevel, Period, User, Team, Tag } from '../../types';
+import type { Objective, ObjectiveLevel, ObjectiveType, Period, User, Team, Tag } from '../../types';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
 import { SlidePane } from '../common/SlidePane';
@@ -37,6 +37,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   const [editingTitle, setEditingTitle] = useState(false);
   const [editTitleValue, setEditTitleValue] = useState(objectiveProp.title);
   const [editingLevel, setEditingLevel] = useState(false);
+  const [editingType, setEditingType] = useState(false);
   const [editingTeam, setEditingTeam] = useState(false);
   const [editingOwner, setEditingOwner] = useState(false);
   const [editingAssignee, setEditingAssignee] = useState(false);
@@ -50,6 +51,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   const quickAddInputRef = useRef<HTMLInputElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const levelSelectRef = useRef<HTMLSelectElement>(null);
+  const typeSelectRef = useRef<HTMLSelectElement>(null);
   const teamSelectRef = useRef<HTMLSelectElement>(null);
   const ownerSelectRef = useRef<HTMLSelectElement>(null);
   const assigneeSelectRef = useRef<HTMLSelectElement>(null);
@@ -184,6 +186,14 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
     { value: 'individual', label: 'Individual' },
   ];
 
+  const typeOptions: { value: ObjectiveType; label: string }[] = [
+    { value: 'initiative', label: 'Initiative' },
+    { value: 'saga', label: 'Saga' },
+    { value: 'epic', label: 'Epic' },
+    { value: 'story', label: 'Story' },
+    { value: 'subtask', label: 'SubTask' },
+  ];
+
   useEffect(() => {
     if (showQuickAdd && quickAddInputRef.current) {
       quickAddInputRef.current.focus();
@@ -209,6 +219,12 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
       levelSelectRef.current.focus();
     }
   }, [editingLevel]);
+
+  useEffect(() => {
+    if (editingType && typeSelectRef.current) {
+      typeSelectRef.current.focus();
+    }
+  }, [editingType]);
 
   useEffect(() => {
     if (editingTeam && teamSelectRef.current) {
@@ -314,6 +330,13 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
     setEditingLevel(false);
     if (newLevel !== objective.level) {
       await updateObjective(objective.id, { level: newLevel }, userEmail);
+    }
+  };
+
+  const handleTypeChange = async (newType: ObjectiveType) => {
+    setEditingType(false);
+    if (newType !== objective.type) {
+      await updateObjective(objective.id, { type: newType }, userEmail);
     }
   };
 
@@ -484,6 +507,32 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
               <span className={`inline-flex items-center justify-center w-5 h-5 rounded text-xs font-bold ${badge.bgColor} ${badge.textColor}`}>
                 {badge.label}
               </span>
+            </button>
+          )}
+        </div>
+
+        {/* Type column - editable */}
+        <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.type }}>
+          {editingType ? (
+            <select
+              ref={typeSelectRef}
+              value={objective.type || ''}
+              onChange={(e) => handleTypeChange(e.target.value as ObjectiveType)}
+              onBlur={() => setEditingType(false)}
+              className="w-full text-xs px-1 py-0.5 border border-blue-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="">—</option>
+              {typeOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          ) : (
+            <button
+              onClick={() => canModify && setEditingType(true)}
+              className={`w-full text-left text-xs px-1 py-0.5 rounded truncate ${canModify ? 'hover:bg-gray-100 cursor-pointer' : 'cursor-default'} ${objective.type ? 'text-gray-600' : 'text-gray-300'}`}
+              disabled={!canModify}
+            >
+              {objective.type ? typeOptions.find(t => t.value === objective.type)?.label : '—'}
             </button>
           )}
         </div>
@@ -751,6 +800,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
             />
           </div>
           <div className="px-1" style={{ width: columnWidths.level }} />
+          <div className="px-1" style={{ width: columnWidths.type }} />
           <div className="px-1" style={{ width: columnWidths.parent }} />
           <div className="px-1" style={{ width: columnWidths.team }} />
           <div className="px-1" style={{ width: columnWidths.owner }} />

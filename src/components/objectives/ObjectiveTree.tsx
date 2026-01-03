@@ -2,7 +2,15 @@ import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { useOKRStore, type OKRStore, type ColumnWidths } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
 import { CompactObjectiveCard } from './CompactObjectiveCard';
-import type { Period, PeriodType, Objective, Team, Tag, User, FilterOperator } from '../../types';
+import type { Period, PeriodType, Objective, Team, Tag, User, FilterOperator, ObjectiveType } from '../../types';
+
+const TYPE_OPTIONS: { value: ObjectiveType; label: string }[] = [
+  { value: 'initiative', label: 'Initiative' },
+  { value: 'saga', label: 'Saga' },
+  { value: 'epic', label: 'Epic' },
+  { value: 'story', label: 'Story' },
+  { value: 'subtask', label: 'SubTask' },
+];
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -103,6 +111,8 @@ export function ObjectiveTree() {
   const setActivePeriod = useOKRStore((state: OKRStore) => state.setActivePeriod);
   const toggleFilterTag = useOKRStore((state: OKRStore) => state.toggleFilterTag);
   const toggleFilterTeam = useOKRStore((state: OKRStore) => state.toggleFilterTeam);
+  const filterTypes = useOKRStore((state: OKRStore) => state.filterTypes);
+  const toggleFilterType = useOKRStore((state: OKRStore) => state.toggleFilterType);
   const setFilterOwners = useOKRStore((state: OKRStore) => state.setFilterOwners);
   const setFilterOwnerOperator = useOKRStore((state: OKRStore) => state.setFilterOwnerOperator);
   const setFilterAssignees = useOKRStore((state: OKRStore) => state.setFilterAssignees);
@@ -170,7 +180,7 @@ export function ObjectiveTree() {
     [tags, orgId, userEmail, isAdmin]
   );
 
-  const hasActiveFilters = activePeriodId || filterTagIds.length > 0 || filterTeamIds.length > 0 || filterOwnerIds.length > 0 || filterAssigneeIds.length > 0;
+  const hasActiveFilters = activePeriodId || filterTagIds.length > 0 || filterTeamIds.length > 0 || filterTypes.length > 0 || filterOwnerIds.length > 0 || filterAssigneeIds.length > 0;
 
   // Get all ancestor period IDs for a given period (including the period itself)
   const getAncestorPeriodIds = useMemo(() => {
@@ -256,6 +266,13 @@ export function ObjectiveTree() {
       );
     }
 
+    // Filter by type
+    if (filterTypes.length > 0) {
+      result = result.filter((obj: Objective) =>
+        obj.type && filterTypes.includes(obj.type)
+      );
+    }
+
     // Filter by owners (with operator support)
     if (filterOwnerIds.length > 0) {
       if (filterOwnerOperator === 'equals') {
@@ -309,7 +326,7 @@ export function ObjectiveTree() {
     }
 
     return result;
-  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, includeAncestorPeriods, includeChildPeriods, includeChildTeams, showChildren, directChildrenOnly, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds]);
+  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, includeAncestorPeriods, includeChildPeriods, includeChildTeams, showChildren, directChildrenOnly, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds]);
 
   // Get IDs of all filtered objectives for quick lookup
   const filteredObjectiveIds = useMemo(
@@ -496,6 +513,26 @@ export function ObjectiveTree() {
               </div>
             )}
 
+            {/* Type Filter */}
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-2">Type</label>
+              <div className="flex flex-wrap gap-2">
+                {TYPE_OPTIONS.map((type) => (
+                  <button
+                    key={type.value}
+                    onClick={() => toggleFilterType(type.value)}
+                    className={`px-3 py-1.5 rounded-full text-sm transition-colors ${
+                      filterTypes.includes(type.value)
+                        ? 'bg-gray-800 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {type.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Owner Filter */}
             {orgUsers.length > 0 && (
               <div>
@@ -625,6 +662,13 @@ export function ObjectiveTree() {
               <div
                 className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 z-10"
                 onMouseDown={(e) => handleResizeStart('level', e)}
+              />
+            </div>
+            <div className="relative flex items-center" style={{ width: columnWidths.type }}>
+              <div className="px-1 py-2 flex-1">Type</div>
+              <div
+                className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 z-10"
+                onMouseDown={(e) => handleResizeStart('type', e)}
               />
             </div>
             <div className="relative flex items-center" style={{ width: columnWidths.parent }}>
