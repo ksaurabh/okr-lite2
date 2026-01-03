@@ -1,6 +1,7 @@
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
 import type { Period } from '../../types';
+import { APP_VERSION } from '../../version';
 
 interface HeaderProps {
   onAddObjective: () => void;
@@ -16,7 +17,10 @@ export function Header({ onAddObjective }: HeaderProps) {
     <header className="bg-white border-b border-gray-200 px-6 py-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <h1 className="text-xl font-bold text-gray-900">OKR Lite</h1>
+          <div>
+            <h1 className="text-xl font-bold text-gray-900">OKR Lite</h1>
+            <span className="text-xs text-gray-400">v{APP_VERSION}</span>
+          </div>
           {periods.length > 0 && (
             <select
               value={activePeriodId || ''}
