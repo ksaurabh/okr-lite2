@@ -34,6 +34,8 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
   const [isAdding, setIsAdding] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [orgUsers, setOrgUsers] = useState<User[]>([]);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [editTitleValue, setEditTitleValue] = useState(objective.title);
   const [editingLevel, setEditingLevel] = useState(false);
   const [editingTeam, setEditingTeam] = useState(false);
   const [editingOwner, setEditingOwner] = useState(false);
@@ -42,6 +44,7 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
   const [editingParent, setEditingParent] = useState(false);
   const [parentSearch, setParentSearch] = useState('');
   const quickAddInputRef = useRef<HTMLInputElement>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
   const levelSelectRef = useRef<HTMLSelectElement>(null);
   const teamSelectRef = useRef<HTMLSelectElement>(null);
   const ownerSelectRef = useRef<HTMLSelectElement>(null);
@@ -166,6 +169,13 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
   }, [showQuickAdd]);
 
   useEffect(() => {
+    if (editingTitle && titleInputRef.current) {
+      titleInputRef.current.focus();
+      titleInputRef.current.select();
+    }
+  }, [editingTitle]);
+
+  useEffect(() => {
     if (editingLevel && levelSelectRef.current) {
       levelSelectRef.current.focus();
     }
@@ -225,6 +235,26 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [editingParent]);
+
+  const handleTitleSave = async () => {
+    setEditingTitle(false);
+    const trimmedTitle = editTitleValue.trim();
+    if (trimmedTitle && trimmedTitle !== objective.title) {
+      await updateObjective(objective.id, { title: trimmedTitle }, userEmail);
+    } else {
+      setEditTitleValue(objective.title); // Reset if empty or unchanged
+    }
+  };
+
+  const handleTitleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleTitleSave();
+    } else if (e.key === 'Escape') {
+      setEditingTitle(false);
+      setEditTitleValue(objective.title);
+    }
+  };
 
   const handleLevelChange = async (newLevel: ObjectiveLevel) => {
     setEditingLevel(false);
@@ -331,8 +361,25 @@ export function CompactObjectiveCard({ objective, depth = 0, filteredObjectiveId
             </svg>
           </button>
 
-          {/* Title */}
-          <span className="text-sm text-gray-900 truncate">{objective.title}</span>
+          {/* Title - editable */}
+          {editingTitle ? (
+            <input
+              ref={titleInputRef}
+              type="text"
+              value={editTitleValue}
+              onChange={(e) => setEditTitleValue(e.target.value)}
+              onBlur={handleTitleSave}
+              onKeyDown={handleTitleKeyDown}
+              className="flex-1 min-w-0 text-sm px-1 py-0.5 border border-blue-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          ) : (
+            <span
+              onClick={() => canModify && setEditingTitle(true)}
+              className={`text-sm text-gray-900 truncate ${canModify ? 'cursor-pointer hover:bg-gray-100 px-1 py-0.5 rounded -mx-1' : ''}`}
+            >
+              {objective.title}
+            </span>
+          )}
 
           {/* Quick add button - inline with title */}
           {canAddChild && (
