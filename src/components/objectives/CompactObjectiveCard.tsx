@@ -40,11 +40,11 @@ function getNextStepDateIndicator(nextStepDate?: string): { color: string; toolt
   const diffDays = diffMs / (1000 * 60 * 60 * 24);
 
   if (diffDays < 0) {
-    return { color: 'bg-red-500', tooltip: 'Next step date is in the past' };
+    return { color: 'bg-[#dc2626]', tooltip: 'Next step date is in the past' };
   } else if (diffDays <= 7) {
-    return { color: 'bg-yellow-400', tooltip: 'Next step less than 7d in the future' };
+    return { color: 'bg-[#facc15]', tooltip: 'Next step less than 7d in the future' };
   } else {
-    return { color: 'bg-green-500', tooltip: 'Next step more than 7d in the future' };
+    return { color: 'bg-[#22c55e]', tooltip: 'Next step more than 7d in the future' };
   }
 }
 
