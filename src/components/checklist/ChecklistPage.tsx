@@ -20,6 +20,41 @@ const LEVEL_OPTIONS: { value: ObjectiveLevel; label: string }[] = [
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
+const CHECKLIST_SECTIONS_KEY = 'okr-checklist-sections';
+
+interface ChecklistSectionsState {
+  isFilterExpanded: boolean;
+  isNoTypeExpanded: boolean;
+  isNoNextStepExpanded: boolean;
+}
+
+const defaultSectionsState: ChecklistSectionsState = {
+  isFilterExpanded: false,
+  isNoTypeExpanded: false,
+  isNoNextStepExpanded: false,
+};
+
+function loadSectionsState(): ChecklistSectionsState {
+  try {
+    const data = localStorage.getItem(CHECKLIST_SECTIONS_KEY);
+    if (data) {
+      return { ...defaultSectionsState, ...JSON.parse(data) };
+    }
+  } catch {
+    // ignore
+  }
+  return defaultSectionsState;
+}
+
+function saveSectionsState(state: Partial<ChecklistSectionsState>): void {
+  try {
+    const current = loadSectionsState();
+    localStorage.setItem(CHECKLIST_SECTIONS_KEY, JSON.stringify({ ...current, ...state }));
+  } catch {
+    // ignore
+  }
+}
+
 const PERIOD_TYPE_BADGES: Record<PeriodType, { label: string; color: string }> = {
   quarter: { label: 'Q', color: 'bg-purple-100 text-purple-700' },
   month: { label: 'M', color: 'bg-blue-100 text-blue-700' },
@@ -71,9 +106,28 @@ function PeriodFilterButton({ period, periods, activePeriodId, onSelect, depth }
 }
 
 export function ChecklistPage() {
-  const [isFilterExpanded, setIsFilterExpanded] = useState(true);
-  const [isNoTypeExpanded, setIsNoTypeExpanded] = useState(true);
-  const [isNoNextStepExpanded, setIsNoNextStepExpanded] = useState(true);
+  // Load initial section states from localStorage (default to collapsed)
+  const initialSections = loadSectionsState();
+  const [isFilterExpanded, setIsFilterExpandedState] = useState(initialSections.isFilterExpanded);
+  const [isNoTypeExpanded, setIsNoTypeExpandedState] = useState(initialSections.isNoTypeExpanded);
+  const [isNoNextStepExpanded, setIsNoNextStepExpandedState] = useState(initialSections.isNoNextStepExpanded);
+
+  // Wrapper functions that persist state changes
+  const setIsFilterExpanded = useCallback((expanded: boolean) => {
+    setIsFilterExpandedState(expanded);
+    saveSectionsState({ isFilterExpanded: expanded });
+  }, []);
+
+  const setIsNoTypeExpanded = useCallback((expanded: boolean) => {
+    setIsNoTypeExpandedState(expanded);
+    saveSectionsState({ isNoTypeExpanded: expanded });
+  }, []);
+
+  const setIsNoNextStepExpanded = useCallback((expanded: boolean) => {
+    setIsNoNextStepExpandedState(expanded);
+    saveSectionsState({ isNoNextStepExpanded: expanded });
+  }, []);
+
   const [includeAncestorPeriods, setIncludeAncestorPeriods] = useState(false);
   const [includeChildPeriods, setIncludeChildPeriods] = useState(true);
   const [includeChildTeams, setIncludeChildTeams] = useState(true);
