@@ -27,6 +27,27 @@ const levelBadges: Record<ObjectiveLevel, { label: string; bgColor: string; text
   individual: { label: 'I', bgColor: 'bg-green-100', textColor: 'text-green-700' },
 };
 
+function getNextStepDateIndicator(nextStepDate?: string): { color: string; tooltip: string } | null {
+  if (!nextStepDate) return null;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const [year, month, day] = nextStepDate.split('-').map(Number);
+  const stepDate = new Date(year, month - 1, day);
+  stepDate.setHours(0, 0, 0, 0);
+
+  const diffMs = stepDate.getTime() - today.getTime();
+  const diffDays = diffMs / (1000 * 60 * 60 * 24);
+
+  if (diffDays < 0) {
+    return { color: 'bg-red-500', tooltip: 'Next step date is in the past' };
+  } else if (diffDays <= 7) {
+    return { color: 'bg-orange-500', tooltip: 'Next step less than 7d in the future' };
+  } else {
+    return { color: 'bg-green-500', tooltip: 'Next step more than 7d in the future' };
+  }
+}
+
 export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filteredObjectiveIds }: CompactObjectiveCardProps) {
   const [isExpanded, setIsExpanded] = useState(true);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
@@ -607,6 +628,18 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
               {objective.title}
             </span>
           )}
+
+          {/* Next step date indicator */}
+          {(() => {
+            const indicator = getNextStepDateIndicator(objective.nextStepDate);
+            if (!indicator) return null;
+            return (
+              <span
+                className={`w-2 h-2 rounded-full flex-shrink-0 ${indicator.color}`}
+                title={indicator.tooltip}
+              />
+            );
+          })()}
 
           {/* Quick add button - inline with title */}
           {canAddChild && (
