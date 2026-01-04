@@ -312,7 +312,7 @@ export function ChecklistPage() {
     result = result.filter((obj: Objective) => !obj.nextStepDate);
 
     return result;
-  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterLevels, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, includeAncestorPeriods, includeChildPeriods, includeChildTeams, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds]);
+  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterTypeNotSet, filterLevels, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, includeAncestorPeriods, includeChildPeriods, includeChildTeams, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds]);
 
   // Get IDs for quick lookup
   const filteredObjectiveIds = useMemo(

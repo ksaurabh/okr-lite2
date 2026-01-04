@@ -396,7 +396,7 @@ export function ObjectiveTree() {
     }
 
     return result;
-  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterLevels, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterNextStepDate, includeAncestorPeriods, includeChildPeriods, includeChildTeams, showChildren, directChildrenOnly, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds]);
+  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterTypeNotSet, filterLevels, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterNextStepDate, includeAncestorPeriods, includeChildPeriods, includeChildTeams, showChildren, directChildrenOnly, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds]);
 
   // Get IDs of all filtered objectives for quick lookup
   const filteredObjectiveIds = useMemo(
