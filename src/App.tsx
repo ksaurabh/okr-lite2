@@ -2,13 +2,14 @@ import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Layout } from './components/layout';
 import { ObjectiveTree, ObjectiveForm } from './components/objectives';
+import { ChecklistPage } from './components/checklist';
 import { AdminPage } from './components/admin';
 import { SettingsPage } from './components/settings';
 import { LoginPage, UnauthorizedPage, AuthCallback, AdminInviteAccept } from './components/auth';
 import { Modal } from './components/common';
 import { useOKRStore } from './store/okrStore';
 
-type View = 'objectives' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin';
+type View = 'objectives' | 'checklist' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin';
 
 function AppContent() {
   const [currentView, setCurrentView] = useState<View>('objectives');
@@ -66,6 +67,7 @@ function AppContent() {
       onAddObjective={() => setShowAddObjective(true)}
     >
       {currentView === 'objectives' && <ObjectiveTree />}
+      {currentView === 'checklist' && <ChecklistPage />}
       {currentView === 'teams' && (
         <div className="text-center py-12 text-gray-500">
           <p>Manage teams from the sidebar</p>
