@@ -488,8 +488,17 @@ export function ObjectiveTree() {
                 Active
               </span>
             )}
-          </div>
-          <div className="flex items-center gap-3">
+            {hasActiveFilters && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  clearAllFilters();
+                }}
+                className="text-xs text-blue-600 hover:text-blue-700"
+              >
+                Clear all
+              </button>
+            )}
             {/* Layout toggle */}
             <button
               onClick={(e) => {
@@ -509,17 +518,6 @@ export function ObjectiveTree() {
                 </svg>
               )}
             </button>
-            {hasActiveFilters && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  clearAllFilters();
-                }}
-                className="text-xs text-blue-600 hover:text-blue-700"
-              >
-                Clear all
-              </button>
-            )}
           </div>
         </div>
 
