@@ -72,6 +72,7 @@ function PeriodFilterButton({ period, periods, activePeriodId, onSelect, depth }
 
 export function ChecklistPage() {
   const [isFilterExpanded, setIsFilterExpanded] = useState(true);
+  const [isNoTypeExpanded, setIsNoTypeExpanded] = useState(true);
   const [isNoNextStepExpanded, setIsNoNextStepExpanded] = useState(true);
   const [includeAncestorPeriods, setIncludeAncestorPeriods] = useState(false);
   const [includeChildPeriods, setIncludeChildPeriods] = useState(true);
@@ -313,6 +314,77 @@ export function ChecklistPage() {
 
     return result;
   }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterTypeNotSet, filterLevels, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, includeAncestorPeriods, includeChildPeriods, includeChildTeams, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds]);
+
+  // Apply all filters, then filter for items without type
+  const filteredObjectivesWithoutType = useMemo(() => {
+    let result = orgObjectives;
+
+    // Filter by period
+    if (activePeriodId) {
+      let validPeriodIds: string[] = [activePeriodId];
+      if (includeAncestorPeriods) {
+        validPeriodIds = [...new Set([...validPeriodIds, ...getAncestorPeriodIds(activePeriodId)])];
+      }
+      if (includeChildPeriods) {
+        validPeriodIds = [...new Set([...validPeriodIds, ...getDescendantPeriodIds(activePeriodId)])];
+      }
+      result = result.filter((obj: Objective) => validPeriodIds.includes(obj.periodId));
+    }
+
+    // Filter by teams
+    if (filterTeamIds.length > 0) {
+      let validTeamIds = [...filterTeamIds];
+      if (includeChildTeams) {
+        filterTeamIds.forEach(teamId => {
+          validTeamIds = [...new Set([...validTeamIds, ...getDescendantTeamIds(teamId)])];
+        });
+      }
+      result = result.filter((obj: Objective) => obj.teamId && validTeamIds.includes(obj.teamId));
+    }
+
+    // Filter by tags
+    if (filterTagIds.length > 0) {
+      result = result.filter((obj: Objective) =>
+        obj.tagIds?.some((tagId: string) => filterTagIds.includes(tagId))
+      );
+    }
+
+    // Filter by level
+    if (filterLevels.length > 0) {
+      result = result.filter((obj: Objective) =>
+        filterLevels.includes(obj.level)
+      );
+    }
+
+    // Filter by owners
+    if (filterOwnerIds.length > 0) {
+      if (filterOwnerOperator === 'equals') {
+        result = result.filter((obj: Objective) => obj.ownerId && filterOwnerIds.includes(obj.ownerId));
+      } else {
+        result = result.filter((obj: Objective) => !obj.ownerId || !filterOwnerIds.includes(obj.ownerId));
+      }
+    }
+
+    // Filter by assignees
+    if (filterAssigneeIds.length > 0) {
+      if (filterAssigneeOperator === 'equals') {
+        result = result.filter((obj: Objective) => obj.assigneeId && filterAssigneeIds.includes(obj.assigneeId));
+      } else {
+        result = result.filter((obj: Objective) => !obj.assigneeId || !filterAssigneeIds.includes(obj.assigneeId));
+      }
+    }
+
+    // Finally, filter for items without type
+    result = result.filter((obj: Objective) => !obj.type);
+
+    return result;
+  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterLevels, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, includeAncestorPeriods, includeChildPeriods, includeChildTeams, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds]);
+
+  // Get IDs for quick lookup
+  const filteredObjectiveIdsNoType = useMemo(
+    () => new Set(filteredObjectivesWithoutType.map((obj: Objective) => obj.id)),
+    [filteredObjectivesWithoutType]
+  );
 
   // Get IDs for quick lookup
   const filteredObjectiveIds = useMemo(
@@ -593,6 +665,168 @@ export function ChecklistPage() {
                 </div>
               )}
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* Items without Type Section */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+        <button
+          onClick={() => setIsNoTypeExpanded(!isNoTypeExpanded)}
+          className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50"
+        >
+          <div className="flex items-center gap-3">
+            <svg
+              className={`w-5 h-5 text-gray-400 transition-transform ${isNoTypeExpanded ? 'rotate-90' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+            <div>
+              <h3 className="text-sm font-medium text-gray-900">
+                Items without Type
+              </h3>
+              <p className="text-xs text-gray-500">
+                {filteredObjectivesWithoutType.length} {filteredObjectivesWithoutType.length === 1 ? 'item' : 'items'} need attention
+              </p>
+            </div>
+          </div>
+          <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${
+            filteredObjectivesWithoutType.length > 0
+              ? 'bg-amber-100 text-amber-700'
+              : 'bg-green-100 text-green-700'
+          }`}>
+            {filteredObjectivesWithoutType.length}
+          </span>
+        </button>
+
+        {isNoTypeExpanded && (
+          <div className="border-t border-gray-200">
+            {filteredObjectivesWithoutType.length === 0 ? (
+              <div className="p-6 text-center text-gray-500">
+                <svg className="mx-auto h-10 w-10 text-green-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p className="text-sm">
+                  {hasActiveFilters
+                    ? 'No matching objectives without a type!'
+                    : 'All objectives have a type defined!'}
+                </p>
+              </div>
+            ) : (
+              <div className={`overflow-hidden ${resizingColumn ? 'select-none' : ''}`}>
+                {/* Table header */}
+                <div className="flex items-center bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <div className="flex-1 px-2 py-2">Objective</div>
+                  <div className="relative flex items-center" style={{ width: columnWidths.level }}>
+                    <div className="px-1 py-2 flex-1">Level</div>
+                    <div
+                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                      onMouseDown={(e) => handleResizeStart('level', e)}
+                    />
+                  </div>
+                  <div className="relative flex items-center" style={{ width: columnWidths.type }}>
+                    <div className="px-1 py-2 flex-1">Type</div>
+                    <div
+                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                      onMouseDown={(e) => handleResizeStart('type', e)}
+                    />
+                  </div>
+                  <div className="relative flex items-center" style={{ width: columnWidths.parent }}>
+                    <div className="px-1 py-2 flex-1">Parent</div>
+                    <div
+                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                      onMouseDown={(e) => handleResizeStart('parent', e)}
+                    />
+                  </div>
+                  <div className="relative flex items-center" style={{ width: columnWidths.team }}>
+                    <div className="px-1 py-2 flex-1">Team</div>
+                    <div
+                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                      onMouseDown={(e) => handleResizeStart('team', e)}
+                    />
+                  </div>
+                  <div className="relative flex items-center" style={{ width: columnWidths.owner }}>
+                    <div className="px-1 py-2 flex-1">Owner</div>
+                    <div
+                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                      onMouseDown={(e) => handleResizeStart('owner', e)}
+                    />
+                  </div>
+                  <div className="relative flex items-center" style={{ width: columnWidths.assignee }}>
+                    <div className="px-1 py-2 flex-1">Assignee</div>
+                    <div
+                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                      onMouseDown={(e) => handleResizeStart('assignee', e)}
+                    />
+                  </div>
+                  <div className="relative flex items-center" style={{ width: columnWidths.period }}>
+                    <div className="px-1 py-2 flex-1">Period</div>
+                    <div
+                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                      onMouseDown={(e) => handleResizeStart('period', e)}
+                    />
+                  </div>
+                  <div className="relative flex items-center" style={{ width: columnWidths.nextStepDate }}>
+                    <div className="px-1 py-2 flex-1">Next Date</div>
+                    <div
+                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                      onMouseDown={(e) => handleResizeStart('nextStepDate', e)}
+                    />
+                  </div>
+                  <div className="relative flex items-center" style={{ width: columnWidths.nextStep }}>
+                    <div className="px-1 py-2 flex-1">Next Step</div>
+                    <div
+                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                      onMouseDown={(e) => handleResizeStart('nextStep', e)}
+                    />
+                  </div>
+                  <div className="relative flex items-center" style={{ width: columnWidths.storyPoints }}>
+                    <div className="px-1 py-2 flex-1 text-right">SP</div>
+                    <div
+                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                      onMouseDown={(e) => handleResizeStart('storyPoints', e)}
+                    />
+                  </div>
+                  <div className="relative flex items-center" style={{ width: columnWidths.valuePoints }}>
+                    <div className="px-1 py-2 flex-1 text-right">VP</div>
+                    <div
+                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                      onMouseDown={(e) => handleResizeStart('valuePoints', e)}
+                    />
+                  </div>
+                  <div className="relative flex items-center" style={{ width: columnWidths.tags }}>
+                    <div className="px-1 py-2 flex-1">Tags</div>
+                    <div
+                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                      onMouseDown={(e) => handleResizeStart('tags', e)}
+                    />
+                  </div>
+                  <div className="relative flex items-center" style={{ width: columnWidths.progress }}>
+                    <div className="px-2 py-2 flex-1 text-right">Progress</div>
+                    <div
+                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                      onMouseDown={(e) => handleResizeStart('progress', e)}
+                    />
+                  </div>
+                  <div className="w-16 px-2 py-2"></div>
+                </div>
+
+                {/* Table body */}
+                <div>
+                  {filteredObjectivesWithoutType.map((obj: Objective) => (
+                    <CompactObjectiveCard
+                      key={obj.id}
+                      objective={obj}
+                      depth={0}
+                      filteredObjectiveIds={filteredObjectiveIdsNoType}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
