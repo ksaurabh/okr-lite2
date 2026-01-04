@@ -42,7 +42,7 @@ function getNextStepDateIndicator(nextStepDate?: string): { color: string; toolt
   if (diffDays < 0) {
     return { color: 'bg-red-500', tooltip: 'Next step date is in the past' };
   } else if (diffDays <= 7) {
-    return { color: 'bg-orange-500', tooltip: 'Next step less than 7d in the future' };
+    return { color: 'bg-yellow-400', tooltip: 'Next step less than 7d in the future' };
   } else {
     return { color: 'bg-green-500', tooltip: 'Next step more than 7d in the future' };
   }
@@ -635,7 +635,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
             if (!indicator) return null;
             return (
               <span
-                className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${indicator.color}`}
+                className={`w-2 h-2 rounded-full flex-shrink-0 ${indicator.color}`}
                 title={indicator.tooltip}
               />
             );
