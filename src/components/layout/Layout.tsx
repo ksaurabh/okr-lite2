@@ -50,7 +50,7 @@ export function Layout({ children, currentView, onViewChange, onAddObjective }: 
           collapsed={sidebarCollapsed}
           onToggleCollapse={toggleSidebar}
         />
-        <main className="flex-1 p-6">{children}</main>
+        <main className="flex-1 min-w-0 p-6 overflow-x-auto">{children}</main>
       </div>
     </div>
   );

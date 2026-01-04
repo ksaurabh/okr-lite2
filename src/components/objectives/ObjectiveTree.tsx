@@ -822,7 +822,8 @@ export function ObjectiveTree() {
 
       {/* Objectives Table */}
       {filteredObjectives.length > 0 && (
-        <section className={`bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden ${resizingColumn ? 'select-none' : ''}`}>
+        <section className={`bg-white rounded-lg shadow-sm border border-gray-200 overflow-x-auto ${resizingColumn ? 'select-none' : ''}`}>
+          <div className="min-w-max">
           {/* Table header */}
           <div className="flex items-center bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500 uppercase tracking-wider">
             <div className="flex-1 px-2 py-2">Objective</div>
@@ -931,6 +932,7 @@ export function ObjectiveTree() {
             {individualObjectives.map((obj: Objective) => (
               <CompactObjectiveCard key={obj.id} objective={obj} filteredObjectiveIds={filteredObjectiveIds} />
             ))}
+          </div>
           </div>
         </section>
       )}
