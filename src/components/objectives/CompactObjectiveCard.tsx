@@ -635,7 +635,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
             if (!indicator) return null;
             return (
               <span
-                className={`w-2 h-2 rounded-full flex-shrink-0 ${indicator.color}`}
+                className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${indicator.color}`}
                 title={indicator.tooltip}
               />
             );
