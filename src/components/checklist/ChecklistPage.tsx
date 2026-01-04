@@ -116,7 +116,9 @@ export function ChecklistPage() {
   const toggleFilterTag = useOKRStore((state: OKRStore) => state.toggleFilterTag);
   const toggleFilterTeam = useOKRStore((state: OKRStore) => state.toggleFilterTeam);
   const filterTypes = useOKRStore((state: OKRStore) => state.filterTypes);
+  const filterTypeNotSet = useOKRStore((state: OKRStore) => state.filterTypeNotSet);
   const toggleFilterType = useOKRStore((state: OKRStore) => state.toggleFilterType);
+  const toggleFilterTypeNotSet = useOKRStore((state: OKRStore) => state.toggleFilterTypeNotSet);
   const setFilterOwners = useOKRStore((state: OKRStore) => state.setFilterOwners);
   const setFilterOwnerOperator = useOKRStore((state: OKRStore) => state.setFilterOwnerOperator);
   const setFilterAssignees = useOKRStore((state: OKRStore) => state.setFilterAssignees);
@@ -186,7 +188,7 @@ export function ChecklistPage() {
     [tags, orgId, userEmail, isAdmin]
   );
 
-  const hasActiveFilters = activePeriodId || filterTagIds.length > 0 || filterTeamIds.length > 0 || filterTypes.length > 0 || filterOwnerIds.length > 0 || filterAssigneeIds.length > 0 || filterLevels.length > 0;
+  const hasActiveFilters = activePeriodId || filterTagIds.length > 0 || filterTeamIds.length > 0 || filterTypes.length > 0 || filterTypeNotSet || filterOwnerIds.length > 0 || filterAssigneeIds.length > 0 || filterLevels.length > 0;
 
   // Get all ancestor period IDs for a given period
   const getAncestorPeriodIds = useMemo(() => {
@@ -273,10 +275,12 @@ export function ChecklistPage() {
     }
 
     // Filter by type
-    if (filterTypes.length > 0) {
-      result = result.filter((obj: Objective) =>
-        obj.type && filterTypes.includes(obj.type)
-      );
+    if (filterTypes.length > 0 || filterTypeNotSet) {
+      result = result.filter((obj: Objective) => {
+        const matchesType = filterTypes.length > 0 && obj.type && filterTypes.includes(obj.type);
+        const matchesNotSet = filterTypeNotSet && !obj.type;
+        return matchesType || matchesNotSet;
+      });
     }
 
     // Filter by level
@@ -484,6 +488,16 @@ export function ChecklistPage() {
                       {type.label}
                     </button>
                   ))}
+                  <button
+                    onClick={() => toggleFilterTypeNotSet()}
+                    className={`px-2 py-1 rounded-full text-xs transition-colors ${
+                      filterTypeNotSet
+                        ? 'bg-gray-800 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Not Set
+                  </button>
                 </div>
               </div>
 

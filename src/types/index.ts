@@ -104,6 +104,7 @@ export interface OKRState {
   filterTagIds: string[];
   filterTeamIds: string[];
   filterTypes: ObjectiveType[];
+  filterTypeNotSet: boolean;
   filterOwnerIds: string[];
   filterOwnerOperator: FilterOperator;
   filterAssigneeIds: string[];
