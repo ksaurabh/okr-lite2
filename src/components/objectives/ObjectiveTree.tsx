@@ -31,6 +31,28 @@ const NEXT_STEP_DATE_OPTIONS: { value: NextStepDateFilter; label: string }[] = [
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
+const FILTER_LAYOUT_KEY = 'okr-filter-layout';
+
+function loadFilterLayout(): 1 | 2 {
+  try {
+    const data = localStorage.getItem(FILTER_LAYOUT_KEY);
+    if (data === '1' || data === '2') {
+      return parseInt(data) as 1 | 2;
+    }
+  } catch {
+    // ignore
+  }
+  return 2; // default to 2 columns
+}
+
+function saveFilterLayout(columns: 1 | 2): void {
+  try {
+    localStorage.setItem(FILTER_LAYOUT_KEY, String(columns));
+  } catch {
+    // ignore
+  }
+}
+
 const PERIOD_TYPE_BADGES: Record<PeriodType, { label: string; color: string }> = {
   quarter: { label: 'Q', color: 'bg-purple-100 text-purple-700' },
   month: { label: 'M', color: 'bg-blue-100 text-blue-700' },
@@ -84,6 +106,7 @@ function PeriodFilterButton({ period, periods, activePeriodId, onSelect, depth }
 
 export function ObjectiveTree() {
   const [isFilterExpanded, setIsFilterExpanded] = useState(true);
+  const [filterColumns, setFilterColumnsState] = useState<1 | 2>(loadFilterLayout);
   const [includeAncestorPeriods, setIncludeAncestorPeriods] = useState(false);
   const [includeChildPeriods, setIncludeChildPeriods] = useState(true);
   const [includeChildTeams, setIncludeChildTeams] = useState(true);
@@ -143,6 +166,13 @@ export function ObjectiveTree() {
   const clearAllFilters = useOKRStore((state: OKRStore) => state.clearAllFilters);
   const columnWidths = useOKRStore((state: OKRStore) => state.columnWidths);
   const setColumnWidths = useOKRStore((state: OKRStore) => state.setColumnWidths);
+
+  // Filter layout toggle
+  const toggleFilterColumns = useCallback(() => {
+    const newColumns = filterColumns === 2 ? 1 : 2;
+    setFilterColumnsState(newColumns);
+    saveFilterLayout(newColumns);
+  }, [filterColumns]);
 
   // Column resize state
   const [resizingColumn, setResizingColumn] = useState<keyof ColumnWidths | null>(null);
@@ -459,22 +489,43 @@ export function ObjectiveTree() {
               </span>
             )}
           </div>
-          {hasActiveFilters && (
+          <div className="flex items-center gap-3">
+            {/* Layout toggle */}
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                clearAllFilters();
+                toggleFilterColumns();
               }}
-              className="text-xs text-blue-600 hover:text-blue-700"
+              className="text-gray-400 hover:text-gray-600"
+              title={filterColumns === 2 ? 'Switch to single column' : 'Switch to two columns'}
             >
-              Clear all
+              {filterColumns === 2 ? (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+                </svg>
+              )}
             </button>
-          )}
+            {hasActiveFilters && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  clearAllFilters();
+                }}
+                className="text-xs text-blue-600 hover:text-blue-700"
+              >
+                Clear all
+              </button>
+            )}
+          </div>
         </div>
 
         {isFilterExpanded && (
           <div className="px-4 pb-4 border-t border-gray-100 pt-4">
-            <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+            <div className={`grid ${filterColumns === 2 ? 'grid-cols-2' : 'grid-cols-1'} gap-x-6 gap-y-3`}>
               {/* Period Filter */}
               <div className="flex items-start gap-3">
                 <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Period</label>
