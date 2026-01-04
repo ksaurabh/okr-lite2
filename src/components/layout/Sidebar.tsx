@@ -10,6 +10,8 @@ type View = 'objectives' | 'checklist' | 'teams' | 'periods' | 'tags' | 'setting
 interface SidebarProps {
   currentView: View;
   onViewChange: (view: View) => void;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
 interface TeamItemProps {
@@ -207,7 +209,7 @@ function PeriodItem({ period, periods, onAddChild, onDelete, depth = 0, isAdmin 
   );
 }
 
-export function Sidebar({ currentView, onViewChange }: SidebarProps) {
+export function Sidebar({ currentView, onViewChange, collapsed = false, onToggleCollapse }: SidebarProps) {
   const [showTeamModal, setShowTeamModal] = useState(false);
   const [showPeriodModal, setShowPeriodModal] = useState(false);
   const [showTagModal, setShowTagModal] = useState(false);
@@ -371,8 +373,24 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
   ];
 
   return (
-    <aside className="w-64 bg-gray-50 border-r border-gray-200 min-h-screen">
-      <nav className="p-4">
+    <aside className={`${collapsed ? 'w-14' : 'w-64'} bg-gray-50 border-r border-gray-200 min-h-screen transition-all duration-200`}>
+      <nav className={collapsed ? 'p-2' : 'p-4'}>
+        {/* Collapse toggle button */}
+        {onToggleCollapse && (
+          <button
+            onClick={onToggleCollapse}
+            className={`w-full flex items-center ${collapsed ? 'justify-center' : 'justify-end'} mb-2 p-1 text-gray-400 hover:text-gray-600`}
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {collapsed ? (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+              ) : (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+              )}
+            </svg>
+          </button>
+        )}
         <ul className="space-y-1">
           {navItems.filter(item => {
             if (item.id === 'admin') return isSuperAdmin;
@@ -382,22 +400,23 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
             <li key={item.id}>
               <button
                 onClick={() => onViewChange(item.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-left transition-colors ${
+                className={`w-full flex items-center ${collapsed ? 'justify-center' : 'gap-3'} px-3 py-2 rounded-md text-left transition-colors ${
                   currentView === item.id
                     ? 'bg-blue-100 text-blue-700'
                     : 'text-gray-700 hover:bg-gray-200'
                 }`}
+                title={collapsed ? item.label : undefined}
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={item.icon} />
                 </svg>
-                {item.label}
+                {!collapsed && item.label}
               </button>
             </li>
           ))}
         </ul>
 
-        {currentView === 'teams' && (
+        {!collapsed && currentView === 'teams' && (
           <div className="mt-6">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-medium text-gray-500 uppercase">Teams</h3>
@@ -428,7 +447,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
           </div>
         )}
 
-        {currentView === 'periods' && (
+        {!collapsed && currentView === 'periods' && (
           <div className="mt-6">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-medium text-gray-500 uppercase">Periods</h3>
@@ -459,7 +478,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
           </div>
         )}
 
-        {currentView === 'tags' && (
+        {!collapsed && currentView === 'tags' && (
           <div className="mt-6">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-medium text-gray-500 uppercase">Tags</h3>
