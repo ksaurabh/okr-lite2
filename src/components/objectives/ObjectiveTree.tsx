@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
-import { useOKRStore, type OKRStore, type ColumnWidths } from '../../store/okrStore';
+import { useOKRStore, type OKRStore, type ColumnWidths, type ColumnKey, COLUMN_LABELS, DEFAULT_VISIBLE_COLUMNS } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
 import { CompactObjectiveCard } from './CompactObjectiveCard';
 import type { Period, PeriodType, Objective, Team, Tag, User, FilterOperator, ObjectiveType, NextStepDateFilter, ObjectiveLevel } from '../../types';
@@ -166,6 +166,23 @@ export function ObjectiveTree() {
   const clearAllFilters = useOKRStore((state: OKRStore) => state.clearAllFilters);
   const columnWidths = useOKRStore((state: OKRStore) => state.columnWidths);
   const setColumnWidths = useOKRStore((state: OKRStore) => state.setColumnWidths);
+  const visibleColumns = useOKRStore((state: OKRStore) => state.visibleColumns);
+  const toggleColumnVisibility = useOKRStore((state: OKRStore) => state.toggleColumnVisibility);
+
+  // Column visibility dropdown state
+  const [showColumnMenu, setShowColumnMenu] = useState(false);
+  const columnMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close column menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (columnMenuRef.current && !columnMenuRef.current.contains(event.target as Node)) {
+        setShowColumnMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Filter layout toggle
   const toggleFilterColumns = useCallback(() => {
@@ -826,99 +843,163 @@ export function ObjectiveTree() {
           <div className="min-w-max">
           {/* Table header */}
           <div className="flex items-center bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500 uppercase tracking-wider">
-            <div className="flex-1 px-2 py-2">Objective</div>
-            <div className="relative flex items-center" style={{ width: columnWidths.level }}>
-              <div className="px-1 py-2 flex-1">Level</div>
+            <div className="relative flex items-center" style={{ width: columnWidths.title, minWidth: 150 }}>
+              <div className="px-2 py-2 flex-1">Objective</div>
               <div
                 className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                onMouseDown={(e) => handleResizeStart('level', e)}
+                onMouseDown={(e) => handleResizeStart('title', e)}
               />
             </div>
-            <div className="relative flex items-center" style={{ width: columnWidths.type }}>
-              <div className="px-1 py-2 flex-1">Type</div>
-              <div
-                className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                onMouseDown={(e) => handleResizeStart('type', e)}
-              />
+            {visibleColumns.includes('level') && (
+              <div className="relative flex items-center" style={{ width: columnWidths.level }}>
+                <div className="px-1 py-2 flex-1">Level</div>
+                <div
+                  className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                  onMouseDown={(e) => handleResizeStart('level', e)}
+                />
+              </div>
+            )}
+            {visibleColumns.includes('type') && (
+              <div className="relative flex items-center" style={{ width: columnWidths.type }}>
+                <div className="px-1 py-2 flex-1">Type</div>
+                <div
+                  className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                  onMouseDown={(e) => handleResizeStart('type', e)}
+                />
+              </div>
+            )}
+            {visibleColumns.includes('parent') && (
+              <div className="relative flex items-center" style={{ width: columnWidths.parent }}>
+                <div className="px-1 py-2 flex-1">Parent</div>
+                <div
+                  className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                  onMouseDown={(e) => handleResizeStart('parent', e)}
+                />
+              </div>
+            )}
+            {visibleColumns.includes('team') && (
+              <div className="relative flex items-center" style={{ width: columnWidths.team }}>
+                <div className="px-1 py-2 flex-1">Team</div>
+                <div
+                  className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                  onMouseDown={(e) => handleResizeStart('team', e)}
+                />
+              </div>
+            )}
+            {visibleColumns.includes('owner') && (
+              <div className="relative flex items-center" style={{ width: columnWidths.owner }}>
+                <div className="px-1 py-2 flex-1">Owner</div>
+                <div
+                  className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                  onMouseDown={(e) => handleResizeStart('owner', e)}
+                />
+              </div>
+            )}
+            {visibleColumns.includes('assignee') && (
+              <div className="relative flex items-center" style={{ width: columnWidths.assignee }}>
+                <div className="px-1 py-2 flex-1">Assignee</div>
+                <div
+                  className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                  onMouseDown={(e) => handleResizeStart('assignee', e)}
+                />
+              </div>
+            )}
+            {visibleColumns.includes('period') && (
+              <div className="relative flex items-center" style={{ width: columnWidths.period }}>
+                <div className="px-1 py-2 flex-1">Period</div>
+                <div
+                  className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                  onMouseDown={(e) => handleResizeStart('period', e)}
+                />
+              </div>
+            )}
+            {visibleColumns.includes('nextStepDate') && (
+              <div className="relative flex items-center" style={{ width: columnWidths.nextStepDate }}>
+                <div className="px-1 py-2 flex-1">Next Date</div>
+                <div
+                  className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                  onMouseDown={(e) => handleResizeStart('nextStepDate', e)}
+                />
+              </div>
+            )}
+            {visibleColumns.includes('nextStep') && (
+              <div className="relative flex items-center" style={{ width: columnWidths.nextStep }}>
+                <div className="px-1 py-2 flex-1">Next Step</div>
+                <div
+                  className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                  onMouseDown={(e) => handleResizeStart('nextStep', e)}
+                />
+              </div>
+            )}
+            {visibleColumns.includes('storyPoints') && (
+              <div className="relative flex items-center" style={{ width: columnWidths.storyPoints }}>
+                <div className="px-1 py-2 flex-1 text-right">SP</div>
+                <div
+                  className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                  onMouseDown={(e) => handleResizeStart('storyPoints', e)}
+                />
+              </div>
+            )}
+            {visibleColumns.includes('valuePoints') && (
+              <div className="relative flex items-center" style={{ width: columnWidths.valuePoints }}>
+                <div className="px-1 py-2 flex-1 text-right">VP</div>
+                <div
+                  className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                  onMouseDown={(e) => handleResizeStart('valuePoints', e)}
+                />
+              </div>
+            )}
+            {visibleColumns.includes('tags') && (
+              <div className="relative flex items-center" style={{ width: columnWidths.tags }}>
+                <div className="px-1 py-2 flex-1">Tags</div>
+                <div
+                  className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                  onMouseDown={(e) => handleResizeStart('tags', e)}
+                />
+              </div>
+            )}
+            {visibleColumns.includes('progress') && (
+              <div className="relative flex items-center" style={{ width: columnWidths.progress }}>
+                <div className="px-2 py-2 flex-1 text-right">Progress</div>
+                <div
+                  className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                  onMouseDown={(e) => handleResizeStart('progress', e)}
+                />
+              </div>
+            )}
+            {/* Column visibility toggle */}
+            <div className="relative w-16 px-2 py-2" ref={columnMenuRef}>
+              <button
+                onClick={() => setShowColumnMenu(!showColumnMenu)}
+                className="text-gray-400 hover:text-gray-600"
+                title="Show/hide columns"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                </svg>
+              </button>
+              {showColumnMenu && (
+                <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-2 min-w-[160px]">
+                  <div className="px-3 py-1.5 text-xs font-medium text-gray-500 border-b border-gray-100 mb-1">
+                    Show Columns
+                  </div>
+                  {(DEFAULT_VISIBLE_COLUMNS.filter(c => c !== 'title') as ColumnKey[]).map((col) => (
+                    <label
+                      key={col}
+                      className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer text-sm text-gray-700 normal-case"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={visibleColumns.includes(col)}
+                        onChange={() => toggleColumnVisibility(col)}
+                        className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      {COLUMN_LABELS[col]}
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
-            <div className="relative flex items-center" style={{ width: columnWidths.parent }}>
-              <div className="px-1 py-2 flex-1">Parent</div>
-              <div
-                className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                onMouseDown={(e) => handleResizeStart('parent', e)}
-              />
-            </div>
-            <div className="relative flex items-center" style={{ width: columnWidths.team }}>
-              <div className="px-1 py-2 flex-1">Team</div>
-              <div
-                className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                onMouseDown={(e) => handleResizeStart('team', e)}
-              />
-            </div>
-            <div className="relative flex items-center" style={{ width: columnWidths.owner }}>
-              <div className="px-1 py-2 flex-1">Owner</div>
-              <div
-                className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                onMouseDown={(e) => handleResizeStart('owner', e)}
-              />
-            </div>
-            <div className="relative flex items-center" style={{ width: columnWidths.assignee }}>
-              <div className="px-1 py-2 flex-1">Assignee</div>
-              <div
-                className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                onMouseDown={(e) => handleResizeStart('assignee', e)}
-              />
-            </div>
-            <div className="relative flex items-center" style={{ width: columnWidths.period }}>
-              <div className="px-1 py-2 flex-1">Period</div>
-              <div
-                className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                onMouseDown={(e) => handleResizeStart('period', e)}
-              />
-            </div>
-            <div className="relative flex items-center" style={{ width: columnWidths.nextStepDate }}>
-              <div className="px-1 py-2 flex-1">Next Date</div>
-              <div
-                className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                onMouseDown={(e) => handleResizeStart('nextStepDate', e)}
-              />
-            </div>
-            <div className="relative flex items-center" style={{ width: columnWidths.nextStep }}>
-              <div className="px-1 py-2 flex-1">Next Step</div>
-              <div
-                className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                onMouseDown={(e) => handleResizeStart('nextStep', e)}
-              />
-            </div>
-            <div className="relative flex items-center" style={{ width: columnWidths.storyPoints }}>
-              <div className="px-1 py-2 flex-1 text-right">SP</div>
-              <div
-                className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                onMouseDown={(e) => handleResizeStart('storyPoints', e)}
-              />
-            </div>
-            <div className="relative flex items-center" style={{ width: columnWidths.valuePoints }}>
-              <div className="px-1 py-2 flex-1 text-right">VP</div>
-              <div
-                className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                onMouseDown={(e) => handleResizeStart('valuePoints', e)}
-              />
-            </div>
-            <div className="relative flex items-center" style={{ width: columnWidths.tags }}>
-              <div className="px-1 py-2 flex-1">Tags</div>
-              <div
-                className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                onMouseDown={(e) => handleResizeStart('tags', e)}
-              />
-            </div>
-            <div className="relative flex items-center" style={{ width: columnWidths.progress }}>
-              <div className="px-2 py-2 flex-1 text-right">Progress</div>
-              <div
-                className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                onMouseDown={(e) => handleResizeStart('progress', e)}
-              />
-            </div>
-            <div className="w-16 px-2 py-2"></div>
           </div>
 
           {/* Table body */}

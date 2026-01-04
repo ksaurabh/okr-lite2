@@ -126,10 +126,14 @@ interface OKRActions {
   setEditorWidth: (width: number) => Promise<void>;
   columnWidths: ColumnWidths;
   setColumnWidths: (widths: Partial<ColumnWidths>) => Promise<void>;
+  visibleColumns: ColumnKey[];
+  setVisibleColumns: (columns: ColumnKey[]) => Promise<void>;
+  toggleColumnVisibility: (column: ColumnKey) => Promise<void>;
   fetchUserPreferences: () => Promise<void>;
 }
 
 export interface ColumnWidths {
+  title: number;
   level: number;
   type: number;
   parent: number;
@@ -146,6 +150,7 @@ export interface ColumnWidths {
 }
 
 export const DEFAULT_COLUMN_WIDTHS: ColumnWidths = {
+  title: 300,       // min width for title
   level: 96,        // w-24
   type: 96,         // w-24
   parent: 144,      // w-36
@@ -160,6 +165,30 @@ export const DEFAULT_COLUMN_WIDTHS: ColumnWidths = {
   tags: 160,        // w-40
   progress: 56,     // w-14
 };
+
+export type ColumnKey = keyof ColumnWidths;
+
+export const COLUMN_LABELS: Record<ColumnKey, string> = {
+  title: 'Objective',
+  level: 'Level',
+  type: 'Type',
+  parent: 'Parent',
+  team: 'Team',
+  owner: 'Owner',
+  assignee: 'Assignee',
+  period: 'Period',
+  nextStepDate: 'Next Date',
+  nextStep: 'Next Step',
+  storyPoints: 'SP',
+  valuePoints: 'VP',
+  tags: 'Tags',
+  progress: 'Progress',
+};
+
+export const DEFAULT_VISIBLE_COLUMNS: ColumnKey[] = [
+  'title', 'level', 'type', 'parent', 'team', 'owner', 'assignee',
+  'period', 'nextStepDate', 'nextStep', 'storyPoints', 'valuePoints', 'tags', 'progress'
+];
 
 export interface BackupUser {
   id: string;
@@ -248,6 +277,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
   error: null,
   editorWidth: undefined,
   columnWidths: DEFAULT_COLUMN_WIDTHS,
+  visibleColumns: DEFAULT_VISIBLE_COLUMNS,
 
   fetchData: async () => {
     set({ isLoading: true, error: null });
@@ -802,6 +832,9 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
         if (data.preferences?.columnWidths) {
           updates.columnWidths = { ...DEFAULT_COLUMN_WIDTHS, ...data.preferences.columnWidths };
         }
+        if (data.preferences?.visibleColumns && Array.isArray(data.preferences.visibleColumns)) {
+          updates.visibleColumns = data.preferences.visibleColumns;
+        }
         if (Object.keys(updates).length > 0) {
           set(updates);
         }
@@ -846,6 +879,50 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       });
     } catch (err) {
       console.error('Failed to save column widths preference:', err);
+    }
+  },
+
+  setVisibleColumns: async (columns: ColumnKey[]) => {
+    set({ visibleColumns: columns });
+    try {
+      await fetch(`${API_URL}/api/users/me/preferences`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          preferences: { visibleColumns: columns },
+        }),
+      });
+    } catch (err) {
+      console.error('Failed to save visible columns preference:', err);
+    }
+  },
+
+  toggleColumnVisibility: async (column: ColumnKey) => {
+    const state = get();
+    // Title column cannot be hidden
+    if (column === 'title') return;
+
+    const newVisibleColumns = state.visibleColumns.includes(column)
+      ? state.visibleColumns.filter(c => c !== column)
+      : [...state.visibleColumns, column];
+
+    set({ visibleColumns: newVisibleColumns });
+    try {
+      await fetch(`${API_URL}/api/users/me/preferences`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          preferences: { visibleColumns: newVisibleColumns },
+        }),
+      });
+    } catch (err) {
+      console.error('Failed to save visible columns preference:', err);
     }
   },
 }));

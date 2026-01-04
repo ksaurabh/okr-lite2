@@ -108,6 +108,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   const editorWidth = useOKRStore((state: OKRStore) => state.editorWidth);
   const setEditorWidth = useOKRStore((state: OKRStore) => state.setEditorWidth);
   const columnWidths = useOKRStore((state: OKRStore) => state.columnWidths);
+  const visibleColumns = useOKRStore((state: OKRStore) => state.visibleColumns);
 
   const { user, isSuperAdmin, isOrgAdmin, organization } = useAuth();
   const userEmail = user?.email || '';
@@ -592,8 +593,8 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
     <div>
       {/* Main tree table row */}
       <div className="group flex items-center hover:bg-gray-50 border-b border-gray-100">
-        {/* Tree column - flexible width */}
-        <div className="flex-1 flex items-center gap-1 py-1.5 px-2 min-w-0" style={{ paddingLeft: depth * 20 + 8 }}>
+        {/* Tree column - uses title width */}
+        <div className="flex items-center gap-1 py-1.5 px-2 min-w-0" style={{ width: columnWidths.title, minWidth: 150, paddingLeft: depth * 20 + 8 }}>
           {/* Expand/collapse chevron */}
           <button
             onClick={() => setIsExpanded(!isExpanded)}
@@ -656,60 +657,65 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
         </div>
 
         {/* Level column - editable */}
-        <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.level }}>
-          {editingLevel ? (
-            <select
-              ref={levelSelectRef}
-              value={objective.level}
-              onChange={(e) => handleLevelChange(e.target.value as ObjectiveLevel)}
-              onBlur={() => setEditingLevel(false)}
-              className="w-full text-xs px-1 py-0.5 border border-blue-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-            >
-              {levelOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-          ) : (
-            <button
-              onClick={() => canModify && setEditingLevel(true)}
-              className={`w-full text-left text-xs px-1 py-0.5 rounded truncate ${canModify ? 'hover:bg-gray-100 cursor-pointer' : 'cursor-default'}`}
-              disabled={!canModify}
-            >
-              <span className={`inline-flex items-center justify-center w-5 h-5 rounded text-xs font-bold ${badge.bgColor} ${badge.textColor}`}>
-                {badge.label}
-              </span>
-            </button>
-          )}
-        </div>
+        {visibleColumns.includes('level') && (
+          <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.level }}>
+            {editingLevel ? (
+              <select
+                ref={levelSelectRef}
+                value={objective.level}
+                onChange={(e) => handleLevelChange(e.target.value as ObjectiveLevel)}
+                onBlur={() => setEditingLevel(false)}
+                className="w-full text-xs px-1 py-0.5 border border-blue-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+              >
+                {levelOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            ) : (
+              <button
+                onClick={() => canModify && setEditingLevel(true)}
+                className={`w-full text-left text-xs px-1 py-0.5 rounded truncate ${canModify ? 'hover:bg-gray-100 cursor-pointer' : 'cursor-default'}`}
+                disabled={!canModify}
+              >
+                <span className={`inline-flex items-center justify-center w-5 h-5 rounded text-xs font-bold ${badge.bgColor} ${badge.textColor}`}>
+                  {badge.label}
+                </span>
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Type column - editable */}
-        <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.type }}>
-          {editingType ? (
-            <select
-              ref={typeSelectRef}
-              value={objective.type || ''}
-              onChange={(e) => handleTypeChange(e.target.value as ObjectiveType)}
-              onBlur={() => setEditingType(false)}
-              className="w-full text-xs px-1 py-0.5 border border-blue-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-            >
-              <option value="">—</option>
-              {typeOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-          ) : (
-            <button
-              onClick={() => canModify && setEditingType(true)}
-              className={`w-full text-left text-xs px-1 py-0.5 rounded truncate ${canModify ? 'hover:bg-gray-100 cursor-pointer' : 'cursor-default'} ${objective.type ? 'text-gray-600' : 'text-gray-300'}`}
-              disabled={!canModify}
-            >
-              {objective.type ? typeOptions.find(t => t.value === objective.type)?.label : '—'}
-            </button>
-          )}
-        </div>
+        {visibleColumns.includes('type') && (
+          <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.type }}>
+            {editingType ? (
+              <select
+                ref={typeSelectRef}
+                value={objective.type || ''}
+                onChange={(e) => handleTypeChange(e.target.value as ObjectiveType)}
+                onBlur={() => setEditingType(false)}
+                className="w-full text-xs px-1 py-0.5 border border-blue-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+              >
+                <option value="">—</option>
+                {typeOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            ) : (
+              <button
+                onClick={() => canModify && setEditingType(true)}
+                className={`w-full text-left text-xs px-1 py-0.5 rounded truncate ${canModify ? 'hover:bg-gray-100 cursor-pointer' : 'cursor-default'} ${objective.type ? 'text-gray-600' : 'text-gray-300'}`}
+                disabled={!canModify}
+              >
+                {objective.type ? typeOptions.find(t => t.value === objective.type)?.label : '—'}
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Parent column - editable with search */}
-        <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.parent }}>
+        {visibleColumns.includes('parent') && (
+          <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.parent }}>
           <button
             ref={parentButtonRef}
             onClick={() => canModify && setEditingParent(true)}
@@ -764,8 +770,10 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
             </div>
           )}
         </div>
+        )}
 
         {/* Team column - editable */}
+        {visibleColumns.includes('team') && (
         <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.team }}>
           {editingTeam ? (
             <select
@@ -790,8 +798,10 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
             </button>
           )}
         </div>
+        )}
 
         {/* Owner column - editable */}
+        {visibleColumns.includes('owner') && (
         <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.owner }}>
           {editingOwner ? (
             <select
@@ -816,8 +826,10 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
             </button>
           )}
         </div>
+        )}
 
         {/* Assignee column - editable */}
+        {visibleColumns.includes('assignee') && (
         <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.assignee }}>
           {editingAssignee ? (
             <select
@@ -842,8 +854,10 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
             </button>
           )}
         </div>
+        )}
 
         {/* Period column - editable */}
+        {visibleColumns.includes('period') && (
         <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.period }}>
           {editingPeriod ? (
             <select
@@ -867,8 +881,10 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
             </button>
           )}
         </div>
+        )}
 
         {/* Next Step Date column - editable with date picker */}
+        {visibleColumns.includes('nextStepDate') && (
         <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.nextStepDate }}>
           {editingNextStepDate ? (
             <input
@@ -892,8 +908,10 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
             </button>
           )}
         </div>
+        )}
 
         {/* Next Step column - editable text */}
+        {visibleColumns.includes('nextStep') && (
         <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.nextStep }}>
           {editingNextStep ? (
             <input
@@ -917,8 +935,10 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
             </button>
           )}
         </div>
+        )}
 
         {/* Story Points column - editable only by assignee */}
+        {visibleColumns.includes('storyPoints') && (
         <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.storyPoints }}>
           {(() => {
             const canEditStoryPoints = currentUserId === objective.assigneeId;
@@ -946,8 +966,10 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
             );
           })()}
         </div>
+        )}
 
         {/* Value Points column - editable only by owner */}
+        {visibleColumns.includes('valuePoints') && (
         <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.valuePoints }}>
           {(() => {
             const canEditValuePoints = currentUserId === objective.ownerId;
@@ -975,8 +997,10 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
             );
           })()}
         </div>
+        )}
 
         {/* Tags column - editable */}
+        {visibleColumns.includes('tags') && (
         <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.tags }}>
           <div className="flex items-center gap-1 flex-wrap">
             {objectiveTags.map((tag: Tag) => (
@@ -1029,11 +1053,14 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
             </div>
           )}
         </div>
+        )}
 
         {/* Progress column */}
+        {visibleColumns.includes('progress') && (
         <div className="px-2 py-1.5 text-xs text-gray-500 font-medium text-right flex-shrink-0" style={{ width: columnWidths.progress }}>
           {objective.progress}%
         </div>
+        )}
 
         {/* Actions column */}
         <div className="w-16 px-2 py-1.5 flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
