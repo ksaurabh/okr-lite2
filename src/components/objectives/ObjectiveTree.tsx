@@ -203,7 +203,7 @@ export function ObjectiveTree() {
     [tags, orgId, userEmail, isAdmin]
   );
 
-  const hasActiveFilters = activePeriodId || filterTagIds.length > 0 || filterTeamIds.length > 0 || filterTypes.length > 0 || filterTypeNotSet || filterOwnerIds.length > 0 || filterAssigneeIds.length > 0;
+  const hasActiveFilters = activePeriodId || filterTagIds.length > 0 || filterTeamIds.length > 0 || filterTypes.length > 0 || filterTypeNotSet || filterOwnerIds.length > 0 || filterAssigneeIds.length > 0 || filterNextStepDate || filterLevels.length > 0;
 
   // Get all ancestor period IDs for a given period (including the period itself)
   const getAncestorPeriodIds = useMemo(() => {
