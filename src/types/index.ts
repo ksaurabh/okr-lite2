@@ -1,5 +1,6 @@
 export type ObjectiveLevel = 'company' | 'team' | 'individual';
 export type ObjectiveStatus = 'on-track' | 'at-risk' | 'behind';
+export type WorkflowStatus = 'todo' | 'planning' | 'in_progress' | 'acceptance' | 'done' | 'archived';
 export type ObjectiveType = 'initiative' | 'saga' | 'epic' | 'story' | 'subtask';
 export type NextStepDateFilter = 'not_set' | 'last_7d' | 'last_30d' | 'past' | 'today' | 'next_7d' | 'next_30d' | 'future';
 
@@ -37,6 +38,7 @@ export interface Objective {
   valuePoints?: number;
   progress: number;
   status: ObjectiveStatus;
+  workflowStatus: WorkflowStatus;
   periodId: string;
   createdAt: string;
   updatedAt: string;

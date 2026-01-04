@@ -172,6 +172,7 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
           periodId,
           storyPoints: parsedStoryPoints !== undefined && !isNaN(parsedStoryPoints) && parsedStoryPoints >= 0 ? parsedStoryPoints : undefined,
           valuePoints: parsedValuePoints !== undefined && !isNaN(parsedValuePoints) && parsedValuePoints >= 0 ? parsedValuePoints : undefined,
+          workflowStatus: 'todo',
         }, { orgId, userEmail, shared: !isPrivate });
       }
       onClose();

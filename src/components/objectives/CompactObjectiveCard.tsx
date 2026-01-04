@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import type { Objective, ObjectiveLevel, ObjectiveType, Period, User, Team, Tag } from '../../types';
+import type { Objective, ObjectiveLevel, ObjectiveType, WorkflowStatus, Period, User, Team, Tag } from '../../types';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
 import { SlidePane } from '../common/SlidePane';
@@ -26,6 +26,15 @@ const levelBadges: Record<ObjectiveLevel, { label: string; bgColor: string; text
   team: { label: 'T', bgColor: 'bg-blue-100', textColor: 'text-blue-700' },
   individual: { label: 'I', bgColor: 'bg-green-100', textColor: 'text-green-700' },
 };
+
+const WORKFLOW_STATUS_OPTIONS: { value: WorkflowStatus; label: string }[] = [
+  { value: 'todo', label: 'To Do' },
+  { value: 'planning', label: 'In Planning' },
+  { value: 'in_progress', label: 'In Progress' },
+  { value: 'acceptance', label: 'In Acceptance' },
+  { value: 'done', label: 'Done' },
+  { value: 'archived', label: 'Archived' },
+];
 
 function getNextStepDateIndicator(nextStepDate?: string): { color: string; tooltip: string } | null {
   if (!nextStepDate) return null;
@@ -59,6 +68,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   const [editTitleValue, setEditTitleValue] = useState(objectiveProp.title);
   const [editingLevel, setEditingLevel] = useState(false);
   const [editingType, setEditingType] = useState(false);
+  const [editingWorkflowStatus, setEditingWorkflowStatus] = useState(false);
   const [editingTeam, setEditingTeam] = useState(false);
   const [editingOwner, setEditingOwner] = useState(false);
   const [editingAssignee, setEditingAssignee] = useState(false);
@@ -80,6 +90,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   const titleInputRef = useRef<HTMLInputElement>(null);
   const levelSelectRef = useRef<HTMLSelectElement>(null);
   const typeSelectRef = useRef<HTMLSelectElement>(null);
+  const workflowStatusSelectRef = useRef<HTMLSelectElement>(null);
   const teamSelectRef = useRef<HTMLSelectElement>(null);
   const ownerSelectRef = useRef<HTMLSelectElement>(null);
   const assigneeSelectRef = useRef<HTMLSelectElement>(null);
@@ -266,6 +277,12 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   }, [editingType]);
 
   useEffect(() => {
+    if (editingWorkflowStatus && workflowStatusSelectRef.current) {
+      workflowStatusSelectRef.current.focus();
+    }
+  }, [editingWorkflowStatus]);
+
+  useEffect(() => {
     if (editingTeam && teamSelectRef.current) {
       teamSelectRef.current.focus();
     }
@@ -427,6 +444,13 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
     }
   };
 
+  const handleWorkflowStatusChange = async (newStatus: WorkflowStatus) => {
+    setEditingWorkflowStatus(false);
+    if (newStatus !== objective.workflowStatus) {
+      await updateObjective(objective.id, { workflowStatus: newStatus }, userEmail);
+    }
+  };
+
   const handleTeamChange = async (newTeamId: string) => {
     setEditingTeam(false);
     if (newTeamId !== (objective.teamId || '')) {
@@ -562,6 +586,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           ownerId: objective.ownerId,
           assigneeId: objective.assigneeId,
           tagIds: [],
+          workflowStatus: 'todo',
         },
         {
           orgId: organization?.id || '',
@@ -708,6 +733,33 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
                 disabled={!canModify}
               >
                 {objective.type ? typeOptions.find(t => t.value === objective.type)?.label : '—'}
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Workflow Status column - editable */}
+        {visibleColumns.includes('workflowStatus') && (
+          <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.workflowStatus }}>
+            {editingWorkflowStatus ? (
+              <select
+                ref={workflowStatusSelectRef}
+                value={objective.workflowStatus || 'todo'}
+                onChange={(e) => handleWorkflowStatusChange(e.target.value as WorkflowStatus)}
+                onBlur={() => setEditingWorkflowStatus(false)}
+                className="w-full text-xs px-1 py-0.5 border border-blue-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+              >
+                {WORKFLOW_STATUS_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            ) : (
+              <button
+                onClick={() => canModify && setEditingWorkflowStatus(true)}
+                className={`w-full text-left text-xs px-1 py-0.5 rounded truncate ${canModify ? 'hover:bg-gray-100 cursor-pointer' : 'cursor-default'} text-gray-600`}
+                disabled={!canModify}
+              >
+                {WORKFLOW_STATUS_OPTIONS.find(s => s.value === objective.workflowStatus)?.label || 'To Do'}
               </button>
             )}
           </div>
@@ -1107,6 +1159,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           </div>
           <div className="px-1" style={{ width: columnWidths.level }} />
           <div className="px-1" style={{ width: columnWidths.type }} />
+          <div className="px-1" style={{ width: columnWidths.workflowStatus }} />
           <div className="px-1" style={{ width: columnWidths.parent }} />
           <div className="px-1" style={{ width: columnWidths.team }} />
           <div className="px-1" style={{ width: columnWidths.owner }} />

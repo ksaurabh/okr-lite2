@@ -818,6 +818,7 @@ app.post('/api/objectives', requireAuth, (req, res) => {
     createdBy: req.user.email,
     progress: 0,
     status: 'behind',
+    workflowStatus: req.body.workflowStatus || 'todo',
     createdAt: now,
     updatedAt: now,
   };

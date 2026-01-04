@@ -868,6 +868,15 @@ export function ObjectiveTree() {
                 />
               </div>
             )}
+            {visibleColumns.includes('workflowStatus') && (
+              <div className="relative flex items-center" style={{ width: columnWidths.workflowStatus }}>
+                <div className="px-1 py-2 flex-1">Status</div>
+                <div
+                  className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                  onMouseDown={(e) => handleResizeStart('workflowStatus', e)}
+                />
+              </div>
+            )}
             {visibleColumns.includes('parent') && (
               <div className="relative flex items-center" style={{ width: columnWidths.parent }}>
                 <div className="px-1 py-2 flex-1">Parent</div>

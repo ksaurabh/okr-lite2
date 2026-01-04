@@ -136,6 +136,7 @@ export interface ColumnWidths {
   title: number;
   level: number;
   type: number;
+  workflowStatus: number;
   parent: number;
   team: number;
   owner: number;
@@ -153,6 +154,7 @@ export const DEFAULT_COLUMN_WIDTHS: ColumnWidths = {
   title: 300,       // min width for title
   level: 96,        // w-24
   type: 96,         // w-24
+  workflowStatus: 112, // w-28
   parent: 144,      // w-36
   team: 112,        // w-28
   owner: 112,       // w-28
@@ -172,6 +174,7 @@ export const COLUMN_LABELS: Record<ColumnKey, string> = {
   title: 'Objective',
   level: 'Level',
   type: 'Type',
+  workflowStatus: 'Status',
   parent: 'Parent',
   team: 'Team',
   owner: 'Owner',
@@ -186,7 +189,7 @@ export const COLUMN_LABELS: Record<ColumnKey, string> = {
 };
 
 export const DEFAULT_VISIBLE_COLUMNS: ColumnKey[] = [
-  'title', 'level', 'type', 'parent', 'team', 'owner', 'assignee',
+  'title', 'level', 'type', 'workflowStatus', 'parent', 'team', 'owner', 'assignee',
   'period', 'nextStepDate', 'nextStep', 'storyPoints', 'valuePoints', 'tags', 'progress'
 ];
 
