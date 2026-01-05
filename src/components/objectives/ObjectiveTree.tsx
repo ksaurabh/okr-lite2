@@ -163,6 +163,8 @@ export function ObjectiveTree() {
   const setFilterNextStepDate = useOKRStore((state: OKRStore) => state.setFilterNextStepDate);
   const filterLevels = useOKRStore((state: OKRStore) => state.filterLevels);
   const toggleFilterLevel = useOKRStore((state: OKRStore) => state.toggleFilterLevel);
+  const filterObjectiveId = useOKRStore((state: OKRStore) => state.filterObjectiveId);
+  const setFilterObjective = useOKRStore((state: OKRStore) => state.setFilterObjective);
   const clearAllFilters = useOKRStore((state: OKRStore) => state.clearAllFilters);
   const columnWidths = useOKRStore((state: OKRStore) => state.columnWidths);
   const setColumnWidths = useOKRStore((state: OKRStore) => state.setColumnWidths);
@@ -172,12 +174,28 @@ export function ObjectiveTree() {
   // Column visibility dropdown state
   const [showColumnMenu, setShowColumnMenu] = useState(false);
   const columnMenuRef = useRef<HTMLDivElement>(null);
+  const [objectiveSearch, setObjectiveSearch] = useState('');
+  const [showObjectiveDropdown, setShowObjectiveDropdown] = useState(false);
+  const objectiveDropdownRef = useRef<HTMLDivElement>(null);
+  const objectiveSearchRef = useRef<HTMLInputElement>(null);
 
   // Close column menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (columnMenuRef.current && !columnMenuRef.current.contains(event.target as Node)) {
         setShowColumnMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Close objective dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (objectiveDropdownRef.current && !objectiveDropdownRef.current.contains(event.target as Node)) {
+        setShowObjectiveDropdown(false);
+        setObjectiveSearch('');
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -250,7 +268,7 @@ export function ObjectiveTree() {
     [tags, orgId, userEmail, isAdmin]
   );
 
-  const hasActiveFilters = activePeriodId || filterTagIds.length > 0 || filterTeamIds.length > 0 || filterTypes.length > 0 || filterTypeNotSet || filterOwnerIds.length > 0 || filterAssigneeIds.length > 0 || filterNextStepDate || filterLevels.length > 0;
+  const hasActiveFilters = activePeriodId || filterTagIds.length > 0 || filterTeamIds.length > 0 || filterTypes.length > 0 || filterTypeNotSet || filterOwnerIds.length > 0 || filterAssigneeIds.length > 0 || filterNextStepDate || filterLevels.length > 0 || filterObjectiveId;
 
   // Get all ancestor period IDs for a given period (including the period itself)
   const getAncestorPeriodIds = useMemo(() => {
@@ -296,6 +314,22 @@ export function ObjectiveTree() {
       return ids;
     };
   }, [orgTeams]);
+
+  // Get all descendant objective IDs for a given objective (not including the objective itself)
+  const getDescendantObjectiveIds = useMemo(() => {
+    return (objectiveId: string): string[] => {
+      const ids: string[] = [];
+      const findChildren = (parentId: string) => {
+        const children = orgObjectives.filter((o: Objective) => o.parentId === parentId);
+        children.forEach((child: Objective) => {
+          ids.push(child.id);
+          findChildren(child.id);
+        });
+      };
+      findChildren(objectiveId);
+      return ids;
+    };
+  }, [orgObjectives]);
 
   // Get root periods (no parent) for hierarchical display
   const rootPeriods = useMemo(() => {
@@ -350,6 +384,12 @@ export function ObjectiveTree() {
       result = result.filter((obj: Objective) =>
         filterLevels.includes(obj.level)
       );
+    }
+
+    // Filter by parent objective (show only descendants)
+    if (filterObjectiveId) {
+      const descendantIds = new Set(getDescendantObjectiveIds(filterObjectiveId));
+      result = result.filter((obj: Objective) => descendantIds.has(obj.id));
     }
 
     // Filter by owners (with operator support)
@@ -443,7 +483,7 @@ export function ObjectiveTree() {
     }
 
     return result;
-  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterTypeNotSet, filterLevels, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterNextStepDate, includeAncestorPeriods, includeChildPeriods, includeChildTeams, showChildren, directChildrenOnly, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds]);
+  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterTypeNotSet, filterLevels, filterObjectiveId, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterNextStepDate, includeAncestorPeriods, includeChildPeriods, includeChildTeams, showChildren, directChildrenOnly, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds, getDescendantObjectiveIds]);
 
   // Get IDs of all filtered objectives for quick lookup
   const filteredObjectiveIds = useMemo(
@@ -786,6 +826,91 @@ export function ObjectiveTree() {
                   </div>
                 </div>
               )}
+
+              {/* Parent Objective Filter */}
+              <div className="flex items-start gap-3">
+                <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Parent</label>
+                <div className="relative flex-1" ref={objectiveDropdownRef}>
+                  {filterObjectiveId ? (
+                    <div className="flex items-center gap-1.5">
+                      <span className="px-2 py-1 bg-gray-800 text-white rounded-full text-xs truncate max-w-xs">
+                        {orgObjectives.find((o: Objective) => o.id === filterObjectiveId)?.title || 'Unknown'}
+                      </span>
+                      <button
+                        onClick={() => setFilterObjective(null)}
+                        className="text-gray-400 hover:text-gray-600"
+                        title="Clear filter"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => {
+                          setShowObjectiveDropdown(!showObjectiveDropdown);
+                          setTimeout(() => objectiveSearchRef.current?.focus(), 0);
+                        }}
+                        className="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+                      >
+                        Select objective...
+                      </button>
+                      {showObjectiveDropdown && (
+                        <div className="absolute z-50 mt-1 w-72 bg-white border border-gray-300 rounded-lg shadow-lg">
+                          <div className="p-2 border-b border-gray-200">
+                            <input
+                              ref={objectiveSearchRef}
+                              type="text"
+                              value={objectiveSearch}
+                              onChange={(e) => setObjectiveSearch(e.target.value)}
+                              placeholder="Search objectives..."
+                              className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Escape') {
+                                  setShowObjectiveDropdown(false);
+                                  setObjectiveSearch('');
+                                }
+                              }}
+                            />
+                          </div>
+                          <div className="max-h-64 overflow-y-auto">
+                            {orgObjectives
+                              .filter((o: Objective) =>
+                                objectiveSearch.trim()
+                                  ? o.title.toLowerCase().includes(objectiveSearch.toLowerCase())
+                                  : true
+                              )
+                              .slice(0, 50)
+                              .map((o: Objective) => (
+                                <button
+                                  key={o.id}
+                                  onClick={() => {
+                                    setFilterObjective(o.id);
+                                    setShowObjectiveDropdown(false);
+                                    setObjectiveSearch('');
+                                  }}
+                                  className="w-full text-left text-xs px-3 py-2 hover:bg-gray-100 truncate"
+                                  title={o.title}
+                                >
+                                  {o.title}
+                                </button>
+                              ))}
+                            {orgObjectives.filter((o: Objective) =>
+                              objectiveSearch.trim()
+                                ? o.title.toLowerCase().includes(objectiveSearch.toLowerCase())
+                                : true
+                            ).length === 0 && (
+                              <div className="text-xs text-gray-400 px-3 py-2">No objectives found</div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
 
             {/* Display Options */}

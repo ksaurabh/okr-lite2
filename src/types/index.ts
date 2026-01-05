@@ -113,6 +113,7 @@ export interface OKRState {
   filterAssigneeOperator: FilterOperator;
   filterNextStepDate: NextStepDateFilter | null;
   filterLevels: ObjectiveLevel[];
+  filterObjectiveId: string | null;
 }
 
 // Organization types
