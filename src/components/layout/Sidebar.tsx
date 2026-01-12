@@ -128,6 +128,11 @@ interface PeriodItemProps {
   isAdmin?: boolean;
 }
 
+function formatPeriodDate(dateString: string): string {
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
 function PeriodItem({ period, periods, onAddChild, onDelete, depth = 0, isAdmin = false }: PeriodItemProps) {
   const [isExpanded, setIsExpanded] = useState(true);
 
@@ -136,6 +141,7 @@ function PeriodItem({ period, periods, onAddChild, onDelete, depth = 0, isAdmin 
 
   const canAddChild = period.type === 'quarter' || period.type === 'month';
   const childType: PeriodType = period.type === 'quarter' ? 'month' : 'week';
+  const dateTooltip = `${formatPeriodDate(period.startDate)} - ${formatPeriodDate(period.endDate)}`;
 
   return (
     <div>
@@ -164,7 +170,7 @@ function PeriodItem({ period, periods, onAddChild, onDelete, depth = 0, isAdmin 
           <span className="text-xs font-medium text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded flex-shrink-0">
             {PERIOD_TYPE_ICONS[period.type]}
           </span>
-          <span className="truncate">{period.name}</span>
+          <span className="truncate" title={dateTooltip}>{period.name}</span>
         </div>
         {isAdmin && (
           <div className="flex items-center gap-1 flex-shrink-0">
