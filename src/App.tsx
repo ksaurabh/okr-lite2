@@ -4,6 +4,7 @@ import { Layout } from './components/layout';
 import { ObjectiveTree, ObjectiveForm } from './components/objectives';
 import { ChecklistPage } from './components/checklist';
 import { ProgressPage } from './components/progress';
+import { PeriodsPage } from './components/periods';
 import { AdminPage } from './components/admin';
 import { SettingsPage } from './components/settings';
 import { LoginPage, UnauthorizedPage, AuthCallback, AdminInviteAccept } from './components/auth';
@@ -75,11 +76,7 @@ function AppContent() {
           <p>Manage teams from the sidebar</p>
         </div>
       )}
-      {currentView === 'periods' && (
-        <div className="text-center py-12 text-gray-500">
-          <p>Manage periods from the sidebar</p>
-        </div>
-      )}
+      {currentView === 'periods' && <PeriodsPage />}
       {currentView === 'tags' && (
         <div className="text-center py-12 text-gray-500">
           <p>Manage tags from the sidebar</p>
