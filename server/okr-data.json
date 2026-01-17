@@ -4,7 +4,7 @@
       "title": "Improve Case Quality",
       "level": "team",
       "teamId": "1767386457647-wvnlzjl",
-      "periodId": "1767386372641-5k1nxum",
+      "periodId": "1767386354197-o1fc4s1",
       "shared": true,
       "history": [
         {
@@ -30,6 +30,32 @@
               "newValue": "Product"
             }
           ]
+        },
+        {
+          "id": "1767392448106-o4brld4",
+          "timestamp": "2026-01-02T22:20:48.106Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "period",
+              "oldValue": "Jan 2026",
+              "newValue": "FY26Q4"
+            }
+          ]
+        },
+        {
+          "id": "1767416387047-dxk4l5y",
+          "timestamp": "2026-01-03T04:59:47.047Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "parent",
+              "oldValue": "(none)",
+              "newValue": "Product Improvements"
+            }
+          ]
         }
       ],
       "id": "1767386549365-1xx5s0c",
@@ -38,7 +64,13 @@
       "progress": 0,
       "status": "behind",
       "createdAt": "2026-01-02T20:42:29.365Z",
-      "updatedAt": "2026-01-02T20:42:29.365Z"
+      "updatedAt": "2026-01-04T18:42:10.085Z",
+      "ownerId": "user-1767385055018-swvew",
+      "assigneeId": "user-1767385055018-swvew",
+      "parentId": "1767416377353-rucpley",
+      "type": "initiative",
+      "nextStepDate": "2026-01-17",
+      "nextStep": "review again"
     },
     {
       "title": "Improve Investigation Quality",
@@ -83,14 +115,18 @@
       "progress": 0,
       "status": "behind",
       "createdAt": "2026-01-02T20:42:54.043Z",
-      "updatedAt": "2026-01-02T20:42:54.043Z"
+      "updatedAt": "2026-01-04T21:57:45.073Z",
+      "ownerId": "user-1767385055018-swvew",
+      "assigneeId": "user-1767385055018-swvew",
+      "type": "saga",
+      "nextStepDate": "2026-01-17"
     },
     {
       "title": "Autonomous Case Scorer",
       "level": "team",
       "parentId": "1767386574043-4pgkeoc",
       "teamId": "1767386457647-wvnlzjl",
-      "periodId": "1767386354197-o1fc4s1",
+      "periodId": "1767386372641-5k1nxum",
       "shared": true,
       "history": [
         {
@@ -120,6 +156,19 @@
               "newValue": "Improve Investigation Quality"
             }
           ]
+        },
+        {
+          "id": "1767392433531-46ppcvr",
+          "timestamp": "2026-01-02T22:20:33.531Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "period",
+              "oldValue": "FY26Q4",
+              "newValue": "Jan 2026"
+            }
+          ]
         }
       ],
       "id": "1767386589847-44jid7k",
@@ -128,7 +177,2604 @@
       "progress": 0,
       "status": "behind",
       "createdAt": "2026-01-02T20:43:09.847Z",
-      "updatedAt": "2026-01-02T20:43:09.847Z"
+      "updatedAt": "2026-01-04T22:49:55.777Z",
+      "ownerId": "user-1767385055018-swvew",
+      "assigneeId": "user-1767387686266-d5esf",
+      "type": "epic",
+      "nextStepDate": "2026-01-04",
+      "workflowStatus": "in_progress"
+    },
+    {
+      "title": "Capabilities that we need to do more of AISOC use cases",
+      "level": "team",
+      "teamId": "1767386457647-wvnlzjl",
+      "ownerId": "user-1767385055018-swvew",
+      "assigneeId": "user-1767385055018-swvew",
+      "periodId": "1767392135681-de9ne8c",
+      "shared": true,
+      "history": [
+        {
+          "id": "1767391714026-h8zr47m",
+          "timestamp": "2026-01-02T22:08:34.026Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Capabilities that we need to do more of AISOC use cases"
+            },
+            {
+              "field": "level",
+              "newValue": "team"
+            },
+            {
+              "field": "period",
+              "newValue": "FY26Q4"
+            },
+            {
+              "field": "team",
+              "newValue": "Product"
+            }
+          ]
+        },
+        {
+          "id": "1767392161774-3teci8c",
+          "timestamp": "2026-01-02T22:16:01.773Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "period",
+              "oldValue": "FY26Q4",
+              "newValue": "Evergreen"
+            }
+          ]
+        },
+        {
+          "id": "1767416395335-a33z2po",
+          "timestamp": "2026-01-03T04:59:55.335Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "parent",
+              "oldValue": "(none)",
+              "newValue": "Product Improvements"
+            }
+          ]
+        }
+      ],
+      "id": "1767391714034-jici11b",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-02T22:08:34.034Z",
+      "updatedAt": "2026-01-04T21:57:55.777Z",
+      "parentId": "1767416377353-rucpley",
+      "type": "initiative",
+      "nextStepDate": "2026-01-05"
+    },
+    {
+      "title": "Remote Agent",
+      "description": "Need the ability for enterprise customers to collect data from on-prem systems",
+      "level": "team",
+      "parentId": "1767391714034-jici11b",
+      "teamId": "1767386470488-ihsx22j",
+      "ownerId": "user-1767385055018-swvew",
+      "assigneeId": "user-1767387686266-d5esf",
+      "periodId": "1767386372641-5k1nxum",
+      "shared": true,
+      "history": [
+        {
+          "id": "1767391752471-20uhnlj",
+          "timestamp": "2026-01-02T22:09:12.471Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Remote Agent"
+            },
+            {
+              "field": "level",
+              "newValue": "individual"
+            },
+            {
+              "field": "period",
+              "newValue": "Jan 2026"
+            },
+            {
+              "field": "description",
+              "newValue": "Need the ability for enterprise customers to collect data from on-prem systems"
+            },
+            {
+              "field": "team",
+              "newValue": "Ayush Lane"
+            },
+            {
+              "field": "parent",
+              "newValue": "Capabilities that we need to do more of AISOC use cases"
+            }
+          ]
+        },
+        {
+          "id": "1767391807920-937dxc6",
+          "timestamp": "2026-01-02T22:10:07.920Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "level",
+              "oldValue": "individual",
+              "newValue": "team"
+            }
+          ]
+        }
+      ],
+      "id": "1767391752478-p9oqqro",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-02T22:09:12.478Z",
+      "updatedAt": "2026-01-04T22:50:05.292Z",
+      "type": "epic",
+      "nextStepDate": "2026-01-04",
+      "workflowStatus": "in_progress"
+    },
+    {
+      "title": "Reduce the effort required and turnaround time for producing 9 quality cases",
+      "level": "team",
+      "parentId": "1767386574043-4pgkeoc",
+      "teamId": "1767386457647-wvnlzjl",
+      "ownerId": "user-1767385055018-swvew",
+      "assigneeId": "user-1767385055018-swvew",
+      "periodId": "1767386372641-5k1nxum",
+      "shared": true,
+      "history": [
+        {
+          "id": "1767392569350-zr4uhx9",
+          "timestamp": "2026-01-02T22:22:49.350Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Reduce the effort required and turnaround time for producing 9 quality cases"
+            },
+            {
+              "field": "level",
+              "newValue": "team"
+            },
+            {
+              "field": "period",
+              "newValue": "Jan 2026"
+            },
+            {
+              "field": "team",
+              "newValue": "Product"
+            },
+            {
+              "field": "parent",
+              "newValue": "Improve Investigation Quality"
+            }
+          ]
+        }
+      ],
+      "id": "1767392569364-fref35z",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-02T22:22:49.364Z",
+      "updatedAt": "2026-01-04T22:50:10.525Z",
+      "type": "saga",
+      "nextStepDate": "2026-01-04",
+      "workflowStatus": "in_progress"
+    },
+    {
+      "title": "Measure and Improve the quality of alert triage customers/trials are getting",
+      "level": "team",
+      "parentId": "1767386574043-4pgkeoc",
+      "teamId": "1767386431083-lovf9s0",
+      "ownerId": "user-1767385055018-swvew",
+      "periodId": "1767386354197-o1fc4s1",
+      "shared": true,
+      "history": [
+        {
+          "id": "1767392679545-tkd7irh",
+          "timestamp": "2026-01-02T22:24:39.545Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Measure and Improve the quality of alert triage customers/trials are getting"
+            },
+            {
+              "field": "level",
+              "newValue": "team"
+            },
+            {
+              "field": "period",
+              "newValue": "Evergreen"
+            },
+            {
+              "field": "team",
+              "newValue": "Services"
+            },
+            {
+              "field": "parent",
+              "newValue": "Improve Investigation Quality"
+            }
+          ]
+        },
+        {
+          "id": "1767412673744-bfd15xg",
+          "timestamp": "2026-01-03T03:57:53.744Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "period",
+              "oldValue": "Evergreen",
+              "newValue": "FY26Q4"
+            }
+          ]
+        },
+        {
+          "id": "1767644101174-jw3g8vh",
+          "timestamp": "2026-01-05T20:15:01.174Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "description",
+              "oldValue": "(empty)",
+              "newValue": "We do not know if we are providing a 7 or a 9 case quality to our customers/trials."
+            }
+          ]
+        }
+      ],
+      "id": "1767392679550-qkuwzcn",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-02T22:24:39.550Z",
+      "updatedAt": "2026-01-05T20:15:01.248Z",
+      "assigneeId": "user-1767392711927-7csxn",
+      "type": "saga",
+      "nextStepDate": "2026-01-04",
+      "workflowStatus": "planning",
+      "description": "We do not know if we are providing a 7 or a 9 case quality to our customers/trials."
+    },
+    {
+      "title": "Measure the improvement in turnaround time and effort required due to M22 work",
+      "level": "team",
+      "parentId": "1767392569364-fref35z",
+      "teamId": "1767386493286-xgbbrau",
+      "ownerId": "user-1767385055018-swvew",
+      "periodId": "1767386354197-o1fc4s1",
+      "shared": true,
+      "history": [
+        {
+          "id": "1767393012407-e8yn2h4",
+          "timestamp": "2026-01-02T22:30:12.407Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Measure the improvement in turnaround time and effort required due to M22 work"
+            },
+            {
+              "field": "level",
+              "newValue": "team"
+            },
+            {
+              "field": "period",
+              "newValue": "FY26Q4"
+            },
+            {
+              "field": "team",
+              "newValue": "Amol Lane"
+            },
+            {
+              "field": "parent",
+              "newValue": "Reduce the effort required and turnaround time for producing 9 quality cases"
+            }
+          ]
+        }
+      ],
+      "id": "1767393012413-708e8nx",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-02T22:30:12.413Z",
+      "updatedAt": "2026-01-04T22:51:05.835Z",
+      "assigneeId": "user-1767393026533-c4jbd",
+      "type": "epic",
+      "nextStepDate": "2026-01-04",
+      "workflowStatus": "planning"
+    },
+    {
+      "title": "Convert appt held into closed deals",
+      "level": "team",
+      "teamId": "1767386420393-4sehvek",
+      "ownerId": "user-1767385055018-swvew",
+      "assigneeId": "user-1767385055018-swvew",
+      "periodId": "1767392135681-de9ne8c",
+      "shared": true,
+      "history": [
+        {
+          "id": "1767393722622-npr9zis",
+          "timestamp": "2026-01-02T22:42:02.622Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Convert appt held into closed deals"
+            },
+            {
+              "field": "level",
+              "newValue": "team"
+            },
+            {
+              "field": "period",
+              "newValue": "Evergreen"
+            },
+            {
+              "field": "team",
+              "newValue": "Sales"
+            }
+          ]
+        }
+      ],
+      "id": "1767393722629-q80q9vj",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-02T22:42:02.629Z",
+      "updatedAt": "2026-01-04T22:00:55.192Z",
+      "type": "initiative",
+      "nextStepDate": "2026-01-17"
+    },
+    {
+      "title": "Review every appt held and make sure it is being followed up on",
+      "description": "",
+      "level": "team",
+      "parentId": "1767393722629-q80q9vj",
+      "periodId": "1767386372641-5k1nxum",
+      "teamId": "1767386420393-4sehvek",
+      "tagIds": [],
+      "shared": true,
+      "history": [
+        {
+          "id": "1767410842307-gq2vn22",
+          "timestamp": "2026-01-03T03:27:22.307Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Review every appt held and make sure it is being followed up on"
+            },
+            {
+              "field": "level",
+              "newValue": "individual"
+            },
+            {
+              "field": "period",
+              "newValue": "Evergreen"
+            },
+            {
+              "field": "team",
+              "newValue": "Sales"
+            },
+            {
+              "field": "parent",
+              "newValue": "Convert appt held into closed deals"
+            }
+          ]
+        },
+        {
+          "id": "1767410907406-hakeqic",
+          "timestamp": "2026-01-03T03:28:27.406Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "description",
+              "oldValue": "(empty)",
+              "newValue": "(empty)"
+            },
+            {
+              "field": "level",
+              "oldValue": "individual",
+              "newValue": "team"
+            },
+            {
+              "field": "tags",
+              "oldValue": "(none)",
+              "newValue": "(none)"
+            }
+          ]
+        },
+        {
+          "id": "1767564049843-ewzp8fq",
+          "timestamp": "2026-01-04T22:00:49.842Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "period",
+              "oldValue": "Evergreen",
+              "newValue": "Jan 2026"
+            }
+          ]
+        }
+      ],
+      "id": "1767410842339-iciwczr",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-03T03:27:22.339Z",
+      "updatedAt": "2026-01-04T22:00:59.882Z",
+      "ownerId": "user-1767385055018-swvew",
+      "type": "epic",
+      "nextStepDate": "2026-01-05"
+    },
+    {
+      "title": "Sales Execution Jan 2026",
+      "level": "team",
+      "teamId": "1767386420393-4sehvek",
+      "ownerId": "user-1767385055018-swvew",
+      "assigneeId": "user-1767385055018-swvew",
+      "periodId": "1767386372641-5k1nxum",
+      "shared": true,
+      "history": [
+        {
+          "id": "1767413494058-96298mh",
+          "timestamp": "2026-01-03T04:11:34.058Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Sales Execution Jan 2026"
+            },
+            {
+              "field": "level",
+              "newValue": "team"
+            },
+            {
+              "field": "period",
+              "newValue": "Jan 2026"
+            },
+            {
+              "field": "team",
+              "newValue": "Sales"
+            }
+          ]
+        },
+        {
+          "id": "1767414595152-qo1bg6j",
+          "timestamp": "2026-01-03T04:29:55.152Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "parent",
+              "oldValue": "(none)",
+              "newValue": "FY26Q4 Sales Targets"
+            }
+          ]
+        }
+      ],
+      "id": "1767413494068-uk3z1ml",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-03T04:11:34.068Z",
+      "updatedAt": "2026-01-04T22:01:04.513Z",
+      "parentId": "1767414320610-xi0vloe",
+      "type": "saga",
+      "nextStepDate": "2026-01-05"
+    },
+    {
+      "title": "FY26Q4 Sales Targets",
+      "description": "",
+      "level": "team",
+      "parentId": "1767393722629-q80q9vj",
+      "periodId": "1767386354197-o1fc4s1",
+      "teamId": "1767386420393-4sehvek",
+      "tagIds": [],
+      "shared": true,
+      "history": [
+        {
+          "id": "1767414320599-vwnntqh",
+          "timestamp": "2026-01-03T04:25:20.599Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "FY26Q4 Sales Targets"
+            },
+            {
+              "field": "level",
+              "newValue": "individual"
+            },
+            {
+              "field": "period",
+              "newValue": "Evergreen"
+            },
+            {
+              "field": "team",
+              "newValue": "Sales"
+            },
+            {
+              "field": "parent",
+              "newValue": "Convert appt held into closed deals"
+            }
+          ]
+        },
+        {
+          "id": "1767414327260-yh363xz",
+          "timestamp": "2026-01-03T04:25:27.260Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "level",
+              "oldValue": "individual",
+              "newValue": "team"
+            }
+          ]
+        },
+        {
+          "id": "1767414348935-bvfd18w",
+          "timestamp": "2026-01-03T04:25:48.935Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "period",
+              "oldValue": "Evergreen",
+              "newValue": "FY26Q4"
+            }
+          ]
+        }
+      ],
+      "id": "1767414320610-xi0vloe",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-03T04:25:20.610Z",
+      "updatedAt": "2026-01-04T22:01:09.563Z",
+      "ownerId": "user-1767385055018-swvew",
+      "assigneeId": "user-1767385055018-swvew",
+      "type": "saga",
+      "nextStepDate": "2026-01-05"
+    },
+    {
+      "title": "2026-01: 30 discovery calls",
+      "description": "",
+      "level": "team",
+      "parentId": "1767413494068-uk3z1ml",
+      "periodId": "1767386372641-5k1nxum",
+      "teamId": "1767386420393-4sehvek",
+      "tagIds": [],
+      "shared": true,
+      "history": [
+        {
+          "id": "1767414707170-24i52us",
+          "timestamp": "2026-01-03T04:31:47.170Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "30 discovery calls"
+            },
+            {
+              "field": "level",
+              "newValue": "individual"
+            },
+            {
+              "field": "period",
+              "newValue": "Jan 2026"
+            },
+            {
+              "field": "team",
+              "newValue": "Sales"
+            },
+            {
+              "field": "parent",
+              "newValue": "Sales Execution Jan 2026"
+            }
+          ]
+        },
+        {
+          "id": "1767414833121-eca6264",
+          "timestamp": "2026-01-03T04:33:53.121Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "title",
+              "oldValue": "30 discovery calls",
+              "newValue": "2026-01: 30 discovery calls"
+            }
+          ]
+        },
+        {
+          "id": "1767415677904-einkhyh",
+          "timestamp": "2026-01-03T04:47:57.903Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "level",
+              "oldValue": "individual",
+              "newValue": "team"
+            }
+          ]
+        }
+      ],
+      "id": "1767414707180-efjfgbn",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-03T04:31:47.180Z",
+      "updatedAt": "2026-01-04T22:01:13.660Z",
+      "ownerId": "user-1767385055018-swvew",
+      "assigneeId": "user-1767385055018-swvew",
+      "type": "epic",
+      "nextStepDate": "2026-01-05"
+    },
+    {
+      "title": "2026-01: 12 qualified opportunities",
+      "description": "",
+      "level": "team",
+      "parentId": "1767413494068-uk3z1ml",
+      "periodId": "1767386372641-5k1nxum",
+      "teamId": "1767386420393-4sehvek",
+      "tagIds": [],
+      "shared": true,
+      "history": [
+        {
+          "id": "1767414722670-qrb3pe6",
+          "timestamp": "2026-01-03T04:32:02.669Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "12 qualified opportunities"
+            },
+            {
+              "field": "level",
+              "newValue": "individual"
+            },
+            {
+              "field": "period",
+              "newValue": "Jan 2026"
+            },
+            {
+              "field": "team",
+              "newValue": "Sales"
+            },
+            {
+              "field": "parent",
+              "newValue": "Sales Execution Jan 2026"
+            }
+          ]
+        },
+        {
+          "id": "1767414840926-3xu6y6i",
+          "timestamp": "2026-01-03T04:34:00.926Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "title",
+              "oldValue": "12 qualified opportunities",
+              "newValue": "2026-01: 12 qualified opportunities"
+            }
+          ]
+        },
+        {
+          "id": "1767415683994-xatzey5",
+          "timestamp": "2026-01-03T04:48:03.994Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "level",
+              "oldValue": "individual",
+              "newValue": "team"
+            }
+          ]
+        }
+      ],
+      "id": "1767414722680-uhs69z3",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-03T04:32:02.680Z",
+      "updatedAt": "2026-01-04T22:01:16.854Z",
+      "ownerId": "user-1767385055018-swvew",
+      "assigneeId": "user-1767385055018-swvew",
+      "type": "epic",
+      "nextStepDate": "2026-01-05"
+    },
+    {
+      "title": "2026-01: 8 trials",
+      "description": "",
+      "level": "team",
+      "parentId": "1767413494068-uk3z1ml",
+      "periodId": "1767386372641-5k1nxum",
+      "teamId": "1767386420393-4sehvek",
+      "tagIds": [],
+      "shared": true,
+      "history": [
+        {
+          "id": "1767414863008-7v15rzc",
+          "timestamp": "2026-01-03T04:34:23.008Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "2026-01: 8 trials"
+            },
+            {
+              "field": "level",
+              "newValue": "individual"
+            },
+            {
+              "field": "period",
+              "newValue": "Jan 2026"
+            },
+            {
+              "field": "team",
+              "newValue": "Sales"
+            },
+            {
+              "field": "parent",
+              "newValue": "Sales Execution Jan 2026"
+            }
+          ]
+        },
+        {
+          "id": "1767415686876-dw4h10b",
+          "timestamp": "2026-01-03T04:48:06.876Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "level",
+              "oldValue": "individual",
+              "newValue": "team"
+            }
+          ]
+        }
+      ],
+      "id": "1767414863016-an501c2",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-03T04:34:23.016Z",
+      "updatedAt": "2026-01-04T22:01:21.145Z",
+      "ownerId": "user-1767385055018-swvew",
+      "assigneeId": "user-1767385055018-swvew",
+      "type": "epic",
+      "nextStepDate": "2026-01-05"
+    },
+    {
+      "title": "2026-01: 3 closed won",
+      "description": "",
+      "level": "team",
+      "parentId": "1767413494068-uk3z1ml",
+      "periodId": "1767386372641-5k1nxum",
+      "teamId": "1767386420393-4sehvek",
+      "tagIds": [],
+      "shared": true,
+      "history": [
+        {
+          "id": "1767414874076-022g21k",
+          "timestamp": "2026-01-03T04:34:34.076Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "2026-01: 3 closed won"
+            },
+            {
+              "field": "level",
+              "newValue": "individual"
+            },
+            {
+              "field": "period",
+              "newValue": "Jan 2026"
+            },
+            {
+              "field": "team",
+              "newValue": "Sales"
+            },
+            {
+              "field": "parent",
+              "newValue": "Sales Execution Jan 2026"
+            }
+          ]
+        },
+        {
+          "id": "1767415689760-69a181b",
+          "timestamp": "2026-01-03T04:48:09.760Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "level",
+              "oldValue": "individual",
+              "newValue": "team"
+            }
+          ]
+        }
+      ],
+      "id": "1767414874082-9f2jsjx",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-03T04:34:34.082Z",
+      "updatedAt": "2026-01-04T22:01:24.588Z",
+      "ownerId": "user-1767385055018-swvew",
+      "assigneeId": "user-1767385055018-swvew",
+      "type": "epic",
+      "nextStepDate": "2026-01-05"
+    },
+    {
+      "title": "Improve case presentation quality",
+      "description": "",
+      "level": "team",
+      "parentId": "1767386549365-1xx5s0c",
+      "periodId": "1767386372641-5k1nxum",
+      "teamId": "1767386457647-wvnlzjl",
+      "ownerId": "user-1767385055018-swvew",
+      "assigneeId": "user-1767385055018-swvew",
+      "tagIds": [],
+      "shared": true,
+      "history": [
+        {
+          "id": "1767415815036-vop1xav",
+          "timestamp": "2026-01-03T04:50:15.036Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Improve case presentation quality"
+            },
+            {
+              "field": "level",
+              "newValue": "individual"
+            },
+            {
+              "field": "period",
+              "newValue": "FY26Q4"
+            },
+            {
+              "field": "team",
+              "newValue": "Product"
+            },
+            {
+              "field": "parent",
+              "newValue": "Improve Case Quality"
+            }
+          ]
+        },
+        {
+          "id": "1767415827103-1n81x9p",
+          "timestamp": "2026-01-03T04:50:27.103Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "level",
+              "oldValue": "individual",
+              "newValue": "team"
+            }
+          ]
+        },
+        {
+          "id": "1767415839490-y3bmfjp",
+          "timestamp": "2026-01-03T04:50:39.489Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "period",
+              "oldValue": "FY26Q4",
+              "newValue": "Jan 2026"
+            }
+          ]
+        }
+      ],
+      "id": "1767415815065-bucdvrr",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-03T04:50:15.065Z",
+      "updatedAt": "2026-01-04T22:51:13.469Z",
+      "type": "saga",
+      "nextStepDate": "2026-01-04",
+      "workflowStatus": "planning"
+    },
+    {
+      "title": "Measure and improve the case quality we deliver to our customers and prospects (during trials)",
+      "description": "",
+      "level": "team",
+      "parentId": "1767386549365-1xx5s0c",
+      "periodId": "1767386354197-o1fc4s1",
+      "teamId": "1767386457647-wvnlzjl",
+      "ownerId": "user-1767385055018-swvew",
+      "assigneeId": "user-1767392711927-7csxn",
+      "tagIds": [],
+      "shared": true,
+      "history": [
+        {
+          "id": "1767416014394-l7cuwob",
+          "timestamp": "2026-01-03T04:53:34.394Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Measure and improve the case quality we deliver to our customers and prospects (during trials)"
+            },
+            {
+              "field": "level",
+              "newValue": "individual"
+            },
+            {
+              "field": "period",
+              "newValue": "FY26Q4"
+            },
+            {
+              "field": "team",
+              "newValue": "Product"
+            },
+            {
+              "field": "parent",
+              "newValue": "Improve Case Quality"
+            }
+          ]
+        },
+        {
+          "id": "1767416020620-vn3iyfa",
+          "timestamp": "2026-01-03T04:53:40.620Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "level",
+              "oldValue": "individual",
+              "newValue": "team"
+            }
+          ]
+        }
+      ],
+      "id": "1767416014551-0yrqlkk",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-03T04:53:34.551Z",
+      "updatedAt": "2026-01-04T22:51:19.269Z",
+      "type": "epic",
+      "nextStepDate": "2026-01-04",
+      "workflowStatus": "planning"
+    },
+    {
+      "title": "Generate Appt Held",
+      "level": "team",
+      "teamId": "1767386414510-91o4pcx",
+      "ownerId": "user-1767385055018-swvew",
+      "assigneeId": "user-1767385055018-swvew",
+      "periodId": "1767392135681-de9ne8c",
+      "shared": true,
+      "history": [
+        {
+          "id": "1767416325962-yoe0qlb",
+          "timestamp": "2026-01-03T04:58:45.962Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Generate Appt Held"
+            },
+            {
+              "field": "level",
+              "newValue": "team"
+            },
+            {
+              "field": "period",
+              "newValue": "Evergreen"
+            },
+            {
+              "field": "team",
+              "newValue": "GTM"
+            }
+          ]
+        },
+        {
+          "id": "1767417822467-73mv5ad",
+          "timestamp": "2026-01-03T05:23:42.467Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "period",
+              "oldValue": "Evergreen",
+              "newValue": "FY26Q4"
+            }
+          ]
+        },
+        {
+          "id": "1767417840388-kik6w39",
+          "timestamp": "2026-01-03T05:24:00.388Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "period",
+              "oldValue": "FY26Q4",
+              "newValue": "Evergreen"
+            }
+          ]
+        },
+        {
+          "id": "1767419662732-icvzmir",
+          "timestamp": "2026-01-03T05:54:22.731Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "tags",
+              "oldValue": "(none)",
+              "newValue": "Needs Attention"
+            }
+          ]
+        },
+        {
+          "id": "1767591320930-4is0cq3",
+          "timestamp": "2026-01-05T05:35:20.930Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "tags",
+              "oldValue": "Needs Attention",
+              "newValue": "(none)"
+            }
+          ]
+        }
+      ],
+      "id": "1767416325987-zhzl4np",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-03T04:58:45.987Z",
+      "updatedAt": "2026-01-05T05:35:20.952Z",
+      "tagIds": [],
+      "type": "saga",
+      "nextStepDate": "2026-01-05"
+    },
+    {
+      "title": "Product Improvements",
+      "level": "team",
+      "teamId": "1767386457647-wvnlzjl",
+      "ownerId": "user-1767385055018-swvew",
+      "assigneeId": "user-1767385055018-swvew",
+      "periodId": "1767392135681-de9ne8c",
+      "shared": true,
+      "history": [
+        {
+          "id": "1767416377329-oapcuis",
+          "timestamp": "2026-01-03T04:59:37.329Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Product Improvements"
+            },
+            {
+              "field": "level",
+              "newValue": "team"
+            },
+            {
+              "field": "period",
+              "newValue": "Evergreen"
+            },
+            {
+              "field": "team",
+              "newValue": "Product"
+            }
+          ]
+        }
+      ],
+      "id": "1767416377353-rucpley",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-03T04:59:37.353Z",
+      "updatedAt": "2026-01-04T22:05:27.710Z",
+      "type": "initiative",
+      "nextStepDate": "2026-01-17"
+    },
+    {
+      "title": "Generate Appt Held from Events",
+      "description": "",
+      "level": "team",
+      "parentId": "1767416325987-zhzl4np",
+      "periodId": "1767392135681-de9ne8c",
+      "teamId": "1767386425827-ios37a4",
+      "ownerId": "user-1767385055018-swvew",
+      "assigneeId": "user-1767416492162-n1484",
+      "tagIds": [],
+      "shared": true,
+      "history": [
+        {
+          "id": "1767416421507-mf98c40",
+          "timestamp": "2026-01-03T05:00:21.507Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Generate Appt Held from Events"
+            },
+            {
+              "field": "level",
+              "newValue": "individual"
+            },
+            {
+              "field": "period",
+              "newValue": "Evergreen"
+            },
+            {
+              "field": "team",
+              "newValue": "GTM"
+            },
+            {
+              "field": "parent",
+              "newValue": "Generate Appt Held"
+            }
+          ]
+        },
+        {
+          "id": "1767416469847-i3uoq3o",
+          "timestamp": "2026-01-03T05:01:09.847Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "team",
+              "oldValue": "GTM",
+              "newValue": "Marketing"
+            }
+          ]
+        },
+        {
+          "id": "1767416525579-xuifgei",
+          "timestamp": "2026-01-03T05:02:05.579Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "level",
+              "oldValue": "individual",
+              "newValue": "team"
+            }
+          ]
+        },
+        {
+          "id": "1767417825516-gvx06g1",
+          "timestamp": "2026-01-03T05:23:45.516Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "period",
+              "oldValue": "Evergreen",
+              "newValue": "FY26Q4"
+            }
+          ]
+        },
+        {
+          "id": "1767417837561-us8ew3g",
+          "timestamp": "2026-01-03T05:23:57.561Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "period",
+              "oldValue": "FY26Q4",
+              "newValue": "Evergreen"
+            }
+          ]
+        }
+      ],
+      "id": "1767416421566-c56x692",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-03T05:00:21.566Z",
+      "updatedAt": "2026-01-04T22:05:32.423Z",
+      "type": "saga",
+      "nextStepDate": "2026-01-05"
+    },
+    {
+      "title": "Generate Appt Held from Digital Marketing",
+      "description": "",
+      "level": "team",
+      "parentId": "1767416325987-zhzl4np",
+      "periodId": "1767392135681-de9ne8c",
+      "teamId": "1767386414510-91o4pcx",
+      "ownerId": "user-1767385055018-swvew",
+      "assigneeId": "user-1767416492162-n1484",
+      "tagIds": [],
+      "shared": true,
+      "history": [
+        {
+          "id": "1767416437522-2x5e9cx",
+          "timestamp": "2026-01-03T05:00:37.522Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Generate Appt Held from Digital Marketing"
+            },
+            {
+              "field": "level",
+              "newValue": "individual"
+            },
+            {
+              "field": "period",
+              "newValue": "Evergreen"
+            },
+            {
+              "field": "team",
+              "newValue": "GTM"
+            },
+            {
+              "field": "parent",
+              "newValue": "Generate Appt Held"
+            }
+          ]
+        },
+        {
+          "id": "1767416528027-3cgnd4b",
+          "timestamp": "2026-01-03T05:02:08.027Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "level",
+              "oldValue": "individual",
+              "newValue": "team"
+            }
+          ]
+        },
+        {
+          "id": "1767417828365-rh1ltl1",
+          "timestamp": "2026-01-03T05:23:48.365Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "period",
+              "oldValue": "Evergreen",
+              "newValue": "FY26Q4"
+            }
+          ]
+        },
+        {
+          "id": "1767417834834-vfonale",
+          "timestamp": "2026-01-03T05:23:54.834Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "period",
+              "oldValue": "FY26Q4",
+              "newValue": "Evergreen"
+            }
+          ]
+        }
+      ],
+      "id": "1767416437550-cmn0s7z",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-03T05:00:37.550Z",
+      "updatedAt": "2026-01-04T22:05:36.356Z",
+      "type": "saga",
+      "nextStepDate": "2026-01-05"
+    },
+    {
+      "title": "Generate Appt Held from Cold Outreach",
+      "description": "",
+      "level": "team",
+      "parentId": "1767416325987-zhzl4np",
+      "periodId": "1767392135681-de9ne8c",
+      "teamId": "1767386414510-91o4pcx",
+      "ownerId": "user-1767385055018-swvew",
+      "assigneeId": "user-1767416492162-n1484",
+      "tagIds": [],
+      "shared": true,
+      "history": [
+        {
+          "id": "1767416454459-x7jwgcy",
+          "timestamp": "2026-01-03T05:00:54.459Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Generate Appt Held from Cold Outreach"
+            },
+            {
+              "field": "level",
+              "newValue": "individual"
+            },
+            {
+              "field": "period",
+              "newValue": "Evergreen"
+            },
+            {
+              "field": "team",
+              "newValue": "GTM"
+            },
+            {
+              "field": "parent",
+              "newValue": "Generate Appt Held"
+            }
+          ]
+        },
+        {
+          "id": "1767416530317-ilgng75",
+          "timestamp": "2026-01-03T05:02:10.317Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "level",
+              "oldValue": "individual",
+              "newValue": "team"
+            }
+          ]
+        }
+      ],
+      "id": "1767416454484-smmo9l1",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-03T05:00:54.484Z",
+      "updatedAt": "2026-01-04T22:05:39.889Z",
+      "type": "saga",
+      "nextStepDate": "2026-01-05"
+    },
+    {
+      "title": "Easy & Intuitive UX",
+      "description": "",
+      "level": "team",
+      "parentId": "1767416377353-rucpley",
+      "periodId": "1767392135681-de9ne8c",
+      "teamId": "1767386457647-wvnlzjl",
+      "ownerId": "user-1767385055018-swvew",
+      "assigneeId": "user-1767385055018-swvew",
+      "tagIds": [],
+      "shared": true,
+      "history": [
+        {
+          "id": "1767417590662-rmvei1t",
+          "timestamp": "2026-01-03T05:19:50.662Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Easy & Intuitive UX"
+            },
+            {
+              "field": "level",
+              "newValue": "individual"
+            },
+            {
+              "field": "period",
+              "newValue": "Evergreen"
+            },
+            {
+              "field": "team",
+              "newValue": "Product"
+            },
+            {
+              "field": "parent",
+              "newValue": "Product Improvements"
+            }
+          ]
+        },
+        {
+          "id": "1767417597932-n84u6i8",
+          "timestamp": "2026-01-03T05:19:57.932Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "level",
+              "oldValue": "individual",
+              "newValue": "team"
+            }
+          ]
+        }
+      ],
+      "id": "1767417590752-mzdls9u",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-03T05:19:50.752Z",
+      "updatedAt": "2026-01-04T22:51:36.839Z",
+      "type": "saga",
+      "nextStepDate": "2026-01-04",
+      "workflowStatus": "planning"
+    },
+    {
+      "title": "Create a view for MDR user, eliminate complexity that is primarily there for providers",
+      "description": "",
+      "level": "team",
+      "parentId": "1767417590752-mzdls9u",
+      "periodId": "1767392135681-de9ne8c",
+      "teamId": "1767386457647-wvnlzjl",
+      "ownerId": "user-1767385055018-swvew",
+      "assigneeId": "user-1767385055018-swvew",
+      "tagIds": [],
+      "shared": true,
+      "history": [
+        {
+          "id": "1767417628060-ah4a2v7",
+          "timestamp": "2026-01-03T05:20:28.060Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Create a view for MDR user, eliminate complexity that is primarily there for providers"
+            },
+            {
+              "field": "level",
+              "newValue": "individual"
+            },
+            {
+              "field": "period",
+              "newValue": "Evergreen"
+            },
+            {
+              "field": "team",
+              "newValue": "Product"
+            },
+            {
+              "field": "parent",
+              "newValue": "Easy & Intuitive UX"
+            }
+          ]
+        },
+        {
+          "id": "1767417632526-il74vbh",
+          "timestamp": "2026-01-03T05:20:32.526Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "level",
+              "oldValue": "individual",
+              "newValue": "team"
+            }
+          ]
+        }
+      ],
+      "id": "1767417628083-6wqiuyq",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-03T05:20:28.083Z",
+      "updatedAt": "2026-01-04T22:51:39.629Z",
+      "type": "epic",
+      "nextStepDate": "2026-01-04",
+      "workflowStatus": "planning"
+    },
+    {
+      "title": "Bring the error rate of one alert down to less than 0.5 on a scale of 1-10",
+      "description": "",
+      "level": "team",
+      "parentId": "1767386589847-44jid7k",
+      "periodId": "1767386372641-5k1nxum",
+      "teamId": "1767386457647-wvnlzjl",
+      "ownerId": "user-1767385055018-swvew",
+      "assigneeId": "user-1767387686266-d5esf",
+      "tagIds": [],
+      "workflowStatus": "todo",
+      "shared": true,
+      "history": [
+        {
+          "id": "1767583728143-s1w0tf2",
+          "timestamp": "2026-01-05T03:28:48.143Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Bring the error rate of one alert down to less than 0.5 on a scale of 1-10"
+            },
+            {
+              "field": "level",
+              "newValue": "individual"
+            },
+            {
+              "field": "period",
+              "newValue": "Jan 2026"
+            },
+            {
+              "field": "team",
+              "newValue": "Product"
+            },
+            {
+              "field": "parent",
+              "newValue": "Autonomous Case Scorer"
+            }
+          ]
+        },
+        {
+          "id": "1767583735701-i193880",
+          "timestamp": "2026-01-05T03:28:55.701Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "level",
+              "oldValue": "individual",
+              "newValue": "team"
+            }
+          ]
+        }
+      ],
+      "id": "1767583728215-t0w2mwi",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-05T03:28:48.215Z",
+      "updatedAt": "2026-01-05T03:28:59.952Z",
+      "type": "story"
+    },
+    {
+      "title": "Can we bring the error rate down by incorporating more meta knowledge that Anthony has?",
+      "description": "",
+      "level": "team",
+      "parentId": "1767386589847-44jid7k",
+      "periodId": "1767386372641-5k1nxum",
+      "teamId": "1767386457647-wvnlzjl",
+      "ownerId": "user-1767385055018-swvew",
+      "assigneeId": "user-1767387686266-d5esf",
+      "tagIds": [],
+      "workflowStatus": "todo",
+      "shared": true,
+      "history": [
+        {
+          "id": "1767591286303-pel42fl",
+          "timestamp": "2026-01-05T05:34:46.303Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Can we bring the error rate down by incorporating more meta knowledge that Anthony has?"
+            },
+            {
+              "field": "level",
+              "newValue": "individual"
+            },
+            {
+              "field": "period",
+              "newValue": "Jan 2026"
+            },
+            {
+              "field": "team",
+              "newValue": "Product"
+            },
+            {
+              "field": "parent",
+              "newValue": "Autonomous Case Scorer"
+            }
+          ]
+        },
+        {
+          "id": "1767591487489-rpk3xa8",
+          "timestamp": "2026-01-05T05:38:07.489Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "level",
+              "oldValue": "individual",
+              "newValue": "team"
+            }
+          ]
+        }
+      ],
+      "id": "1767591286378-lr92acf",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-05T05:34:46.378Z",
+      "updatedAt": "2026-01-05T05:38:13.364Z",
+      "type": "story"
+    },
+    {
+      "title": "Can we bring the error rate down by simply extracting the questions out of feedback and using that to reduce error rate of scorer",
+      "description": "",
+      "level": "team",
+      "parentId": "1767386589847-44jid7k",
+      "periodId": "1767386372641-5k1nxum",
+      "teamId": "1767386457647-wvnlzjl",
+      "ownerId": "user-1767385055018-swvew",
+      "assigneeId": "user-1767387686266-d5esf",
+      "tagIds": [],
+      "workflowStatus": "todo",
+      "shared": true,
+      "history": [
+        {
+          "id": "1767591468489-7mbmpnw",
+          "timestamp": "2026-01-05T05:37:48.489Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Can we bring the error rate down by simply extracting the questions out of feedback and using that to reduce error rate of scorer"
+            },
+            {
+              "field": "level",
+              "newValue": "individual"
+            },
+            {
+              "field": "period",
+              "newValue": "Jan 2026"
+            },
+            {
+              "field": "team",
+              "newValue": "Product"
+            },
+            {
+              "field": "parent",
+              "newValue": "Autonomous Case Scorer"
+            }
+          ]
+        },
+        {
+          "id": "1767591490145-piywxtm",
+          "timestamp": "2026-01-05T05:38:10.145Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "level",
+              "oldValue": "individual",
+              "newValue": "team"
+            }
+          ]
+        }
+      ],
+      "id": "1767591468569-kp19v7x",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-05T05:37:48.569Z",
+      "updatedAt": "2026-01-05T05:38:16.624Z",
+      "type": "story"
+    },
+    {
+      "title": "Organize a dinner at Tiya and source leads from those",
+      "description": "",
+      "level": "individual",
+      "parentId": "1767416421566-c56x692",
+      "periodId": "1767386372641-5k1nxum",
+      "teamId": "1767386425827-ios37a4",
+      "ownerId": "user-1767385055018-swvew",
+      "assigneeId": "user-1767385055018-swvew",
+      "tagIds": [],
+      "workflowStatus": "todo",
+      "shared": true,
+      "history": [
+        {
+          "id": "1767721659516-nnpq5mu",
+          "timestamp": "2026-01-06T17:47:39.516Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Organize a dinner at Tiya and source leads from those"
+            },
+            {
+              "field": "level",
+              "newValue": "individual"
+            },
+            {
+              "field": "period",
+              "newValue": "Evergreen"
+            },
+            {
+              "field": "team",
+              "newValue": "Marketing"
+            },
+            {
+              "field": "parent",
+              "newValue": "Generate Appt Held from Events"
+            }
+          ]
+        },
+        {
+          "id": "1767721698890-hqa9501",
+          "timestamp": "2026-01-06T17:48:18.890Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "period",
+              "oldValue": "Evergreen",
+              "newValue": "Jan 2026"
+            }
+          ]
+        }
+      ],
+      "id": "1767721659596-0prta52",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-06T17:47:39.596Z",
+      "updatedAt": "2026-01-06T17:48:18.922Z",
+      "type": "epic"
+    },
+    {
+      "title": "Generate at least 2 meetings from Sid's lunch at Tiya - Navan and Stan Li",
+      "description": "",
+      "level": "individual",
+      "parentId": "1767416421566-c56x692",
+      "periodId": "1767386372641-5k1nxum",
+      "teamId": "1767386425827-ios37a4",
+      "ownerId": "user-1767385055018-swvew",
+      "assigneeId": "user-1767385055018-swvew",
+      "tagIds": [],
+      "workflowStatus": "todo",
+      "shared": true,
+      "history": [
+        {
+          "id": "1767721679269-e88u3az",
+          "timestamp": "2026-01-06T17:47:59.269Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Generate at least 2 meetings from Sid's lunch at Tiya - Navan and Stan Li"
+            },
+            {
+              "field": "level",
+              "newValue": "individual"
+            },
+            {
+              "field": "period",
+              "newValue": "Evergreen"
+            },
+            {
+              "field": "team",
+              "newValue": "Marketing"
+            },
+            {
+              "field": "parent",
+              "newValue": "Generate Appt Held from Events"
+            }
+          ]
+        },
+        {
+          "id": "1767721701445-1zbwa5v",
+          "timestamp": "2026-01-06T17:48:21.445Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "period",
+              "oldValue": "Evergreen",
+              "newValue": "Jan 2026"
+            }
+          ]
+        }
+      ],
+      "id": "1767721679290-lxe00st",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-06T17:47:59.290Z",
+      "updatedAt": "2026-01-06T17:48:21.536Z",
+      "type": "epic"
+    },
+    {
+      "title": "Customer Succeess",
+      "level": "team",
+      "ownerId": "user-1767731169920-zqddy",
+      "periodId": "1767386354197-o1fc4s1",
+      "workflowStatus": "todo",
+      "shared": true,
+      "history": [
+        {
+          "id": "1767731548613-sm8mi86",
+          "timestamp": "2026-01-06T20:32:28.613Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Customer Succeess"
+            },
+            {
+              "field": "level",
+              "newValue": "team"
+            },
+            {
+              "field": "period",
+              "newValue": "FY26Q4"
+            }
+          ]
+        },
+        {
+          "id": "1767731600193-0tcgpwx",
+          "timestamp": "2026-01-06T20:33:20.193Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "team",
+              "oldValue": "(none)",
+              "newValue": "Customer Success"
+            }
+          ]
+        }
+      ],
+      "id": "1767731548636-x2w7jru",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-06T20:32:28.636Z",
+      "updatedAt": "2026-01-06T20:54:49.155Z",
+      "type": "initiative",
+      "teamId": "1767731588000-tv3ks1h",
+      "assigneeId": "user-1767731169920-zqddy"
+    },
+    {
+      "title": "Onboard BigFive - make them fully operational",
+      "description": "",
+      "level": "individual",
+      "parentId": "1767731548636-x2w7jru",
+      "periodId": "1767386354197-o1fc4s1",
+      "teamId": "1767731588000-tv3ks1h",
+      "ownerId": "user-1767731169920-zqddy",
+      "tagIds": [],
+      "workflowStatus": "todo",
+      "shared": true,
+      "history": [
+        {
+          "id": "1767731615526-6t74esx",
+          "timestamp": "2026-01-06T20:33:35.525Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Onboard BigFive - make them fully operational"
+            },
+            {
+              "field": "level",
+              "newValue": "individual"
+            },
+            {
+              "field": "period",
+              "newValue": "FY26Q4"
+            },
+            {
+              "field": "team",
+              "newValue": "Customer Success"
+            },
+            {
+              "field": "parent",
+              "newValue": "Customer Succeess"
+            }
+          ]
+        }
+      ],
+      "id": "1767731615551-zlu1b5j",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-06T20:33:35.551Z",
+      "updatedAt": "2026-01-06T20:33:35.551Z"
+    },
+    {
+      "title": "Onboard SWLA - make them fully operational",
+      "description": "",
+      "level": "individual",
+      "parentId": "1767731548636-x2w7jru",
+      "periodId": "1767386354197-o1fc4s1",
+      "teamId": "1767731588000-tv3ks1h",
+      "ownerId": "user-1767731169920-zqddy",
+      "tagIds": [],
+      "workflowStatus": "todo",
+      "shared": true,
+      "history": [
+        {
+          "id": "1767731627990-vzpsnxe",
+          "timestamp": "2026-01-06T20:33:47.990Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Onboard SWLA - make them fully operational"
+            },
+            {
+              "field": "level",
+              "newValue": "individual"
+            },
+            {
+              "field": "period",
+              "newValue": "FY26Q4"
+            },
+            {
+              "field": "team",
+              "newValue": "Customer Success"
+            },
+            {
+              "field": "parent",
+              "newValue": "Customer Succeess"
+            }
+          ]
+        }
+      ],
+      "id": "1767731628014-cm7yv4s",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-06T20:33:48.014Z",
+      "updatedAt": "2026-01-06T20:33:48.014Z"
+    },
+    {
+      "title": "Get an NPS Score done",
+      "description": "",
+      "level": "individual",
+      "parentId": "1767731548636-x2w7jru",
+      "periodId": "1767731717064-9y3dz1q",
+      "teamId": "1767731588000-tv3ks1h",
+      "ownerId": "user-1767731169920-zqddy",
+      "tagIds": [],
+      "workflowStatus": "todo",
+      "shared": true,
+      "history": [
+        {
+          "id": "1767731671264-zmlo92l",
+          "timestamp": "2026-01-06T20:34:31.264Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Get an NPS Score done"
+            },
+            {
+              "field": "level",
+              "newValue": "individual"
+            },
+            {
+              "field": "period",
+              "newValue": "FY26Q4"
+            },
+            {
+              "field": "team",
+              "newValue": "Customer Success"
+            },
+            {
+              "field": "parent",
+              "newValue": "Customer Succeess"
+            }
+          ]
+        },
+        {
+          "id": "1767731753398-iqmo8w2",
+          "timestamp": "2026-01-06T20:35:53.398Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "period",
+              "oldValue": "FY26Q4",
+              "newValue": "Feb 2026"
+            }
+          ]
+        }
+      ],
+      "id": "1767731671289-upd483o",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-06T20:34:31.289Z",
+      "updatedAt": "2026-01-06T20:35:53.431Z"
+    },
+    {
+      "title": "QBRs for existing customers",
+      "description": "",
+      "level": "individual",
+      "parentId": "1767731548636-x2w7jru",
+      "periodId": "1767386354197-o1fc4s1",
+      "teamId": "1767731588000-tv3ks1h",
+      "ownerId": "user-1767731169920-zqddy",
+      "tagIds": [],
+      "workflowStatus": "todo",
+      "shared": true,
+      "history": [
+        {
+          "id": "1767731784136-t6xz4yh",
+          "timestamp": "2026-01-06T20:36:24.136Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "QBRs for existing customers"
+            },
+            {
+              "field": "level",
+              "newValue": "individual"
+            },
+            {
+              "field": "period",
+              "newValue": "FY26Q4"
+            },
+            {
+              "field": "team",
+              "newValue": "Customer Success"
+            },
+            {
+              "field": "parent",
+              "newValue": "Customer Succeess"
+            }
+          ]
+        }
+      ],
+      "id": "1767731784172-1371p9r",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-06T20:36:24.172Z",
+      "updatedAt": "2026-01-06T20:36:24.172Z"
+    },
+    {
+      "title": "Product Management",
+      "level": "team",
+      "ownerId": "user-1767385055018-swvew",
+      "periodId": "1767386354197-o1fc4s1",
+      "workflowStatus": "todo",
+      "shared": true,
+      "history": [
+        {
+          "id": "1767731956063-kbivuzy",
+          "timestamp": "2026-01-06T20:39:16.063Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Product Management"
+            },
+            {
+              "field": "level",
+              "newValue": "team"
+            },
+            {
+              "field": "period",
+              "newValue": "FY26Q4"
+            }
+          ]
+        }
+      ],
+      "id": "1767731956131-30r5sqd",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-06T20:39:16.131Z",
+      "updatedAt": "2026-01-10T17:02:31.964Z",
+      "assigneeId": "user-1767385055018-swvew",
+      "type": "initiative"
+    },
+    {
+      "title": "Turn key things built in M22 and M21 into sales and marketing ready assets",
+      "description": "",
+      "level": "individual",
+      "parentId": "1767731956131-30r5sqd",
+      "periodId": "1767386372641-5k1nxum",
+      "ownerId": "user-1767385055018-swvew",
+      "tagIds": [],
+      "workflowStatus": "todo",
+      "shared": true,
+      "history": [
+        {
+          "id": "1767731981384-qph8zxe",
+          "timestamp": "2026-01-06T20:39:41.384Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Turn key things built in M22 and M21 into sales and marketing ready assets"
+            },
+            {
+              "field": "level",
+              "newValue": "individual"
+            },
+            {
+              "field": "period",
+              "newValue": "FY26Q4"
+            },
+            {
+              "field": "parent",
+              "newValue": "Product Management"
+            }
+          ]
+        },
+        {
+          "id": "1767732057927-eit6v68",
+          "timestamp": "2026-01-06T20:40:57.927Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "period",
+              "oldValue": "FY26Q4",
+              "newValue": "Jan 2026"
+            }
+          ]
+        }
+      ],
+      "id": "1767731981410-h9oijks",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-06T20:39:41.410Z",
+      "updatedAt": "2026-01-06T20:40:58.039Z",
+      "assigneeId": "user-1767731169920-zqddy"
+    },
+    {
+      "title": "Generate leads from small group dinners with decision makers",
+      "description": "",
+      "level": "individual",
+      "parentId": "1767416325987-zhzl4np",
+      "periodId": "1767392135681-de9ne8c",
+      "teamId": "1767386414510-91o4pcx",
+      "ownerId": "user-1767385055018-swvew",
+      "assigneeId": "user-1767385055018-swvew",
+      "tagIds": [
+        "1767417928479-ggwhivt"
+      ],
+      "workflowStatus": "todo",
+      "shared": true,
+      "history": [
+        {
+          "id": "1767732753043-hcc0xln",
+          "timestamp": "2026-01-06T20:52:33.043Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Generate leads from small group dinners with decision makers"
+            },
+            {
+              "field": "level",
+              "newValue": "individual"
+            },
+            {
+              "field": "period",
+              "newValue": "Evergreen"
+            },
+            {
+              "field": "team",
+              "newValue": "GTM"
+            },
+            {
+              "field": "parent",
+              "newValue": "Generate Appt Held"
+            }
+          ]
+        },
+        {
+          "id": "1767732803191-2ygqmog",
+          "timestamp": "2026-01-06T20:53:23.191Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "tags",
+              "oldValue": "(none)",
+              "newValue": "Needs Attention"
+            }
+          ]
+        }
+      ],
+      "id": "1767732753068-3z40u97",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-06T20:52:33.068Z",
+      "updatedAt": "2026-01-06T20:53:23.216Z"
+    },
+    {
+      "title": "Improve GTM Conversions",
+      "description": "This intiative is about improving all stages from the funnel. All the way from generating aware to converting awareness to interest, capturing that interest and getting opportunities that fit our solution into deals and bookings.",
+      "level": "company",
+      "ownerId": "user-1767385055018-swvew",
+      "assigneeId": "user-1767385055018-swvew",
+      "periodId": "1767392135681-de9ne8c",
+      "workflowStatus": "todo",
+      "shared": true,
+      "history": [
+        {
+          "id": "1768064516718-a0vkm95",
+          "timestamp": "2026-01-10T17:01:56.718Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Improve GTM Conversions"
+            },
+            {
+              "field": "level",
+              "newValue": "company"
+            },
+            {
+              "field": "period",
+              "newValue": "Evergreen"
+            },
+            {
+              "field": "description",
+              "newValue": "This intiative is about improving all stages from the funnel. All the way from generating aware to converting awareness to interest, capturing that interest and getting opportunities that fit our solution into deals and bookings."
+            }
+          ]
+        }
+      ],
+      "id": "1768064516791-8bivsmn",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-10T17:01:56.791Z",
+      "updatedAt": "2026-01-10T17:02:29.678Z",
+      "type": "initiative"
+    },
+    {
+      "title": "Generate customer case studies and testimonials for the website",
+      "description": "",
+      "level": "team",
+      "parentId": "1767731548636-x2w7jru",
+      "periodId": "1767386354197-o1fc4s1",
+      "teamId": "1767731588000-tv3ks1h",
+      "ownerId": "user-1767731169920-zqddy",
+      "assigneeId": "user-1767731169920-zqddy",
+      "tagIds": [],
+      "workflowStatus": "todo",
+      "shared": true,
+      "history": [
+        {
+          "id": "1768160414897-v4hn214",
+          "timestamp": "2026-01-11T19:40:14.896Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Generate customer case studies and testimonials for the website"
+            },
+            {
+              "field": "level",
+              "newValue": "individual"
+            },
+            {
+              "field": "period",
+              "newValue": "FY26Q4"
+            },
+            {
+              "field": "team",
+              "newValue": "Customer Success"
+            },
+            {
+              "field": "parent",
+              "newValue": "Customer Succeess"
+            }
+          ]
+        },
+        {
+          "id": "1768160423605-azy3lwy",
+          "timestamp": "2026-01-11T19:40:23.605Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "level",
+              "oldValue": "individual",
+              "newValue": "team"
+            }
+          ]
+        }
+      ],
+      "id": "1768160414986-92wf0jl",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-11T19:40:14.986Z",
+      "updatedAt": "2026-01-11T19:40:34.481Z",
+      "type": "saga"
+    },
+    {
+      "title": "Help deliver high quality cases during trials",
+      "description": "",
+      "level": "team",
+      "parentId": "1767416377353-rucpley",
+      "periodId": "1767392135681-de9ne8c",
+      "teamId": "1767386457647-wvnlzjl",
+      "ownerId": "user-1767385055018-swvew",
+      "assigneeId": "user-1767385055018-swvew",
+      "tagIds": [],
+      "workflowStatus": "todo",
+      "shared": true,
+      "history": [
+        {
+          "id": "1768187029854-873bvkw",
+          "timestamp": "2026-01-12T03:03:49.854Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Help deliver high quality cases during trials"
+            },
+            {
+              "field": "level",
+              "newValue": "individual"
+            },
+            {
+              "field": "period",
+              "newValue": "Evergreen"
+            },
+            {
+              "field": "team",
+              "newValue": "Product"
+            },
+            {
+              "field": "parent",
+              "newValue": "Product Improvements"
+            }
+          ]
+        },
+        {
+          "id": "1768187036416-cxtzjwl",
+          "timestamp": "2026-01-12T03:03:56.416Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "level",
+              "oldValue": "individual",
+              "newValue": "team"
+            }
+          ]
+        }
+      ],
+      "id": "1768187029880-auntjxr",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-12T03:03:49.880Z",
+      "updatedAt": "2026-01-12T03:03:59.105Z",
+      "type": "saga"
+    },
+    {
+      "title": "Help deliver high quality cases for Maven",
+      "description": "",
+      "level": "team",
+      "parentId": "1768187029880-auntjxr",
+      "periodId": "1767386372641-5k1nxum",
+      "teamId": "1767386457647-wvnlzjl",
+      "ownerId": "user-1767385055018-swvew",
+      "assigneeId": "user-1767385055018-swvew",
+      "tagIds": [],
+      "workflowStatus": "todo",
+      "shared": true,
+      "history": [
+        {
+          "id": "1768187050296-wumje22",
+          "timestamp": "2026-01-12T03:04:10.296Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Help deliver high quality cases for Maven"
+            },
+            {
+              "field": "level",
+              "newValue": "individual"
+            },
+            {
+              "field": "period",
+              "newValue": "Evergreen"
+            },
+            {
+              "field": "team",
+              "newValue": "Product"
+            },
+            {
+              "field": "parent",
+              "newValue": "Help deliver high quality cases during trials"
+            }
+          ]
+        },
+        {
+          "id": "1768187054886-o74acxw",
+          "timestamp": "2026-01-12T03:04:14.886Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "level",
+              "oldValue": "individual",
+              "newValue": "team"
+            }
+          ]
+        },
+        {
+          "id": "1768187067611-5bjk254",
+          "timestamp": "2026-01-12T03:04:27.610Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "period",
+              "oldValue": "Evergreen",
+              "newValue": "Jan 2026"
+            }
+          ]
+        }
+      ],
+      "id": "1768187050321-ah2b5bj",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-12T03:04:10.321Z",
+      "updatedAt": "2026-01-12T03:04:33.540Z",
+      "type": "epic",
+      "nextStepDate": "2026-01-11"
+    },
+    {
+      "title": "Fixes needed for 5 cases that Anthony reviewed on 2026-01-11",
+      "description": "",
+      "level": "team",
+      "parentId": "1768187050321-ah2b5bj",
+      "periodId": "1767386372641-5k1nxum",
+      "teamId": "1767386457647-wvnlzjl",
+      "ownerId": "user-1767385055018-swvew",
+      "assigneeId": "user-1767385055018-swvew",
+      "tagIds": [],
+      "workflowStatus": "todo",
+      "shared": true,
+      "history": [
+        {
+          "id": "1768187096969-wjkpt7t",
+          "timestamp": "2026-01-12T03:04:56.969Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "created",
+          "changes": [
+            {
+              "field": "title",
+              "newValue": "Fixes needed for 5 cases that Anthony reviewed on 2026-01-11"
+            },
+            {
+              "field": "level",
+              "newValue": "individual"
+            },
+            {
+              "field": "period",
+              "newValue": "Jan 2026"
+            },
+            {
+              "field": "team",
+              "newValue": "Product"
+            },
+            {
+              "field": "parent",
+              "newValue": "Help deliver high quality cases for Maven"
+            }
+          ]
+        },
+        {
+          "id": "1768187134212-b218bsa",
+          "timestamp": "2026-01-12T03:05:34.212Z",
+          "userEmail": "kumar@airmdr.com",
+          "action": "updated",
+          "changes": [
+            {
+              "field": "level",
+              "oldValue": "individual",
+              "newValue": "team"
+            }
+          ]
+        }
+      ],
+      "id": "1768187097001-eb7yyo8",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com",
+      "progress": 0,
+      "status": "behind",
+      "createdAt": "2026-01-12T03:04:57.001Z",
+      "updatedAt": "2026-01-12T03:05:37.709Z",
+      "type": "story"
     }
   ],
   "keyResults": [],
@@ -217,6 +2863,13 @@
       "id": "1767386507047-om882m8",
       "orgId": "org-1767377909528-dy8ij",
       "createdBy": "kumar@airmdr.com"
+    },
+    {
+      "name": "Customer Success",
+      "shared": true,
+      "id": "1767731588000-tv3ks1h",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com"
     }
   ],
   "periods": [
@@ -254,7 +2907,62 @@
       "id": "1767386398880-7s4q7yv",
       "orgId": "org-1767377909528-dy8ij",
       "createdBy": "kumar@airmdr.com"
+    },
+    {
+      "name": "Evergreen",
+      "type": "quarter",
+      "startDate": "2026-01-01",
+      "endDate": "2027-01-31",
+      "isActive": false,
+      "shared": true,
+      "id": "1767392135681-de9ne8c",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com"
+    },
+    {
+      "name": "W-26-01-10",
+      "type": "week",
+      "parentId": "1767386372641-5k1nxum",
+      "startDate": "2026-01-04",
+      "endDate": "2026-01-10",
+      "isActive": false,
+      "shared": true,
+      "id": "1767583469994-di1sor6",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com"
+    },
+    {
+      "name": "FY27Q1",
+      "type": "quarter",
+      "startDate": "2026-02-01",
+      "endDate": "2026-04-30",
+      "isActive": false,
+      "shared": true,
+      "id": "1767731692095-aaux037",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com"
+    },
+    {
+      "name": "Feb 2026",
+      "type": "month",
+      "parentId": "1767731692095-aaux037",
+      "startDate": "2026-02-01",
+      "endDate": "2026-02-28",
+      "isActive": false,
+      "shared": true,
+      "id": "1767731717064-9y3dz1q",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com"
     }
   ],
-  "tags": []
+  "tags": [
+    {
+      "name": "Needs Attention",
+      "color": "bg-red-500",
+      "shared": true,
+      "id": "1767417928479-ggwhivt",
+      "orgId": "org-1767377909528-dy8ij",
+      "createdBy": "kumar@airmdr.com"
+    }
+  ]
 }

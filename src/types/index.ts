@@ -18,6 +18,11 @@ export interface ObjectiveHistoryEntry {
   changes: FieldChange[];
 }
 
+export interface ObjectiveLink {
+  url: string;
+  description?: string;
+}
+
 export interface Objective {
   id: string;
   orgId: string;
@@ -36,6 +41,7 @@ export interface Objective {
   nextStep?: string;
   storyPoints?: number;
   valuePoints?: number;
+  link?: ObjectiveLink;
   progress: number;
   status: ObjectiveStatus;
   workflowStatus: WorkflowStatus;

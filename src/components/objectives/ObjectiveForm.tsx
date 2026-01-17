@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import type { Objective, ObjectiveLevel, Period, Team, Tag, User, ObjectiveHistoryEntry } from '../../types';
+import type { Objective, ObjectiveLevel, ObjectiveLink, Period, Team, Tag, User, ObjectiveHistoryEntry } from '../../types';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../common/Button';
@@ -40,6 +40,8 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
   const [assigneeId, setAssigneeId] = useState(objective?.assigneeId || parentObjective?.assigneeId || '');
   const [storyPoints, setStoryPoints] = useState(objective?.storyPoints?.toString() || '');
   const [valuePoints, setValuePoints] = useState(objective?.valuePoints?.toString() || '');
+  const [linkUrl, setLinkUrl] = useState(objective?.link?.url || '');
+  const [linkDescription, setLinkDescription] = useState(objective?.link?.description || '');
   const [orgUsers, setOrgUsers] = useState<User[]>([]);
   const [showHistory, setShowHistory] = useState(false);
 
@@ -139,6 +141,11 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
       const parsedStoryPoints = storyPoints.trim() ? parseFloat(storyPoints) : undefined;
       const parsedValuePoints = valuePoints.trim() ? parseFloat(valuePoints) : undefined;
 
+      // Build link object if URL is provided
+      const linkObj: ObjectiveLink | undefined = linkUrl.trim()
+        ? { url: linkUrl.trim(), description: linkDescription.trim() || undefined }
+        : undefined;
+
       if (objective) {
         const updates: Partial<Objective> = {
           title: title.trim(),
@@ -150,6 +157,7 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
           tagIds: selectedTagIds.length > 0 ? selectedTagIds : undefined,
           periodId,
           shared: !isPrivate,
+          link: linkObj,
         };
         // Only include points if user has permission to edit them
         if (canEditStoryPoints && parsedStoryPoints !== undefined && !isNaN(parsedStoryPoints) && parsedStoryPoints >= 0) {
@@ -172,6 +180,7 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
           periodId,
           storyPoints: parsedStoryPoints !== undefined && !isNaN(parsedStoryPoints) && parsedStoryPoints >= 0 ? parsedStoryPoints : undefined,
           valuePoints: parsedValuePoints !== undefined && !isNaN(parsedValuePoints) && parsedValuePoints >= 0 ? parsedValuePoints : undefined,
+          link: linkObj,
           workflowStatus: 'todo',
         }, { orgId, userEmail, shared: !isPrivate });
       }
@@ -352,6 +361,35 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
             className={`w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
               !canEditValuePoints && ownerId ? 'bg-gray-50 text-gray-500' : ''
             }`}
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Link URL
+          </label>
+          <input
+            type="url"
+            value={linkUrl}
+            onChange={(e) => setLinkUrl(e.target.value)}
+            placeholder="https://example.com"
+            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Link Description
+            <span className="text-xs text-gray-400 ml-1">(optional)</span>
+          </label>
+          <input
+            type="text"
+            value={linkDescription}
+            onChange={(e) => setLinkDescription(e.target.value)}
+            placeholder="Display text for the link"
+            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
       </div>

@@ -4,4 +4,41 @@
 - Start the frontend (in a separate terminal)
   npm run dev
 
+Updating the app on lightsail
+=============================
 
+3. Pull the latest code
+
+  cd ~/okr-lite2
+  git pull
+
+  4. Install dependencies (if package.json changed)
+
+  npm install
+
+  5. Build the frontend
+
+  npm run build
+
+  6. Restart the server with PM2
+
+  pm2 restart all
+
+  Or if you use the ecosystem file:
+  pm2 restart ecosystem.config.cjs
+
+  7. Verify the deployment
+
+  # Check PM2 status
+  pm2 status
+
+  # Check logs if needed
+  pm2 logs
+
+  ---
+  Quick one-liner (after SSH)
+
+  cd ~/okr-lite2 && git pull && npm install && npm run build && pm2 restart all
+
+  ---
+  Note: Nginx doesn't need to be restarted unless you change the nginx config. The dist/ folder is served directly by nginx, but the Express server (API) runs via PM2.
