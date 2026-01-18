@@ -733,16 +733,34 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
     <div>
       {/* Main tree table row */}
       <div
-        className={`group flex items-center hover:bg-gray-50 border-b border-gray-100 ${isDragOver ? 'bg-blue-50 border-blue-300' : ''} ${canModify ? 'cursor-grab active:cursor-grabbing' : ''}`}
-        draggable={canModify}
-        onDragStart={handleDragStart}
+        className={`group flex items-center hover:bg-gray-50 border-b border-gray-100 ${isDragOver ? 'bg-blue-50 border-blue-300' : ''}`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        onDragEnd={handleDragEnd}
       >
         {/* Tree column - uses title width */}
         <div className="flex items-center gap-1 py-1.5 px-2 min-w-0" style={{ width: columnWidths.title, minWidth: 150, paddingLeft: depth * 20 + 8 }}>
+          {/* Drag handle */}
+          {canModify && (
+            <div
+              draggable
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+              className="w-4 h-4 flex items-center justify-center text-gray-300 hover:text-gray-500 flex-shrink-0 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity"
+              title="Drag to reorder"
+            >
+              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="9" cy="5" r="2" />
+                <circle cx="9" cy="12" r="2" />
+                <circle cx="9" cy="19" r="2" />
+                <circle cx="15" cy="5" r="2" />
+                <circle cx="15" cy="12" r="2" />
+                <circle cx="15" cy="19" r="2" />
+              </svg>
+            </div>
+          )}
+          {!canModify && <div className="w-4 flex-shrink-0" />}
+
           {/* Expand/collapse chevron */}
           <button
             onClick={() => setIsExpanded(!isExpanded)}
