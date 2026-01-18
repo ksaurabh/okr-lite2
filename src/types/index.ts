@@ -164,3 +164,30 @@ export interface User {
   createdAt: string;
   lastLoginAt: string;
 }
+
+// Saved View types
+export interface SavedViewFilters {
+  activePeriodId: string | null;
+  filterTagIds: string[];
+  filterTeamIds: string[];
+  filterTypes: ObjectiveType[];
+  filterTypeNotSet: boolean;
+  filterOwnerIds: string[];
+  filterOwnerOperator: FilterOperator;
+  filterAssigneeIds: string[];
+  filterAssigneeOperator: FilterOperator;
+  filterNextStepDate: NextStepDateFilter | null;
+  filterLevels: ObjectiveLevel[];
+  filterObjectiveId: string | null;
+}
+
+export interface SavedView {
+  id: string;
+  name: string;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+  filters: SavedViewFilters;
+  visibleColumns: string[];
+  columnWidths: Record<string, number>;
+}

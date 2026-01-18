@@ -20,15 +20,17 @@ function AppContent() {
   const { isLoading, isAuthenticated, isAllowed } = useAuth();
   const fetchData = useOKRStore((state) => state.fetchData);
   const fetchUserPreferences = useOKRStore((state) => state.fetchUserPreferences);
+  const fetchViews = useOKRStore((state) => state.fetchViews);
   const isDataLoading = useOKRStore((state) => state.isLoading);
 
-  // Fetch OKR data and user preferences when authenticated
+  // Fetch OKR data, user preferences, and views when authenticated
   useEffect(() => {
     if (isAuthenticated && isAllowed) {
       fetchData();
       fetchUserPreferences();
+      fetchViews();
     }
-  }, [isAuthenticated, isAllowed, fetchData, fetchUserPreferences]);
+  }, [isAuthenticated, isAllowed, fetchData, fetchUserPreferences, fetchViews]);
 
   // Handle OAuth callback
   if (window.location.pathname === '/auth/callback') {

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Objective, KeyResult, Team, Period, Tag, OKRState, ObjectiveHistoryEntry, FieldChange, FilterOperator, ObjectiveType, NextStepDateFilter, ObjectiveLevel } from '../types';
+import type { Objective, KeyResult, Team, Period, Tag, OKRState, ObjectiveHistoryEntry, FieldChange, FilterOperator, ObjectiveType, NextStepDateFilter, ObjectiveLevel, SavedView, SavedViewFilters } from '../types';
 import { api } from '../utils/api';
 import { generateId, calculateObjectiveProgress, determineStatus, calculateKeyResultProgress } from '../utils/calculations';
 
@@ -133,6 +133,18 @@ interface OKRActions {
   setVisibleColumns: (columns: ColumnKey[]) => Promise<void>;
   toggleColumnVisibility: (column: ColumnKey) => Promise<void>;
   fetchUserPreferences: () => Promise<void>;
+
+  // Saved Views
+  savedViews: SavedView[];
+  activeViewId: string | null;
+  fetchViews: () => Promise<void>;
+  createView: (name: string, isDefault?: boolean) => Promise<SavedView | null>;
+  updateView: (viewId: string) => Promise<void>;
+  deleteView: (viewId: string) => Promise<void>;
+  applyView: (viewId: string) => void;
+  setDefaultView: (viewId: string) => Promise<void>;
+  clearActiveView: () => void;
+  renameView: (viewId: string, newName: string) => Promise<void>;
 }
 
 export interface ColumnWidths {
@@ -285,6 +297,8 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
   editorWidth: undefined,
   columnWidths: DEFAULT_COLUMN_WIDTHS,
   visibleColumns: DEFAULT_VISIBLE_COLUMNS,
+  savedViews: [],
+  activeViewId: null,
 
   fetchData: async () => {
     set({ isLoading: true, error: null });
@@ -939,6 +953,224 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       });
     } catch (err) {
       console.error('Failed to save visible columns preference:', err);
+    }
+  },
+
+  // Saved Views
+  fetchViews: async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/users/me/views`, {
+        credentials: 'include',
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const views = Array.isArray(data.views) ? data.views : [];
+        set({ savedViews: views });
+
+        // Auto-apply default view if one exists and no view is active
+        const state = get();
+        if (!state.activeViewId) {
+          const defaultView = views.find((v: SavedView) => v.isDefault);
+          if (defaultView) {
+            get().applyView(defaultView.id);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch views:', err);
+    }
+  },
+
+  createView: async (name: string, isDefault: boolean = false) => {
+    const state = get();
+
+    // Capture current filter state
+    const filters: SavedViewFilters = {
+      activePeriodId: state.activePeriodId,
+      filterTagIds: state.filterTagIds,
+      filterTeamIds: state.filterTeamIds,
+      filterTypes: state.filterTypes,
+      filterTypeNotSet: state.filterTypeNotSet,
+      filterOwnerIds: state.filterOwnerIds,
+      filterOwnerOperator: state.filterOwnerOperator,
+      filterAssigneeIds: state.filterAssigneeIds,
+      filterAssigneeOperator: state.filterAssigneeOperator,
+      filterNextStepDate: state.filterNextStepDate,
+      filterLevels: state.filterLevels,
+      filterObjectiveId: state.filterObjectiveId,
+    };
+
+    try {
+      const response = await fetch(`${API_URL}/api/users/me/views`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name,
+          isDefault,
+          filters,
+          visibleColumns: state.visibleColumns,
+          columnWidths: state.columnWidths,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        set({
+          savedViews: data.views,
+          activeViewId: data.view.id,
+        });
+        return data.view;
+      }
+    } catch (err) {
+      console.error('Failed to create view:', err);
+    }
+    return null;
+  },
+
+  updateView: async (viewId: string) => {
+    const state = get();
+
+    // Capture current filter state
+    const filters: SavedViewFilters = {
+      activePeriodId: state.activePeriodId,
+      filterTagIds: state.filterTagIds,
+      filterTeamIds: state.filterTeamIds,
+      filterTypes: state.filterTypes,
+      filterTypeNotSet: state.filterTypeNotSet,
+      filterOwnerIds: state.filterOwnerIds,
+      filterOwnerOperator: state.filterOwnerOperator,
+      filterAssigneeIds: state.filterAssigneeIds,
+      filterAssigneeOperator: state.filterAssigneeOperator,
+      filterNextStepDate: state.filterNextStepDate,
+      filterLevels: state.filterLevels,
+      filterObjectiveId: state.filterObjectiveId,
+    };
+
+    try {
+      const response = await fetch(`${API_URL}/api/users/me/views/${viewId}`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          filters,
+          visibleColumns: state.visibleColumns,
+          columnWidths: state.columnWidths,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        set({ savedViews: data.views });
+      }
+    } catch (err) {
+      console.error('Failed to update view:', err);
+    }
+  },
+
+  deleteView: async (viewId: string) => {
+    try {
+      const response = await fetch(`${API_URL}/api/users/me/views/${viewId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const state = get();
+        set({
+          savedViews: data.views,
+          // Clear active view if we deleted the current one
+          activeViewId: state.activeViewId === viewId ? null : state.activeViewId,
+        });
+      }
+    } catch (err) {
+      console.error('Failed to delete view:', err);
+    }
+  },
+
+  applyView: (viewId: string) => {
+    const state = get();
+    const view = state.savedViews.find(v => v.id === viewId);
+    if (!view) return;
+
+    const filters = view.filters;
+    const newState = {
+      activePeriodId: filters.activePeriodId,
+      filterTagIds: filters.filterTagIds || [],
+      filterTeamIds: filters.filterTeamIds || [],
+      filterTypes: (filters.filterTypes || []) as ObjectiveType[],
+      filterTypeNotSet: filters.filterTypeNotSet || false,
+      filterOwnerIds: filters.filterOwnerIds || [],
+      filterOwnerOperator: (filters.filterOwnerOperator || 'equals') as FilterOperator,
+      filterAssigneeIds: filters.filterAssigneeIds || [],
+      filterAssigneeOperator: (filters.filterAssigneeOperator || 'equals') as FilterOperator,
+      filterNextStepDate: filters.filterNextStepDate || null,
+      filterLevels: (filters.filterLevels || []) as ObjectiveLevel[],
+      filterObjectiveId: filters.filterObjectiveId || null,
+      visibleColumns: view.visibleColumns?.length ? view.visibleColumns as ColumnKey[] : DEFAULT_VISIBLE_COLUMNS,
+      columnWidths: view.columnWidths ? { ...DEFAULT_COLUMN_WIDTHS, ...view.columnWidths } : DEFAULT_COLUMN_WIDTHS,
+      activeViewId: viewId,
+    };
+
+    set(newState);
+    saveFilterState({
+      activePeriodId: newState.activePeriodId,
+      filterTagIds: newState.filterTagIds,
+      filterTeamIds: newState.filterTeamIds,
+      filterTypes: newState.filterTypes,
+      filterTypeNotSet: newState.filterTypeNotSet,
+      filterOwnerIds: newState.filterOwnerIds,
+      filterOwnerOperator: newState.filterOwnerOperator,
+      filterAssigneeIds: newState.filterAssigneeIds,
+      filterAssigneeOperator: newState.filterAssigneeOperator,
+      filterNextStepDate: newState.filterNextStepDate,
+      filterLevels: newState.filterLevels,
+      filterObjectiveId: newState.filterObjectiveId,
+    });
+  },
+
+  setDefaultView: async (viewId: string) => {
+    try {
+      const response = await fetch(`${API_URL}/api/users/me/views/${viewId}/default`, {
+        method: 'PUT',
+        credentials: 'include',
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        set({ savedViews: data.views });
+      }
+    } catch (err) {
+      console.error('Failed to set default view:', err);
+    }
+  },
+
+  clearActiveView: () => {
+    set({ activeViewId: null });
+  },
+
+  renameView: async (viewId: string, newName: string) => {
+    try {
+      const response = await fetch(`${API_URL}/api/users/me/views/${viewId}`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name: newName }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        set({ savedViews: data.views });
+      }
+    } catch (err) {
+      console.error('Failed to rename view:', err);
     }
   },
 }));

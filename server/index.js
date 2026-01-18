@@ -206,6 +206,30 @@ function updateUserPreferences(email, preferences) {
   return users[userIndex].preferences;
 }
 
+// Helper functions for saved views
+function getUserViews(email) {
+  const users = getUsers();
+  const user = users.find(u => u.email === email);
+  return user?.views || [];
+}
+
+function saveUserViews(email, views) {
+  const users = getUsers();
+  const userIndex = users.findIndex(u => u.email === email);
+
+  if (userIndex === -1) {
+    return null;
+  }
+
+  users[userIndex].views = views;
+  saveUsers(users);
+  return users[userIndex].views;
+}
+
+function generateViewId() {
+  return `view-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+}
+
 // Helper functions for OKR data
 function getOKRData() {
   try {
@@ -717,6 +741,107 @@ app.put('/api/users/me/preferences', requireAuth, (req, res) => {
   }
 
   res.json({ preferences: updatedPreferences });
+});
+
+// Saved views endpoints
+app.get('/api/users/me/views', requireAuth, (req, res) => {
+  const views = getUserViews(req.user.email);
+  res.json({ views });
+});
+
+app.post('/api/users/me/views', requireAuth, (req, res) => {
+  const { name, filters, visibleColumns, columnWidths, isDefault } = req.body;
+
+  if (!name || typeof name !== 'string' || !name.trim()) {
+    return res.status(400).json({ error: 'View name is required' });
+  }
+
+  const views = getUserViews(req.user.email);
+  const now = new Date().toISOString();
+
+  // If this view is set as default, clear default from other views
+  if (isDefault) {
+    views.forEach(v => v.isDefault = false);
+  }
+
+  const newView = {
+    id: generateViewId(),
+    name: name.trim(),
+    isDefault: isDefault || false,
+    createdAt: now,
+    updatedAt: now,
+    filters: filters || {},
+    visibleColumns: visibleColumns || [],
+    columnWidths: columnWidths || {},
+  };
+
+  views.push(newView);
+  const savedViews = saveUserViews(req.user.email, views);
+
+  if (!savedViews) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+
+  res.json({ view: newView, views: savedViews });
+});
+
+app.put('/api/users/me/views/:viewId', requireAuth, (req, res) => {
+  const { viewId } = req.params;
+  const { name, filters, visibleColumns, columnWidths } = req.body;
+
+  const views = getUserViews(req.user.email);
+  const viewIndex = views.findIndex(v => v.id === viewId);
+
+  if (viewIndex === -1) {
+    return res.status(404).json({ error: 'View not found' });
+  }
+
+  const now = new Date().toISOString();
+  views[viewIndex] = {
+    ...views[viewIndex],
+    ...(name && { name: name.trim() }),
+    ...(filters && { filters }),
+    ...(visibleColumns && { visibleColumns }),
+    ...(columnWidths && { columnWidths }),
+    updatedAt: now,
+  };
+
+  const savedViews = saveUserViews(req.user.email, views);
+  res.json({ view: views[viewIndex], views: savedViews });
+});
+
+app.delete('/api/users/me/views/:viewId', requireAuth, (req, res) => {
+  const { viewId } = req.params;
+
+  const views = getUserViews(req.user.email);
+  const viewIndex = views.findIndex(v => v.id === viewId);
+
+  if (viewIndex === -1) {
+    return res.status(404).json({ error: 'View not found' });
+  }
+
+  views.splice(viewIndex, 1);
+  const savedViews = saveUserViews(req.user.email, views);
+  res.json({ views: savedViews });
+});
+
+app.put('/api/users/me/views/:viewId/default', requireAuth, (req, res) => {
+  const { viewId } = req.params;
+
+  const views = getUserViews(req.user.email);
+  const viewIndex = views.findIndex(v => v.id === viewId);
+
+  if (viewIndex === -1) {
+    return res.status(404).json({ error: 'View not found' });
+  }
+
+  // Clear default from all views, then set the selected one
+  views.forEach(v => v.isDefault = false);
+  views[viewIndex].isDefault = true;
+  views[viewIndex].updatedAt = new Date().toISOString();
+
+  const savedViews = saveUserViews(req.user.email, views);
+  res.json({ view: views[viewIndex], views: savedViews });
 });
 
 app.post('/api/users', requireOrgAdminOrSuperAdmin, (req, res) => {
