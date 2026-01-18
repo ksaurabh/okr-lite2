@@ -42,7 +42,7 @@ export function UpdatesPage() {
         });
         if (response.ok) {
           const users = await response.json();
-          setOrgUsers(users);
+          setOrgUsers(Array.isArray(users) ? users : []);
         }
       } catch (error) {
         console.error('Failed to fetch users:', error);
@@ -109,12 +109,14 @@ export function UpdatesPage() {
 
   // Helper to get user name by ID
   const getUserName = (userId: string): string => {
+    if (!orgUsers || !Array.isArray(orgUsers)) return userId;
     const user = orgUsers.find((u: User) => u.id === userId);
     return user?.name || user?.email || userId;
   };
 
   // Helper to get user name by email
   const getUserNameByEmail = (email: string): string => {
+    if (!orgUsers || !Array.isArray(orgUsers)) return email;
     const user = orgUsers.find((u: User) => u.email === email);
     return user?.name || email;
   };
