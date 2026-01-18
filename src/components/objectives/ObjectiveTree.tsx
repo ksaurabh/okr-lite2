@@ -113,6 +113,7 @@ export function ObjectiveTree() {
   const [showChildren, setShowChildren] = useState(false);
   const [directChildrenOnly, setDirectChildrenOnly] = useState(false);
   const [orgUsers, setOrgUsers] = useState<User[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const { organization, user, isSuperAdmin, isOrgAdmin } = useAuth();
   const orgId = organization?.id || '';
@@ -268,7 +269,7 @@ export function ObjectiveTree() {
     [tags, orgId, userEmail, isAdmin]
   );
 
-  const hasActiveFilters = activePeriodId || filterTagIds.length > 0 || filterTeamIds.length > 0 || filterTypes.length > 0 || filterTypeNotSet || filterOwnerIds.length > 0 || filterAssigneeIds.length > 0 || filterNextStepDate || filterLevels.length > 0 || filterObjectiveId;
+  const hasActiveFilters = activePeriodId || filterTagIds.length > 0 || filterTeamIds.length > 0 || filterTypes.length > 0 || filterTypeNotSet || filterOwnerIds.length > 0 || filterAssigneeIds.length > 0 || filterNextStepDate || filterLevels.length > 0 || filterObjectiveId || searchQuery.trim();
 
   // Get all ancestor period IDs for a given period (including the period itself)
   const getAncestorPeriodIds = useMemo(() => {
@@ -450,6 +451,16 @@ export function ObjectiveTree() {
       }
     }
 
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      const keywords = query.split(/\s+/);
+      result = result.filter((obj: Objective) => {
+        const searchText = `${obj.title} ${obj.description || ''} ${obj.nextStep || ''}`.toLowerCase();
+        return keywords.every(keyword => searchText.includes(keyword));
+      });
+    }
+
     // Optionally include children of matching objectives
     if (showChildren && result.length > 0) {
       const matchingIds = new Set(result.map((obj: Objective) => obj.id));
@@ -483,7 +494,7 @@ export function ObjectiveTree() {
     }
 
     return result;
-  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterTypeNotSet, filterLevels, filterObjectiveId, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterNextStepDate, includeAncestorPeriods, includeChildPeriods, includeChildTeams, showChildren, directChildrenOnly, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds, getDescendantObjectiveIds]);
+  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterTypeNotSet, filterLevels, filterObjectiveId, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterNextStepDate, searchQuery, includeAncestorPeriods, includeChildPeriods, includeChildTeams, showChildren, directChildrenOnly, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds, getDescendantObjectiveIds]);
 
   // Get IDs of all filtered objectives for quick lookup
   const filteredObjectiveIds = useMemo(
@@ -522,6 +533,35 @@ export function ObjectiveTree() {
 
   return (
     <div className="space-y-6">
+      {/* Search */}
+      <div className="relative">
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search objectives..."
+          className="w-full bg-white border border-gray-200 rounded-lg px-4 py-2 pl-10 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm"
+        />
+        <svg
+          className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
+      </div>
+
       {/* Filters */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
         <div
@@ -550,6 +590,7 @@ export function ObjectiveTree() {
                 onClick={(e) => {
                   e.stopPropagation();
                   clearAllFilters();
+                  setSearchQuery('');
                 }}
                 className="text-xs text-blue-600 hover:text-blue-700"
               >
