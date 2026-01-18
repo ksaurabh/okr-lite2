@@ -132,6 +132,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   const setFilterObjective = useOKRStore((state: OKRStore) => state.setFilterObjective);
   const lists = useOKRStore((state: OKRStore) => state.lists);
   const addItemToList = useOKRStore((state: OKRStore) => state.addItemToList);
+  const removeItemFromList = useOKRStore((state: OKRStore) => state.removeItemFromList);
   const createList = useOKRStore((state: OKRStore) => state.createList);
 
   const { user, isSuperAdmin, isOrgAdmin, organization } = useAuth();
@@ -724,11 +725,17 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
     await updateObjective(objective.id, { tagIds: newTagIds }, userEmail);
   };
 
-  const handleAddToList = async (listId: string) => {
-    await addItemToList(listId, objective.id);
-    setShowListDropdown(false);
-    setIsCreatingList(false);
-    setNewListName('');
+  const isInList = (listId: string) => {
+    const list = lists.find(l => l.id === listId);
+    return list?.items.some(item => item.objectiveId === objective.id) || false;
+  };
+
+  const handleToggleList = async (listId: string) => {
+    if (isInList(listId)) {
+      await removeItemFromList(listId, objective.id);
+    } else {
+      await addItemToList(listId, objective.id);
+    }
   };
 
   const handleCreateListAndAdd = async () => {
@@ -934,7 +941,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
               >
                 <div className="py-1">
                   <div className="px-2 py-1 text-xs font-medium text-gray-500 flex items-center justify-between">
-                    <span>Add to list</span>
+                    <span>Lists</span>
                     {!isCreatingList && (
                       <button
                         onClick={() => setIsCreatingList(true)}
@@ -986,16 +993,26 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
                       </div>
                     </div>
                   )}
-                  {lists.map((list: List) => (
-                    <button
-                      key={list.id}
-                      onClick={() => handleAddToList(list.id)}
-                      className="w-full text-left text-xs px-2 py-1.5 hover:bg-gray-100 text-gray-700"
-                    >
-                      {list.name}
-                      <span className="text-gray-400 ml-1">({list.items.length})</span>
-                    </button>
-                  ))}
+                  {lists.map((list: List) => {
+                    const inList = isInList(list.id);
+                    return (
+                      <button
+                        key={list.id}
+                        onClick={() => handleToggleList(list.id)}
+                        className={`w-full text-left text-xs px-2 py-1.5 hover:bg-gray-100 flex items-center justify-between ${inList ? 'text-blue-600' : 'text-gray-700'}`}
+                      >
+                        <span>
+                          {list.name}
+                          <span className="text-gray-400 ml-1">({list.items.length})</span>
+                        </span>
+                        {inList && (
+                          <svg className="w-3.5 h-3.5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
