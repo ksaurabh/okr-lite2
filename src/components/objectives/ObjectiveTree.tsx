@@ -169,6 +169,8 @@ export function ObjectiveTree() {
   const setFilterOwnerOperator = useOKRStore((state: OKRStore) => state.setFilterOwnerOperator);
   const setFilterAssignees = useOKRStore((state: OKRStore) => state.setFilterAssignees);
   const setFilterAssigneeOperator = useOKRStore((state: OKRStore) => state.setFilterAssigneeOperator);
+  const filterAssigneeNotSet = useOKRStore((state: OKRStore) => state.filterAssigneeNotSet);
+  const toggleFilterAssigneeNotSet = useOKRStore((state: OKRStore) => state.toggleFilterAssigneeNotSet);
   const filterNextStepDate = useOKRStore((state: OKRStore) => state.filterNextStepDate);
   const setFilterNextStepDate = useOKRStore((state: OKRStore) => state.setFilterNextStepDate);
   const filterLevels = useOKRStore((state: OKRStore) => state.filterLevels);
@@ -312,7 +314,7 @@ export function ObjectiveTree() {
     [tags, orgId, userEmail, isAdmin]
   );
 
-  const hasActiveFilters = activePeriodId || filterTagIds.length > 0 || filterTeamIds.length > 0 || filterTypes.length > 0 || filterTypeNotSet || filterOwnerIds.length > 0 || filterAssigneeIds.length > 0 || filterNextStepDate || filterLevels.length > 0 || filterWorkflowStatuses.length > 0 || filterObjectiveId || searchQuery.trim();
+  const hasActiveFilters = activePeriodId || filterTagIds.length > 0 || filterTeamIds.length > 0 || filterTypes.length > 0 || filterTypeNotSet || filterOwnerIds.length > 0 || filterAssigneeIds.length > 0 || filterAssigneeNotSet || filterNextStepDate || filterLevels.length > 0 || filterWorkflowStatuses.length > 0 || filterObjectiveId || searchQuery.trim();
 
   // Get all ancestor period IDs for a given period (including the period itself)
   const getAncestorPeriodIds = useMemo(() => {
@@ -459,13 +461,25 @@ export function ObjectiveTree() {
       }
     }
 
-    // Filter by assignees (with operator support)
-    if (filterAssigneeIds.length > 0) {
+    // Filter by assignees (with operator support and Not Set option)
+    if (filterAssigneeIds.length > 0 || filterAssigneeNotSet) {
       if (filterAssigneeOperator === 'equals') {
-        result = result.filter((obj: Objective) => obj.assigneeId && filterAssigneeIds.includes(obj.assigneeId));
+        result = result.filter((obj: Objective) => {
+          const matchesAssignee = obj.assigneeId && filterAssigneeIds.includes(obj.assigneeId);
+          const matchesNotSet = filterAssigneeNotSet && !obj.assigneeId;
+          return matchesAssignee || matchesNotSet;
+        });
       } else {
         // not_equals: show objectives where assignee is NOT in the selected list
-        result = result.filter((obj: Objective) => !obj.assigneeId || !filterAssigneeIds.includes(obj.assigneeId));
+        result = result.filter((obj: Objective) => {
+          const excludesAssignee = !obj.assigneeId || !filterAssigneeIds.includes(obj.assigneeId);
+          const matchesNotSet = filterAssigneeNotSet && !obj.assigneeId;
+          // For not_equals with NotSet selected, show items that either have no assignee OR have an assignee not in the list
+          if (filterAssigneeNotSet && filterAssigneeIds.length === 0) {
+            return matchesNotSet;
+          }
+          return excludesAssignee;
+        });
       }
     }
 
@@ -565,7 +579,7 @@ export function ObjectiveTree() {
     }
 
     return result;
-  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterTypeNotSet, filterLevels, filterWorkflowStatuses, filterObjectiveId, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterNextStepDate, searchQuery, includeAncestorPeriods, includeChildPeriods, includeChildTeams, showChildren, directChildrenOnly, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds, getDescendantObjectiveIds]);
+  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterTypeNotSet, filterLevels, filterWorkflowStatuses, filterObjectiveId, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterAssigneeNotSet, filterNextStepDate, searchQuery, includeAncestorPeriods, includeChildPeriods, includeChildTeams, showChildren, directChildrenOnly, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds, getDescendantObjectiveIds]);
 
   // Get IDs of all filtered objectives for quick lookup
   const filteredObjectiveIds = useMemo(
@@ -1267,6 +1281,16 @@ export function ObjectiveTree() {
                         {u.name}
                       </button>
                     ))}
+                    <button
+                      onClick={() => toggleFilterAssigneeNotSet()}
+                      className={`px-2 py-1 rounded-full text-xs transition-colors ${
+                        filterAssigneeNotSet
+                          ? 'bg-gray-800 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      Not Set
+                    </button>
                   </div>
                 </div>
               )}
