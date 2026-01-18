@@ -70,8 +70,12 @@ function ItemsByNextStepWidget({ orgObjectives, orgUsers, onCellClick }: ItemsBy
   const [selectedType, setSelectedType] = useState<ObjectiveType | 'all'>('all');
 
   const filteredObjectives = useMemo(() => {
-    if (selectedType === 'all') return orgObjectives;
-    return orgObjectives.filter(obj => obj.type === selectedType);
+    // Exclude done and archived items
+    let result = orgObjectives.filter(obj => obj.workflowStatus !== 'done' && obj.workflowStatus !== 'archived');
+    if (selectedType !== 'all') {
+      result = result.filter(obj => obj.type === selectedType);
+    }
+    return result;
   }, [orgObjectives, selectedType]);
 
   const itemsByNextStep = useMemo(() => {
@@ -459,6 +463,7 @@ export function DashboardPage({ onViewChange }: DashboardPageProps) {
   const setFilterOwners = useOKRStore((state: OKRStore) => state.setFilterOwners);
   const setFilterNextStepDate = useOKRStore((state: OKRStore) => state.setFilterNextStepDate);
   const toggleFilterType = useOKRStore((state: OKRStore) => state.toggleFilterType);
+  const toggleFilterWorkflowStatus = useOKRStore((state: OKRStore) => state.toggleFilterWorkflowStatus);
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -497,8 +502,13 @@ export function DashboardPage({ onViewChange }: DashboardPageProps) {
     if (typeFilter) {
       toggleFilterType(typeFilter);
     }
+    // Set workflow status filter to exclude done and archived (select active statuses)
+    toggleFilterWorkflowStatus('todo');
+    toggleFilterWorkflowStatus('planning');
+    toggleFilterWorkflowStatus('in_progress');
+    toggleFilterWorkflowStatus('acceptance');
     onViewChange('objectives');
-  }, [clearAllFilters, setFilterOwners, setFilterNextStepDate, toggleFilterType, onViewChange]);
+  }, [clearAllFilters, setFilterOwners, setFilterNextStepDate, toggleFilterType, toggleFilterWorkflowStatus, onViewChange]);
 
   // Calculate row height as roughly 1/3 of viewport height minus header space
   // Using calc with vh units for responsive sizing

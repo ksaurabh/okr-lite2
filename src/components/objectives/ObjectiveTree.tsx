@@ -31,9 +31,9 @@ const NEXT_STEP_DATE_OPTIONS: { value: NextStepDateFilter; label: string }[] = [
 
 const WORKFLOW_STATUS_OPTIONS: { value: WorkflowStatus; label: string }[] = [
   { value: 'todo', label: 'To Do' },
-  { value: 'planning', label: 'Planning' },
+  { value: 'planning', label: 'In Planning' },
   { value: 'in_progress', label: 'In Progress' },
-  { value: 'acceptance', label: 'Acceptance' },
+  { value: 'acceptance', label: 'In Acceptance' },
   { value: 'done', label: 'Done' },
   { value: 'archived', label: 'Archived' },
 ];
@@ -432,9 +432,15 @@ export function ObjectiveTree() {
 
     // Filter by workflow status
     if (filterWorkflowStatuses.length > 0) {
-      result = result.filter((obj: Objective) =>
-        obj.workflowStatus && filterWorkflowStatuses.includes(obj.workflowStatus)
-      );
+      // If only active statuses are selected (not done/archived), include items without status set
+      const includesOnlyActiveStatuses = !filterWorkflowStatuses.includes('done') && !filterWorkflowStatuses.includes('archived');
+      result = result.filter((obj: Objective) => {
+        if (!obj.workflowStatus) {
+          // Items without status are included if filtering for active statuses only
+          return includesOnlyActiveStatuses;
+        }
+        return filterWorkflowStatuses.includes(obj.workflowStatus);
+      });
     }
 
     // Filter by parent objective (show only descendants)
@@ -1407,7 +1413,7 @@ export function ObjectiveTree() {
           {/* Table header */}
           <div className="flex items-center bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500 uppercase tracking-wider">
             <div className="relative flex items-center" style={{ width: columnWidths.title, minWidth: 150 }}>
-              <div className="px-2 py-2 flex-1">Objective</div>
+              <div className="px-2 py-2 flex-1">Objective ({filteredObjectives.length})</div>
               <div
                 className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
                 onMouseDown={(e) => handleResizeStart('title', e)}
