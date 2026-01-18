@@ -1,8 +1,8 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { useOKRStore, type OKRStore, type ColumnWidths } from '../../store/okrStore';
+import { useOKRStore, type OKRStore, type ColumnWidths, type ColumnKey, COLUMN_LABELS, DEFAULT_VISIBLE_COLUMNS } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
 import { CompactObjectiveCard } from '../objectives/CompactObjectiveCard';
-import type { Period, PeriodType, Objective, Team, Tag, User, FilterOperator, ObjectiveType, ObjectiveLevel } from '../../types';
+import type { Period, PeriodType, Objective, Team, Tag, User, FilterOperator, ObjectiveType, ObjectiveLevel, WorkflowStatus } from '../../types';
 
 const TYPE_OPTIONS: { value: ObjectiveType; label: string }[] = [
   { value: 'initiative', label: 'Initiative' },
@@ -16,6 +16,15 @@ const LEVEL_OPTIONS: { value: ObjectiveLevel; label: string }[] = [
   { value: 'company', label: 'Company' },
   { value: 'team', label: 'Team' },
   { value: 'individual', label: 'Individual' },
+];
+
+const WORKFLOW_STATUS_OPTIONS: { value: WorkflowStatus; label: string }[] = [
+  { value: 'todo', label: 'Todo' },
+  { value: 'planning', label: 'Planning' },
+  { value: 'in_progress', label: 'In Progress' },
+  { value: 'acceptance', label: 'Acceptance' },
+  { value: 'done', label: 'Done' },
+  { value: 'archived', label: 'Archived' },
 ];
 
 const API_URL = import.meta.env.VITE_API_URL || '';
@@ -132,6 +141,9 @@ export function ChecklistPage() {
   const [includeChildPeriods, setIncludeChildPeriods] = useState(true);
   const [includeChildTeams, setIncludeChildTeams] = useState(true);
   const [orgUsers, setOrgUsers] = useState<User[]>([]);
+  const [filterWorkflowStatuses, setFilterWorkflowStatuses] = useState<WorkflowStatus[]>([]);
+  const [showColumnMenu, setShowColumnMenu] = useState(false);
+  const columnMenuRef = useRef<HTMLDivElement>(null);
 
   const { organization, user, isSuperAdmin, isOrgAdmin } = useAuth();
   const orgId = organization?.id || '';
@@ -183,6 +195,26 @@ export function ChecklistPage() {
   const clearAllFilters = useOKRStore((state: OKRStore) => state.clearAllFilters);
   const columnWidths = useOKRStore((state: OKRStore) => state.columnWidths);
   const setColumnWidths = useOKRStore((state: OKRStore) => state.setColumnWidths);
+  const visibleColumns = useOKRStore((state: OKRStore) => state.visibleColumns);
+  const toggleColumnVisibility = useOKRStore((state: OKRStore) => state.toggleColumnVisibility);
+
+  // Toggle workflow status filter
+  const toggleWorkflowStatusFilter = useCallback((status: WorkflowStatus) => {
+    setFilterWorkflowStatuses(prev =>
+      prev.includes(status) ? prev.filter(s => s !== status) : [...prev, status]
+    );
+  }, []);
+
+  // Close column menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (columnMenuRef.current && !columnMenuRef.current.contains(event.target as Node)) {
+        setShowColumnMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Column resize state
   const [resizingColumn, setResizingColumn] = useState<keyof ColumnWidths | null>(null);
@@ -243,7 +275,7 @@ export function ChecklistPage() {
     [tags, orgId, userEmail, isAdmin]
   );
 
-  const hasActiveFilters = activePeriodId || filterTagIds.length > 0 || filterTeamIds.length > 0 || filterTypes.length > 0 || filterTypeNotSet || filterOwnerIds.length > 0 || filterAssigneeIds.length > 0 || filterLevels.length > 0;
+  const hasActiveFilters = activePeriodId || filterTagIds.length > 0 || filterTeamIds.length > 0 || filterTypes.length > 0 || filterTypeNotSet || filterOwnerIds.length > 0 || filterAssigneeIds.length > 0 || filterLevels.length > 0 || filterWorkflowStatuses.length > 0;
 
   // Get all ancestor period IDs for a given period
   const getAncestorPeriodIds = useMemo(() => {
@@ -363,11 +395,18 @@ export function ChecklistPage() {
       }
     }
 
+    // Filter by workflow status
+    if (filterWorkflowStatuses.length > 0) {
+      result = result.filter((obj: Objective) =>
+        filterWorkflowStatuses.includes(obj.workflowStatus)
+      );
+    }
+
     // Finally, filter for items without next step date
     result = result.filter((obj: Objective) => !obj.nextStepDate);
 
     return result;
-  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterTypeNotSet, filterLevels, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, includeAncestorPeriods, includeChildPeriods, includeChildTeams, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds]);
+  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterTypeNotSet, filterLevels, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterWorkflowStatuses, includeAncestorPeriods, includeChildPeriods, includeChildTeams, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds]);
 
   // Apply all filters, then filter for items without type
   const filteredObjectivesWithoutType = useMemo(() => {
@@ -428,11 +467,18 @@ export function ChecklistPage() {
       }
     }
 
+    // Filter by workflow status
+    if (filterWorkflowStatuses.length > 0) {
+      result = result.filter((obj: Objective) =>
+        filterWorkflowStatuses.includes(obj.workflowStatus)
+      );
+    }
+
     // Finally, filter for items without type
     result = result.filter((obj: Objective) => !obj.type);
 
     return result;
-  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterLevels, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, includeAncestorPeriods, includeChildPeriods, includeChildTeams, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds]);
+  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterLevels, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterWorkflowStatuses, includeAncestorPeriods, includeChildPeriods, includeChildTeams, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds]);
 
   // Get IDs for quick lookup
   const filteredObjectiveIdsNoType = useMemo(
@@ -448,6 +494,46 @@ export function ChecklistPage() {
 
   return (
     <div className="space-y-6">
+      {/* Column Visibility Toggle */}
+      <div className="flex items-center gap-4">
+        <div className="relative" ref={columnMenuRef}>
+          <button
+            onClick={() => setShowColumnMenu(!showColumnMenu)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-sm hover:bg-gray-50 shadow-sm text-gray-600"
+            title="Show/hide columns"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2m0 10V7m6 10V7" />
+            </svg>
+            <span>Columns</span>
+            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {showColumnMenu && (
+            <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-2 min-w-[180px]">
+              <div className="px-3 py-1.5 text-xs font-medium text-gray-500 border-b border-gray-100 mb-1">
+                Show/Hide Columns
+              </div>
+              {(DEFAULT_VISIBLE_COLUMNS.filter(c => c !== 'title') as ColumnKey[]).map((col) => (
+                <label
+                  key={col}
+                  className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer text-sm text-gray-700 normal-case"
+                >
+                  <input
+                    type="checkbox"
+                    checked={visibleColumns.includes(col)}
+                    onChange={() => toggleColumnVisibility(col)}
+                    className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  {COLUMN_LABELS[col]}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Filters */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
         <div
@@ -647,6 +733,26 @@ export function ChecklistPage() {
                 </div>
               </div>
 
+              {/* Status Filter */}
+              <div className="flex items-start gap-3">
+                <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Status</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {WORKFLOW_STATUS_OPTIONS.map((status) => (
+                    <button
+                      key={status.value}
+                      onClick={() => toggleWorkflowStatusFilter(status.value)}
+                      className={`px-2 py-1 rounded-full text-xs transition-colors ${
+                        filterWorkflowStatuses.includes(status.value)
+                          ? 'bg-gray-800 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      {status.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* Owner Filter */}
               {orgUsers.length > 0 && (
                 <div className="flex items-start gap-3">
@@ -774,97 +880,132 @@ export function ChecklistPage() {
                 {/* Table header */}
                 <div className="flex items-center bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500 uppercase tracking-wider">
                   <div className="flex-1 px-2 py-2">Objective</div>
-                  <div className="relative flex items-center" style={{ width: columnWidths.level }}>
-                    <div className="px-1 py-2 flex-1">Level</div>
-                    <div
-                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                      onMouseDown={(e) => handleResizeStart('level', e)}
-                    />
-                  </div>
-                  <div className="relative flex items-center" style={{ width: columnWidths.type }}>
-                    <div className="px-1 py-2 flex-1">Type</div>
-                    <div
-                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                      onMouseDown={(e) => handleResizeStart('type', e)}
-                    />
-                  </div>
-                  <div className="relative flex items-center" style={{ width: columnWidths.parent }}>
-                    <div className="px-1 py-2 flex-1">Parent</div>
-                    <div
-                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                      onMouseDown={(e) => handleResizeStart('parent', e)}
-                    />
-                  </div>
-                  <div className="relative flex items-center" style={{ width: columnWidths.team }}>
-                    <div className="px-1 py-2 flex-1">Team</div>
-                    <div
-                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                      onMouseDown={(e) => handleResizeStart('team', e)}
-                    />
-                  </div>
-                  <div className="relative flex items-center" style={{ width: columnWidths.owner }}>
-                    <div className="px-1 py-2 flex-1">Owner</div>
-                    <div
-                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                      onMouseDown={(e) => handleResizeStart('owner', e)}
-                    />
-                  </div>
-                  <div className="relative flex items-center" style={{ width: columnWidths.assignee }}>
-                    <div className="px-1 py-2 flex-1">Assignee</div>
-                    <div
-                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                      onMouseDown={(e) => handleResizeStart('assignee', e)}
-                    />
-                  </div>
-                  <div className="relative flex items-center" style={{ width: columnWidths.period }}>
-                    <div className="px-1 py-2 flex-1">Period</div>
-                    <div
-                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                      onMouseDown={(e) => handleResizeStart('period', e)}
-                    />
-                  </div>
-                  <div className="relative flex items-center" style={{ width: columnWidths.nextStepDate }}>
-                    <div className="px-1 py-2 flex-1">Next Date</div>
-                    <div
-                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                      onMouseDown={(e) => handleResizeStart('nextStepDate', e)}
-                    />
-                  </div>
-                  <div className="relative flex items-center" style={{ width: columnWidths.nextStep }}>
-                    <div className="px-1 py-2 flex-1">Next Step</div>
-                    <div
-                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                      onMouseDown={(e) => handleResizeStart('nextStep', e)}
-                    />
-                  </div>
-                  <div className="relative flex items-center" style={{ width: columnWidths.storyPoints }}>
-                    <div className="px-1 py-2 flex-1 text-right">SP</div>
-                    <div
-                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                      onMouseDown={(e) => handleResizeStart('storyPoints', e)}
-                    />
-                  </div>
-                  <div className="relative flex items-center" style={{ width: columnWidths.valuePoints }}>
-                    <div className="px-1 py-2 flex-1 text-right">VP</div>
-                    <div
-                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                      onMouseDown={(e) => handleResizeStart('valuePoints', e)}
-                    />
-                  </div>
-                  <div className="relative flex items-center" style={{ width: columnWidths.tags }}>
-                    <div className="px-1 py-2 flex-1">Tags</div>
-                    <div
-                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                      onMouseDown={(e) => handleResizeStart('tags', e)}
-                    />
-                  </div>
-                  <div className="relative flex items-center" style={{ width: columnWidths.progress }}>
-                    <div className="px-2 py-2 flex-1 text-right">Progress</div>
-                    <div
-                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                      onMouseDown={(e) => handleResizeStart('progress', e)}
-                    />
-                  </div>
+                  {visibleColumns.includes('level') && (
+                    <div className="relative flex items-center" style={{ width: columnWidths.level }}>
+                      <div className="px-1 py-2 flex-1">Level</div>
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                        onMouseDown={(e) => handleResizeStart('level', e)}
+                      />
+                    </div>
+                  )}
+                  {visibleColumns.includes('type') && (
+                    <div className="relative flex items-center" style={{ width: columnWidths.type }}>
+                      <div className="px-1 py-2 flex-1">Type</div>
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                        onMouseDown={(e) => handleResizeStart('type', e)}
+                      />
+                    </div>
+                  )}
+                  {visibleColumns.includes('workflowStatus') && (
+                    <div className="relative flex items-center" style={{ width: columnWidths.workflowStatus }}>
+                      <div className="px-1 py-2 flex-1">Status</div>
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                        onMouseDown={(e) => handleResizeStart('workflowStatus', e)}
+                      />
+                    </div>
+                  )}
+                  {visibleColumns.includes('parent') && (
+                    <div className="relative flex items-center" style={{ width: columnWidths.parent }}>
+                      <div className="px-1 py-2 flex-1">Parent</div>
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                        onMouseDown={(e) => handleResizeStart('parent', e)}
+                      />
+                    </div>
+                  )}
+                  {visibleColumns.includes('team') && (
+                    <div className="relative flex items-center" style={{ width: columnWidths.team }}>
+                      <div className="px-1 py-2 flex-1">Team</div>
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                        onMouseDown={(e) => handleResizeStart('team', e)}
+                      />
+                    </div>
+                  )}
+                  {visibleColumns.includes('owner') && (
+                    <div className="relative flex items-center" style={{ width: columnWidths.owner }}>
+                      <div className="px-1 py-2 flex-1">Owner</div>
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                        onMouseDown={(e) => handleResizeStart('owner', e)}
+                      />
+                    </div>
+                  )}
+                  {visibleColumns.includes('assignee') && (
+                    <div className="relative flex items-center" style={{ width: columnWidths.assignee }}>
+                      <div className="px-1 py-2 flex-1">Assignee</div>
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                        onMouseDown={(e) => handleResizeStart('assignee', e)}
+                      />
+                    </div>
+                  )}
+                  {visibleColumns.includes('period') && (
+                    <div className="relative flex items-center" style={{ width: columnWidths.period }}>
+                      <div className="px-1 py-2 flex-1">Period</div>
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                        onMouseDown={(e) => handleResizeStart('period', e)}
+                      />
+                    </div>
+                  )}
+                  {visibleColumns.includes('nextStepDate') && (
+                    <div className="relative flex items-center" style={{ width: columnWidths.nextStepDate }}>
+                      <div className="px-1 py-2 flex-1">Next Date</div>
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                        onMouseDown={(e) => handleResizeStart('nextStepDate', e)}
+                      />
+                    </div>
+                  )}
+                  {visibleColumns.includes('nextStep') && (
+                    <div className="relative flex items-center" style={{ width: columnWidths.nextStep }}>
+                      <div className="px-1 py-2 flex-1">Next Step</div>
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                        onMouseDown={(e) => handleResizeStart('nextStep', e)}
+                      />
+                    </div>
+                  )}
+                  {visibleColumns.includes('storyPoints') && (
+                    <div className="relative flex items-center" style={{ width: columnWidths.storyPoints }}>
+                      <div className="px-1 py-2 flex-1 text-right">SP</div>
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                        onMouseDown={(e) => handleResizeStart('storyPoints', e)}
+                      />
+                    </div>
+                  )}
+                  {visibleColumns.includes('valuePoints') && (
+                    <div className="relative flex items-center" style={{ width: columnWidths.valuePoints }}>
+                      <div className="px-1 py-2 flex-1 text-right">VP</div>
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                        onMouseDown={(e) => handleResizeStart('valuePoints', e)}
+                      />
+                    </div>
+                  )}
+                  {visibleColumns.includes('tags') && (
+                    <div className="relative flex items-center" style={{ width: columnWidths.tags }}>
+                      <div className="px-1 py-2 flex-1">Tags</div>
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                        onMouseDown={(e) => handleResizeStart('tags', e)}
+                      />
+                    </div>
+                  )}
+                  {visibleColumns.includes('progress') && (
+                    <div className="relative flex items-center" style={{ width: columnWidths.progress }}>
+                      <div className="px-2 py-2 flex-1 text-right">Progress</div>
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                        onMouseDown={(e) => handleResizeStart('progress', e)}
+                      />
+                    </div>
+                  )}
                   <div className="w-16 px-2 py-2"></div>
                 </div>
 
@@ -936,97 +1077,132 @@ export function ChecklistPage() {
                 {/* Table header */}
                 <div className="flex items-center bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500 uppercase tracking-wider">
                   <div className="flex-1 px-2 py-2">Objective</div>
-                  <div className="relative flex items-center" style={{ width: columnWidths.level }}>
-                    <div className="px-1 py-2 flex-1">Level</div>
-                    <div
-                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                      onMouseDown={(e) => handleResizeStart('level', e)}
-                    />
-                  </div>
-                  <div className="relative flex items-center" style={{ width: columnWidths.type }}>
-                    <div className="px-1 py-2 flex-1">Type</div>
-                    <div
-                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                      onMouseDown={(e) => handleResizeStart('type', e)}
-                    />
-                  </div>
-                  <div className="relative flex items-center" style={{ width: columnWidths.parent }}>
-                    <div className="px-1 py-2 flex-1">Parent</div>
-                    <div
-                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                      onMouseDown={(e) => handleResizeStart('parent', e)}
-                    />
-                  </div>
-                  <div className="relative flex items-center" style={{ width: columnWidths.team }}>
-                    <div className="px-1 py-2 flex-1">Team</div>
-                    <div
-                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                      onMouseDown={(e) => handleResizeStart('team', e)}
-                    />
-                  </div>
-                  <div className="relative flex items-center" style={{ width: columnWidths.owner }}>
-                    <div className="px-1 py-2 flex-1">Owner</div>
-                    <div
-                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                      onMouseDown={(e) => handleResizeStart('owner', e)}
-                    />
-                  </div>
-                  <div className="relative flex items-center" style={{ width: columnWidths.assignee }}>
-                    <div className="px-1 py-2 flex-1">Assignee</div>
-                    <div
-                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                      onMouseDown={(e) => handleResizeStart('assignee', e)}
-                    />
-                  </div>
-                  <div className="relative flex items-center" style={{ width: columnWidths.period }}>
-                    <div className="px-1 py-2 flex-1">Period</div>
-                    <div
-                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                      onMouseDown={(e) => handleResizeStart('period', e)}
-                    />
-                  </div>
-                  <div className="relative flex items-center" style={{ width: columnWidths.nextStepDate }}>
-                    <div className="px-1 py-2 flex-1">Next Date</div>
-                    <div
-                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                      onMouseDown={(e) => handleResizeStart('nextStepDate', e)}
-                    />
-                  </div>
-                  <div className="relative flex items-center" style={{ width: columnWidths.nextStep }}>
-                    <div className="px-1 py-2 flex-1">Next Step</div>
-                    <div
-                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                      onMouseDown={(e) => handleResizeStart('nextStep', e)}
-                    />
-                  </div>
-                  <div className="relative flex items-center" style={{ width: columnWidths.storyPoints }}>
-                    <div className="px-1 py-2 flex-1 text-right">SP</div>
-                    <div
-                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                      onMouseDown={(e) => handleResizeStart('storyPoints', e)}
-                    />
-                  </div>
-                  <div className="relative flex items-center" style={{ width: columnWidths.valuePoints }}>
-                    <div className="px-1 py-2 flex-1 text-right">VP</div>
-                    <div
-                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                      onMouseDown={(e) => handleResizeStart('valuePoints', e)}
-                    />
-                  </div>
-                  <div className="relative flex items-center" style={{ width: columnWidths.tags }}>
-                    <div className="px-1 py-2 flex-1">Tags</div>
-                    <div
-                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                      onMouseDown={(e) => handleResizeStart('tags', e)}
-                    />
-                  </div>
-                  <div className="relative flex items-center" style={{ width: columnWidths.progress }}>
-                    <div className="px-2 py-2 flex-1 text-right">Progress</div>
-                    <div
-                      className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
-                      onMouseDown={(e) => handleResizeStart('progress', e)}
-                    />
-                  </div>
+                  {visibleColumns.includes('level') && (
+                    <div className="relative flex items-center" style={{ width: columnWidths.level }}>
+                      <div className="px-1 py-2 flex-1">Level</div>
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                        onMouseDown={(e) => handleResizeStart('level', e)}
+                      />
+                    </div>
+                  )}
+                  {visibleColumns.includes('type') && (
+                    <div className="relative flex items-center" style={{ width: columnWidths.type }}>
+                      <div className="px-1 py-2 flex-1">Type</div>
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                        onMouseDown={(e) => handleResizeStart('type', e)}
+                      />
+                    </div>
+                  )}
+                  {visibleColumns.includes('workflowStatus') && (
+                    <div className="relative flex items-center" style={{ width: columnWidths.workflowStatus }}>
+                      <div className="px-1 py-2 flex-1">Status</div>
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                        onMouseDown={(e) => handleResizeStart('workflowStatus', e)}
+                      />
+                    </div>
+                  )}
+                  {visibleColumns.includes('parent') && (
+                    <div className="relative flex items-center" style={{ width: columnWidths.parent }}>
+                      <div className="px-1 py-2 flex-1">Parent</div>
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                        onMouseDown={(e) => handleResizeStart('parent', e)}
+                      />
+                    </div>
+                  )}
+                  {visibleColumns.includes('team') && (
+                    <div className="relative flex items-center" style={{ width: columnWidths.team }}>
+                      <div className="px-1 py-2 flex-1">Team</div>
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                        onMouseDown={(e) => handleResizeStart('team', e)}
+                      />
+                    </div>
+                  )}
+                  {visibleColumns.includes('owner') && (
+                    <div className="relative flex items-center" style={{ width: columnWidths.owner }}>
+                      <div className="px-1 py-2 flex-1">Owner</div>
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                        onMouseDown={(e) => handleResizeStart('owner', e)}
+                      />
+                    </div>
+                  )}
+                  {visibleColumns.includes('assignee') && (
+                    <div className="relative flex items-center" style={{ width: columnWidths.assignee }}>
+                      <div className="px-1 py-2 flex-1">Assignee</div>
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                        onMouseDown={(e) => handleResizeStart('assignee', e)}
+                      />
+                    </div>
+                  )}
+                  {visibleColumns.includes('period') && (
+                    <div className="relative flex items-center" style={{ width: columnWidths.period }}>
+                      <div className="px-1 py-2 flex-1">Period</div>
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                        onMouseDown={(e) => handleResizeStart('period', e)}
+                      />
+                    </div>
+                  )}
+                  {visibleColumns.includes('nextStepDate') && (
+                    <div className="relative flex items-center" style={{ width: columnWidths.nextStepDate }}>
+                      <div className="px-1 py-2 flex-1">Next Date</div>
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                        onMouseDown={(e) => handleResizeStart('nextStepDate', e)}
+                      />
+                    </div>
+                  )}
+                  {visibleColumns.includes('nextStep') && (
+                    <div className="relative flex items-center" style={{ width: columnWidths.nextStep }}>
+                      <div className="px-1 py-2 flex-1">Next Step</div>
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                        onMouseDown={(e) => handleResizeStart('nextStep', e)}
+                      />
+                    </div>
+                  )}
+                  {visibleColumns.includes('storyPoints') && (
+                    <div className="relative flex items-center" style={{ width: columnWidths.storyPoints }}>
+                      <div className="px-1 py-2 flex-1 text-right">SP</div>
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                        onMouseDown={(e) => handleResizeStart('storyPoints', e)}
+                      />
+                    </div>
+                  )}
+                  {visibleColumns.includes('valuePoints') && (
+                    <div className="relative flex items-center" style={{ width: columnWidths.valuePoints }}>
+                      <div className="px-1 py-2 flex-1 text-right">VP</div>
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                        onMouseDown={(e) => handleResizeStart('valuePoints', e)}
+                      />
+                    </div>
+                  )}
+                  {visibleColumns.includes('tags') && (
+                    <div className="relative flex items-center" style={{ width: columnWidths.tags }}>
+                      <div className="px-1 py-2 flex-1">Tags</div>
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                        onMouseDown={(e) => handleResizeStart('tags', e)}
+                      />
+                    </div>
+                  )}
+                  {visibleColumns.includes('progress') && (
+                    <div className="relative flex items-center" style={{ width: columnWidths.progress }}>
+                      <div className="px-2 py-2 flex-1 text-right">Progress</div>
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                        onMouseDown={(e) => handleResizeStart('progress', e)}
+                      />
+                    </div>
+                  )}
                   <div className="w-16 px-2 py-2"></div>
                 </div>
 
