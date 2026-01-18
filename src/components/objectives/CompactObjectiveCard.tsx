@@ -58,7 +58,8 @@ function getNextStepDateIndicator(nextStepDate?: string): { color: string; toolt
 }
 
 export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filteredObjectiveIds }: CompactObjectiveCardProps) {
-  const [isExpanded, setIsExpanded] = useState(true);
+  // Only root-level items (depth 0) are expanded by default
+  const [isExpanded, setIsExpanded] = useState(depth === 0);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [quickAddTitle, setQuickAddTitle] = useState('');
   const [isAdding, setIsAdding] = useState(false);
