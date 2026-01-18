@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { useOKRStore, type OKRStore, type ColumnWidths, type ColumnKey, COLUMN_LABELS, DEFAULT_VISIBLE_COLUMNS } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
 import { CompactObjectiveCard } from './CompactObjectiveCard';
-import type { Period, PeriodType, Objective, Team, Tag, User, FilterOperator, ObjectiveType, NextStepDateFilter, ObjectiveLevel, SavedView } from '../../types';
+import type { Period, PeriodType, Objective, Team, Tag, User, FilterOperator, ObjectiveType, NextStepDateFilter, ObjectiveLevel, SavedView, WorkflowStatus } from '../../types';
 
 const TYPE_OPTIONS: { value: ObjectiveType; label: string }[] = [
   { value: 'initiative', label: 'Initiative' },
@@ -27,6 +27,15 @@ const NEXT_STEP_DATE_OPTIONS: { value: NextStepDateFilter; label: string }[] = [
   { value: 'next_7d', label: 'In Next 7d' },
   { value: 'next_30d', label: 'In Next 30d' },
   { value: 'future', label: 'In the Future' },
+];
+
+const WORKFLOW_STATUS_OPTIONS: { value: WorkflowStatus; label: string }[] = [
+  { value: 'todo', label: 'To Do' },
+  { value: 'planning', label: 'Planning' },
+  { value: 'in_progress', label: 'In Progress' },
+  { value: 'acceptance', label: 'Acceptance' },
+  { value: 'done', label: 'Done' },
+  { value: 'archived', label: 'Archived' },
 ];
 
 const API_URL = import.meta.env.VITE_API_URL || '';
@@ -164,6 +173,8 @@ export function ObjectiveTree() {
   const setFilterNextStepDate = useOKRStore((state: OKRStore) => state.setFilterNextStepDate);
   const filterLevels = useOKRStore((state: OKRStore) => state.filterLevels);
   const toggleFilterLevel = useOKRStore((state: OKRStore) => state.toggleFilterLevel);
+  const filterWorkflowStatuses = useOKRStore((state: OKRStore) => state.filterWorkflowStatuses);
+  const toggleFilterWorkflowStatus = useOKRStore((state: OKRStore) => state.toggleFilterWorkflowStatus);
   const filterObjectiveId = useOKRStore((state: OKRStore) => state.filterObjectiveId);
   const setFilterObjective = useOKRStore((state: OKRStore) => state.setFilterObjective);
   const clearAllFilters = useOKRStore((state: OKRStore) => state.clearAllFilters);
@@ -301,7 +312,7 @@ export function ObjectiveTree() {
     [tags, orgId, userEmail, isAdmin]
   );
 
-  const hasActiveFilters = activePeriodId || filterTagIds.length > 0 || filterTeamIds.length > 0 || filterTypes.length > 0 || filterTypeNotSet || filterOwnerIds.length > 0 || filterAssigneeIds.length > 0 || filterNextStepDate || filterLevels.length > 0 || filterObjectiveId || searchQuery.trim();
+  const hasActiveFilters = activePeriodId || filterTagIds.length > 0 || filterTeamIds.length > 0 || filterTypes.length > 0 || filterTypeNotSet || filterOwnerIds.length > 0 || filterAssigneeIds.length > 0 || filterNextStepDate || filterLevels.length > 0 || filterWorkflowStatuses.length > 0 || filterObjectiveId || searchQuery.trim();
 
   // Get all ancestor period IDs for a given period (including the period itself)
   const getAncestorPeriodIds = useMemo(() => {
@@ -416,6 +427,13 @@ export function ObjectiveTree() {
     if (filterLevels.length > 0) {
       result = result.filter((obj: Objective) =>
         filterLevels.includes(obj.level)
+      );
+    }
+
+    // Filter by workflow status
+    if (filterWorkflowStatuses.length > 0) {
+      result = result.filter((obj: Objective) =>
+        obj.workflowStatus && filterWorkflowStatuses.includes(obj.workflowStatus)
       );
     }
 
@@ -541,7 +559,7 @@ export function ObjectiveTree() {
     }
 
     return result;
-  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterTypeNotSet, filterLevels, filterObjectiveId, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterNextStepDate, searchQuery, includeAncestorPeriods, includeChildPeriods, includeChildTeams, showChildren, directChildrenOnly, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds, getDescendantObjectiveIds]);
+  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterTypeNotSet, filterLevels, filterWorkflowStatuses, filterObjectiveId, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterNextStepDate, searchQuery, includeAncestorPeriods, includeChildPeriods, includeChildTeams, showChildren, directChildrenOnly, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds, getDescendantObjectiveIds]);
 
   // Get IDs of all filtered objectives for quick lookup
   const filteredObjectiveIds = useMemo(
@@ -1135,6 +1153,26 @@ export function ObjectiveTree() {
                       }`}
                     >
                       {level.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Workflow Status Filter */}
+              <div className="flex items-start gap-3">
+                <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Status</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {WORKFLOW_STATUS_OPTIONS.map((status) => (
+                    <button
+                      key={status.value}
+                      onClick={() => toggleFilterWorkflowStatus(status.value)}
+                      className={`px-2 py-1 rounded-full text-xs transition-colors ${
+                        filterWorkflowStatuses.includes(status.value)
+                          ? 'bg-gray-800 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      {status.label}
                     </button>
                   ))}
                 </div>
