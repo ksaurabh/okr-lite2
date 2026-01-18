@@ -41,8 +41,8 @@ export function UpdatesPage() {
           credentials: 'include',
         });
         if (response.ok) {
-          const users = await response.json();
-          setOrgUsers(Array.isArray(users) ? users : []);
+          const data = await response.json();
+          setOrgUsers(Array.isArray(data.users) ? data.users : []);
         }
       } catch (error) {
         console.error('Failed to fetch users:', error);
