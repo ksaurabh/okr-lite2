@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import type { Objective, ObjectiveLevel, ObjectiveLink, Period, Team, Tag, User, ObjectiveHistoryEntry } from '../../types';
+import type { Objective, ObjectiveLevel, ObjectiveLink, ProgressUpdate, Period, Team, Tag, User, ObjectiveHistoryEntry } from '../../types';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../common/Button';
@@ -44,6 +44,8 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
   const [linkDescription, setLinkDescription] = useState(objective?.link?.description || '');
   const [orgUsers, setOrgUsers] = useState<User[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [showProgressUpdates, setShowProgressUpdates] = useState(true);
+  const [newProgressUpdate, setNewProgressUpdate] = useState('');
 
   const { organization, user, isSuperAdmin, isOrgAdmin } = useAuth();
   const teams = useOKRStore((state: OKRStore) => state.teams);
@@ -129,6 +131,24 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
         ? prev.filter((id) => id !== tagId)
         : [...prev, tagId]
     );
+  };
+
+  const handleAddProgressUpdate = async () => {
+    if (!newProgressUpdate.trim() || !objective) return;
+
+    const newUpdate: ProgressUpdate = {
+      id: crypto.randomUUID(),
+      text: newProgressUpdate.trim(),
+      createdAt: new Date().toISOString(),
+      createdBy: userEmail,
+    };
+
+    const existingUpdates = objective.progressUpdates || [];
+    await updateObjective(objective.id, {
+      progressUpdates: [newUpdate, ...existingUpdates],
+    }, userEmail);
+
+    setNewProgressUpdate('');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -431,6 +451,72 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
           Private (only visible to me)
         </label>
       </div>
+
+      {/* Progress Updates Section */}
+      {objective && (
+        <div className="pt-4 border-t border-gray-200">
+          <button
+            type="button"
+            onClick={() => setShowProgressUpdates(!showProgressUpdates)}
+            className="flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900"
+          >
+            <svg
+              className={`w-4 h-4 transition-transform ${showProgressUpdates ? 'rotate-90' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+            Progress Updates ({objective.progressUpdates?.length || 0})
+          </button>
+          {showProgressUpdates && (
+            <div className="mt-3 space-y-3">
+              {/* Add new progress update */}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newProgressUpdate}
+                  onChange={(e) => setNewProgressUpdate(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddProgressUpdate();
+                    }
+                  }}
+                  placeholder="Add a progress update..."
+                  className="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <Button
+                  type="button"
+                  onClick={handleAddProgressUpdate}
+                  disabled={!newProgressUpdate.trim()}
+                >
+                  Add
+                </Button>
+              </div>
+
+              {/* List of progress updates */}
+              {objective.progressUpdates && objective.progressUpdates.length > 0 ? (
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {objective.progressUpdates.map((update: ProgressUpdate) => (
+                    <div key={update.id} className="bg-gray-50 rounded-md p-3 text-sm">
+                      <div className="text-gray-900">{update.text}</div>
+                      <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
+                        <span>{formatDate(update.createdAt)}</span>
+                        <span>•</span>
+                        <span>{update.createdBy}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-400">No progress updates yet.</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* History Section */}
       {objective && objective.history && objective.history.length > 0 && (

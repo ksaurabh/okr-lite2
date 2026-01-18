@@ -23,6 +23,13 @@ export interface ObjectiveLink {
   description?: string;
 }
 
+export interface ProgressUpdate {
+  id: string;
+  text: string;
+  createdAt: string;
+  createdBy: string;
+}
+
 export interface Objective {
   id: string;
   orgId: string;
@@ -43,6 +50,7 @@ export interface Objective {
   valuePoints?: number;
   link?: ObjectiveLink;
   sortOrder?: number;
+  progressUpdates?: ProgressUpdate[];
   progress: number;
   status: ObjectiveStatus;
   workflowStatus: WorkflowStatus;
