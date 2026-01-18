@@ -97,6 +97,7 @@ export interface Period {
   startDate: string;
   endDate: string;
   isActive: boolean;
+  archived?: boolean;
 }
 
 export type FilterOperator = 'equals' | 'not_equals';

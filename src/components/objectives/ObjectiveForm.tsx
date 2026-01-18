@@ -76,7 +76,7 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
   );
   const orgPeriods = useMemo(
     () => periods.filter((p: Period) =>
-      (!p.orgId || p.orgId === orgId) && (isAdmin || p.shared !== false || p.createdBy === userEmail)
+      (!p.orgId || p.orgId === orgId) && (isAdmin || p.shared !== false || p.createdBy === userEmail) && !p.archived
     ),
     [periods, orgId, userEmail, isAdmin]
   );

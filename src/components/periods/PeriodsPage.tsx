@@ -21,6 +21,7 @@ export function PeriodsPage() {
   const isAdmin = isSuperAdmin || isOrgAdmin;
 
   const periods = useOKRStore((state: OKRStore) => state.periods);
+  const updatePeriod = useOKRStore((state: OKRStore) => state.updatePeriod);
 
   // Filter periods by organization and visibility
   const orgPeriods = useMemo(
@@ -77,6 +78,9 @@ export function PeriodsPage() {
                   <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Duration
                   </th>
+                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Archived
+                  </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -87,7 +91,7 @@ export function PeriodsPage() {
                   const durationDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
 
                   return (
-                    <tr key={period.id} className="hover:bg-gray-50">
+                    <tr key={period.id} className={`hover:bg-gray-50 ${period.archived ? 'opacity-50' : ''}`}>
                       <td className="px-4 py-3 text-sm font-medium text-gray-900">
                         {period.name}
                       </td>
@@ -107,6 +111,19 @@ export function PeriodsPage() {
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-500">
                         {durationDays} days
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        <button
+                          onClick={() => updatePeriod(period.id, { archived: !period.archived })}
+                          className={`px-2 py-1 text-xs rounded ${
+                            period.archived
+                              ? 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                              : 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
+                          }`}
+                          title={period.archived ? 'Unarchive this period' : 'Archive this period'}
+                        >
+                          {period.archived ? 'Unarchive' : 'Archive'}
+                        </button>
                       </td>
                     </tr>
                   );

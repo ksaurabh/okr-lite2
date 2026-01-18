@@ -257,7 +257,7 @@ export function Sidebar({ currentView, onViewChange, collapsed = false, onToggle
 
   const orgPeriods = useMemo(
     () => periods.filter((p: Period) =>
-      (!p.orgId || p.orgId === orgId) && (isAdmin || p.shared !== false || p.createdBy === userEmail)
+      (!p.orgId || p.orgId === orgId) && (isAdmin || p.shared !== false || p.createdBy === userEmail) && !p.archived
     ),
     [periods, orgId, userEmail, isAdmin]
   );
