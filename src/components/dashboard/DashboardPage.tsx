@@ -18,6 +18,7 @@ interface TypesByOwnerStats {
   sagas: number;
   epics: number;
   stories: number;
+  subtasks: number;
   total: number;
 }
 
@@ -133,24 +134,25 @@ function ItemsWithoutNextStepWidget({ orgObjectives, orgUsers }: { orgObjectives
 // Types by Owner widget
 function TypesByOwnerWidget({ orgObjectives, orgUsers }: { orgObjectives: Objective[]; orgUsers: User[] }) {
   const typesByOwner = useMemo(() => {
-    const grouped = new Map<string | undefined, { initiatives: number; sagas: number; epics: number; stories: number }>();
+    const grouped = new Map<string | undefined, { initiatives: number; sagas: number; epics: number; stories: number; subtasks: number }>();
 
     orgObjectives.forEach((obj: Objective) => {
       const key = obj.ownerId;
       if (!grouped.has(key)) {
-        grouped.set(key, { initiatives: 0, sagas: 0, epics: 0, stories: 0 });
+        grouped.set(key, { initiatives: 0, sagas: 0, epics: 0, stories: 0, subtasks: 0 });
       }
       const counts = grouped.get(key)!;
       if (obj.type === 'initiative') counts.initiatives++;
       else if (obj.type === 'saga') counts.sagas++;
       else if (obj.type === 'epic') counts.epics++;
       else if (obj.type === 'story') counts.stories++;
+      else if (obj.type === 'subtask') counts.subtasks++;
     });
 
     const stats: TypesByOwnerStats[] = [];
     grouped.forEach((counts, ownerId) => {
       const owner = orgUsers.find((u: User) => u.id === ownerId);
-      const total = counts.initiatives + counts.sagas + counts.epics + counts.stories;
+      const total = counts.initiatives + counts.sagas + counts.epics + counts.stories + counts.subtasks;
       if (total > 0) {
         stats.push({
           ownerId,
@@ -172,9 +174,10 @@ function TypesByOwnerWidget({ orgObjectives, orgUsers }: { orgObjectives: Object
         sagas: acc.sagas + stat.sagas,
         epics: acc.epics + stat.epics,
         stories: acc.stories + stat.stories,
+        subtasks: acc.subtasks + stat.subtasks,
         total: acc.total + stat.total,
       }),
-      { initiatives: 0, sagas: 0, epics: 0, stories: 0, total: 0 }
+      { initiatives: 0, sagas: 0, epics: 0, stories: 0, subtasks: 0, total: 0 }
     );
   }, [typesByOwner]);
 
@@ -206,6 +209,12 @@ function TypesByOwnerWidget({ orgObjectives, orgUsers }: { orgObjectives: Object
               <th scope="col" className="px-2 py-2 text-right font-medium text-gray-500 uppercase tracking-wider" title="Stories">
                 Story
               </th>
+              <th scope="col" className="px-2 py-2 text-right font-medium text-gray-500 uppercase tracking-wider" title="Subtasks">
+                Sub
+              </th>
+              <th scope="col" className="px-2 py-2 text-right font-medium text-gray-500 uppercase tracking-wider">
+                Total
+              </th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
@@ -226,6 +235,12 @@ function TypesByOwnerWidget({ orgObjectives, orgUsers }: { orgObjectives: Object
                 <td className="px-2 py-2 whitespace-nowrap text-gray-900 text-right">
                   {stat.stories || '-'}
                 </td>
+                <td className="px-2 py-2 whitespace-nowrap text-gray-900 text-right">
+                  {stat.subtasks || '-'}
+                </td>
+                <td className="px-2 py-2 whitespace-nowrap text-gray-900 text-right font-medium">
+                  {stat.total}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -245,6 +260,12 @@ function TypesByOwnerWidget({ orgObjectives, orgUsers }: { orgObjectives: Object
               </td>
               <td className="px-2 py-2 font-medium text-gray-900 text-right">
                 {totals.stories}
+              </td>
+              <td className="px-2 py-2 font-medium text-gray-900 text-right">
+                {totals.subtasks}
+              </td>
+              <td className="px-2 py-2 font-medium text-gray-900 text-right">
+                {totals.total}
               </td>
             </tr>
           </tfoot>
