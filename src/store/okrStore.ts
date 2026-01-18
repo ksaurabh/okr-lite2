@@ -964,7 +964,9 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       });
       if (response.ok) {
         const data = await response.json();
+        console.log('fetchViews response:', data);
         const views = Array.isArray(data.views) ? data.views : [];
+        console.log('Setting savedViews from fetchViews:', views);
         set({ savedViews: views });
 
         // Auto-apply default view if one exists and no view is active
@@ -1018,12 +1020,17 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
 
       if (response.ok) {
         const data = await response.json();
+        console.log('createView response:', data);
         const newViewId = data.view?.id;
+        const newViews = Array.isArray(data.views) ? data.views : [];
+        console.log('Setting savedViews:', newViews, 'activeViewId:', newViewId);
         set({
-          savedViews: Array.isArray(data.views) ? data.views : [],
+          savedViews: newViews,
           activeViewId: newViewId || null,
         });
         return data.view;
+      } else {
+        console.error('Failed to create view, response not ok:', response.status);
       }
     } catch (err) {
       console.error('Failed to create view:', err);
