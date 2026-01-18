@@ -456,20 +456,35 @@ export function ObjectiveTree() {
 
         result = result.filter((obj: Objective) => {
           if (!obj.nextStepDate) return false;
-          const stepDate = new Date(obj.nextStepDate);
+          // Parse date components to create local timezone date (consistent with dashboard)
+          const [year, month, day] = obj.nextStepDate.split('-').map(Number);
+          const stepDate = new Date(year, month - 1, day);
           stepDate.setHours(0, 0, 0, 0);
           const stepMs = stepDate.getTime();
           const diffDays = (stepMs - todayMs) / (1000 * 60 * 60 * 24);
+
+          // For 'past' and 'today', use actual current time comparison
+          if (filterNextStepDate === 'past' || filterNextStepDate === 'today') {
+            const now = Date.now();
+            const twentyFourHoursMs = 24 * 60 * 60 * 1000;
+            // Use end of the next step date for comparison
+            const stepEndMs = stepMs + twentyFourHoursMs;
+            const diffFromNow = stepEndMs - now;
+
+            if (filterNextStepDate === 'past') {
+              // Past: more than 24 hours ago (step date ended before 24h window)
+              return diffFromNow < 0;
+            } else {
+              // Today: within 24 hours (step date overlaps with 24h window)
+              return diffFromNow >= 0 && diffFromNow < twentyFourHoursMs;
+            }
+          }
 
           switch (filterNextStepDate) {
             case 'last_7d':
               return diffDays >= -7 && diffDays < 0;
             case 'last_30d':
               return diffDays >= -30 && diffDays < 0;
-            case 'past':
-              return diffDays < 0;
-            case 'today':
-              return diffDays === 0;
             case 'next_7d':
               return diffDays >= 0 && diffDays <= 7;
             case 'next_30d':

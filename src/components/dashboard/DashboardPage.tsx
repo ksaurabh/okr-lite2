@@ -13,6 +13,7 @@ interface NextStepByOwnerStats {
   total: number;
   notSet: number;
   inPast: number;
+  today: number;
   next7d: number;
   inFuture: number;
 }
@@ -74,17 +75,16 @@ function ItemsByNextStepWidget({ orgObjectives, orgUsers, onCellClick }: ItemsBy
   }, [orgObjectives, selectedType]);
 
   const itemsByNextStep = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const sevenDaysFromNow = new Date(today);
-    sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+    const now = Date.now();
+    const twentyFourHoursMs = 24 * 60 * 60 * 1000;
+    const sevenDaysMs = 7 * twentyFourHoursMs;
 
-    const grouped = new Map<string | undefined, { total: number; notSet: number; inPast: number; next7d: number; inFuture: number }>();
+    const grouped = new Map<string | undefined, { total: number; notSet: number; inPast: number; today: number; next7d: number; inFuture: number }>();
 
     filteredObjectives.forEach((obj: Objective) => {
       const key = obj.ownerId;
       if (!grouped.has(key)) {
-        grouped.set(key, { total: 0, notSet: 0, inPast: 0, next7d: 0, inFuture: 0 });
+        grouped.set(key, { total: 0, notSet: 0, inPast: 0, today: 0, next7d: 0, inFuture: 0 });
       }
       const counts = grouped.get(key)!;
       counts.total++;
@@ -95,10 +95,19 @@ function ItemsByNextStepWidget({ orgObjectives, orgUsers, onCellClick }: ItemsBy
         const [year, month, day] = obj.nextStepDate.split('-').map(Number);
         const stepDate = new Date(year, month - 1, day);
         stepDate.setHours(0, 0, 0, 0);
+        const stepMs = stepDate.getTime();
+        // Use end of the step date (midnight of next day) for comparison
+        const stepEndMs = stepMs + twentyFourHoursMs;
+        const diffFromNow = stepEndMs - now;
 
-        if (stepDate < today) {
+        if (diffFromNow < 0) {
+          // Past: step date ended more than 24 hours ago
           counts.inPast++;
-        } else if (stepDate <= sevenDaysFromNow) {
+        } else if (diffFromNow < twentyFourHoursMs) {
+          // Today: within 24 hours
+          counts.today++;
+        } else if (diffFromNow < sevenDaysMs) {
+          // Next 7 days (excluding today)
           counts.next7d++;
         } else {
           counts.inFuture++;
@@ -126,10 +135,11 @@ function ItemsByNextStepWidget({ orgObjectives, orgUsers, onCellClick }: ItemsBy
         total: acc.total + stat.total,
         notSet: acc.notSet + stat.notSet,
         inPast: acc.inPast + stat.inPast,
+        today: acc.today + stat.today,
         next7d: acc.next7d + stat.next7d,
         inFuture: acc.inFuture + stat.inFuture,
       }),
-      { total: 0, notSet: 0, inPast: 0, next7d: 0, inFuture: 0 }
+      { total: 0, notSet: 0, inPast: 0, today: 0, next7d: 0, inFuture: 0 }
     );
   }, [itemsByNextStep]);
 
@@ -170,6 +180,9 @@ function ItemsByNextStepWidget({ orgObjectives, orgUsers, onCellClick }: ItemsBy
               </th>
               <th scope="col" className="px-2 py-2 text-right font-medium text-gray-500 uppercase tracking-wider" title="In the Past">
                 Past
+              </th>
+              <th scope="col" className="px-2 py-2 text-right font-medium text-gray-500 uppercase tracking-wider" title="Today">
+                Today
               </th>
               <th scope="col" className="px-2 py-2 text-right font-medium text-gray-500 uppercase tracking-wider" title="Next 7 Days">
                 7d
@@ -214,6 +227,16 @@ function ItemsByNextStepWidget({ orgObjectives, orgUsers, onCellClick }: ItemsBy
                   ) : '-'}
                 </td>
                 <td className="px-2 py-2 whitespace-nowrap text-right">
+                  {stat.today ? (
+                    <button
+                      onClick={() => onCellClick(stat.ownerId, 'today', typeFilter)}
+                      className="text-blue-600 hover:text-blue-800 hover:underline"
+                    >
+                      {stat.today}
+                    </button>
+                  ) : '-'}
+                </td>
+                <td className="px-2 py-2 whitespace-nowrap text-right">
                   {stat.next7d ? (
                     <button
                       onClick={() => onCellClick(stat.ownerId, 'next_7d', typeFilter)}
@@ -249,6 +272,9 @@ function ItemsByNextStepWidget({ orgObjectives, orgUsers, onCellClick }: ItemsBy
               </td>
               <td className="px-2 py-2 font-medium text-gray-900 text-right">
                 {totals.inPast}
+              </td>
+              <td className="px-2 py-2 font-medium text-gray-900 text-right">
+                {totals.today}
               </td>
               <td className="px-2 py-2 font-medium text-gray-900 text-right">
                 {totals.next7d}
