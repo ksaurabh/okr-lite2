@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
-import type { Objective, User } from '../../types';
+import type { Objective, User, ObjectiveType } from '../../types';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -9,6 +9,16 @@ interface OwnerStats {
   ownerId: string | undefined;
   ownerName: string;
   count: number;
+}
+
+interface TypesByOwnerStats {
+  ownerId: string | undefined;
+  ownerName: string;
+  initiatives: number;
+  sagas: number;
+  epics: number;
+  stories: number;
+  total: number;
 }
 
 // Widget wrapper component for consistent sizing
@@ -120,6 +130,130 @@ function ItemsWithoutNextStepWidget({ orgObjectives, orgUsers }: { orgObjectives
   );
 }
 
+// Types by Owner widget
+function TypesByOwnerWidget({ orgObjectives, orgUsers }: { orgObjectives: Objective[]; orgUsers: User[] }) {
+  const typesByOwner = useMemo(() => {
+    const grouped = new Map<string | undefined, { initiatives: number; sagas: number; epics: number; stories: number }>();
+
+    orgObjectives.forEach((obj: Objective) => {
+      const key = obj.ownerId;
+      if (!grouped.has(key)) {
+        grouped.set(key, { initiatives: 0, sagas: 0, epics: 0, stories: 0 });
+      }
+      const counts = grouped.get(key)!;
+      if (obj.type === 'initiative') counts.initiatives++;
+      else if (obj.type === 'saga') counts.sagas++;
+      else if (obj.type === 'epic') counts.epics++;
+      else if (obj.type === 'story') counts.stories++;
+    });
+
+    const stats: TypesByOwnerStats[] = [];
+    grouped.forEach((counts, ownerId) => {
+      const owner = orgUsers.find((u: User) => u.id === ownerId);
+      const total = counts.initiatives + counts.sagas + counts.epics + counts.stories;
+      if (total > 0) {
+        stats.push({
+          ownerId,
+          ownerName: owner?.name || (ownerId ? 'Unknown' : 'Unassigned'),
+          ...counts,
+          total,
+        });
+      }
+    });
+
+    stats.sort((a, b) => b.total - a.total);
+    return stats;
+  }, [orgObjectives, orgUsers]);
+
+  const totals = useMemo(() => {
+    return typesByOwner.reduce(
+      (acc, stat) => ({
+        initiatives: acc.initiatives + stat.initiatives,
+        sagas: acc.sagas + stat.sagas,
+        epics: acc.epics + stat.epics,
+        stories: acc.stories + stat.stories,
+        total: acc.total + stat.total,
+      }),
+      { initiatives: 0, sagas: 0, epics: 0, stories: 0, total: 0 }
+    );
+  }, [typesByOwner]);
+
+  return (
+    <DashboardWidget
+      title="Items by Type & Owner"
+      subtitle={`${totals.total} items across ${typesByOwner.length} owners`}
+    >
+      {typesByOwner.length === 0 ? (
+        <div className="p-4 text-center text-gray-500">
+          <p className="text-xs">No items with types assigned</p>
+        </div>
+      ) : (
+        <table className="min-w-full divide-y divide-gray-200 text-xs">
+          <thead className="bg-gray-50 sticky top-0">
+            <tr>
+              <th scope="col" className="px-2 py-2 text-left font-medium text-gray-500 uppercase tracking-wider">
+                Owner
+              </th>
+              <th scope="col" className="px-2 py-2 text-right font-medium text-gray-500 uppercase tracking-wider" title="Initiatives">
+                Init
+              </th>
+              <th scope="col" className="px-2 py-2 text-right font-medium text-gray-500 uppercase tracking-wider" title="Sagas">
+                Saga
+              </th>
+              <th scope="col" className="px-2 py-2 text-right font-medium text-gray-500 uppercase tracking-wider" title="Epics">
+                Epic
+              </th>
+              <th scope="col" className="px-2 py-2 text-right font-medium text-gray-500 uppercase tracking-wider" title="Stories">
+                Story
+              </th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {typesByOwner.map((stat) => (
+              <tr key={stat.ownerId || 'unassigned'} className="hover:bg-gray-50">
+                <td className="px-2 py-2 whitespace-nowrap text-gray-900 truncate max-w-[100px]" title={stat.ownerName}>
+                  {stat.ownerName}
+                </td>
+                <td className="px-2 py-2 whitespace-nowrap text-gray-900 text-right">
+                  {stat.initiatives || '-'}
+                </td>
+                <td className="px-2 py-2 whitespace-nowrap text-gray-900 text-right">
+                  {stat.sagas || '-'}
+                </td>
+                <td className="px-2 py-2 whitespace-nowrap text-gray-900 text-right">
+                  {stat.epics || '-'}
+                </td>
+                <td className="px-2 py-2 whitespace-nowrap text-gray-900 text-right">
+                  {stat.stories || '-'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot className="bg-gray-50 sticky bottom-0">
+            <tr>
+              <td className="px-2 py-2 font-medium text-gray-900">
+                Total
+              </td>
+              <td className="px-2 py-2 font-medium text-gray-900 text-right">
+                {totals.initiatives}
+              </td>
+              <td className="px-2 py-2 font-medium text-gray-900 text-right">
+                {totals.sagas}
+              </td>
+              <td className="px-2 py-2 font-medium text-gray-900 text-right">
+                {totals.epics}
+              </td>
+              <td className="px-2 py-2 font-medium text-gray-900 text-right">
+                {totals.stories}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      )}
+    </DashboardWidget>
+  );
+}
+
 // Empty placeholder widget
 function EmptyWidget() {
   return (
@@ -183,8 +317,8 @@ export function DashboardPage() {
         {/* Cell (1,1) - Items without Next Step by Owner */}
         <ItemsWithoutNextStepWidget orgObjectives={orgObjectives} orgUsers={orgUsers} />
 
-        {/* Cell (1,2) - Empty */}
-        <EmptyWidget />
+        {/* Cell (1,2) - Items by Type & Owner */}
+        <TypesByOwnerWidget orgObjectives={orgObjectives} orgUsers={orgUsers} />
 
         {/* Cell (1,3) - Empty */}
         <EmptyWidget />
