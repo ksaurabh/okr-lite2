@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { useOKRStore, type OKRStore, type ColumnWidths, type ColumnKey, COLUMN_LABELS, DEFAULT_VISIBLE_COLUMNS } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
 import { CompactObjectiveCard } from './CompactObjectiveCard';
-import type { Period, PeriodType, Objective, Team, Tag, User, FilterOperator, ObjectiveType, NextStepDateFilter, ObjectiveLevel, SavedView, WorkflowStatus } from '../../types';
+import type { Period, PeriodType, Objective, Team, Tag, User, FilterOperator, ObjectiveType, NextStepDateFilter, ObjectiveLevel, SavedView, WorkflowStatus, List } from '../../types';
 
 const TYPE_OPTIONS: { value: ObjectiveType; label: string }[] = [
   { value: 'initiative', label: 'Initiative' },
@@ -179,6 +179,9 @@ export function ObjectiveTree() {
   const toggleFilterWorkflowStatus = useOKRStore((state: OKRStore) => state.toggleFilterWorkflowStatus);
   const filterObjectiveId = useOKRStore((state: OKRStore) => state.filterObjectiveId);
   const setFilterObjective = useOKRStore((state: OKRStore) => state.setFilterObjective);
+  const lists = useOKRStore((state: OKRStore) => state.lists);
+  const filterListId = useOKRStore((state: OKRStore) => state.filterListId);
+  const setFilterList = useOKRStore((state: OKRStore) => state.setFilterList);
   const clearAllFilters = useOKRStore((state: OKRStore) => state.clearAllFilters);
   const columnWidths = useOKRStore((state: OKRStore) => state.columnWidths);
   const setColumnWidths = useOKRStore((state: OKRStore) => state.setColumnWidths);
@@ -314,7 +317,7 @@ export function ObjectiveTree() {
     [tags, orgId, userEmail, isAdmin]
   );
 
-  const hasActiveFilters = activePeriodId || filterTagIds.length > 0 || filterTeamIds.length > 0 || filterTypes.length > 0 || filterTypeNotSet || filterOwnerIds.length > 0 || filterAssigneeIds.length > 0 || filterAssigneeNotSet || filterNextStepDate || filterLevels.length > 0 || filterWorkflowStatuses.length > 0 || filterObjectiveId || searchQuery.trim();
+  const hasActiveFilters = activePeriodId || filterTagIds.length > 0 || filterTeamIds.length > 0 || filterTypes.length > 0 || filterTypeNotSet || filterOwnerIds.length > 0 || filterAssigneeIds.length > 0 || filterAssigneeNotSet || filterNextStepDate || filterLevels.length > 0 || filterWorkflowStatuses.length > 0 || filterObjectiveId || filterListId || searchQuery.trim();
 
   // Get all ancestor period IDs for a given period (including the period itself)
   const getAncestorPeriodIds = useMemo(() => {
@@ -546,6 +549,15 @@ export function ObjectiveTree() {
       });
     }
 
+    // Filter by list membership
+    if (filterListId) {
+      const selectedList = lists.find(l => l.id === filterListId);
+      if (selectedList) {
+        const listObjectiveIds = new Set(selectedList.items.map(item => item.objectiveId));
+        result = result.filter((obj: Objective) => listObjectiveIds.has(obj.id));
+      }
+    }
+
     // Optionally include children of matching objectives
     if (showChildren && result.length > 0) {
       const matchingIds = new Set(result.map((obj: Objective) => obj.id));
@@ -579,7 +591,7 @@ export function ObjectiveTree() {
     }
 
     return result;
-  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterTypeNotSet, filterLevels, filterWorkflowStatuses, filterObjectiveId, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterAssigneeNotSet, filterNextStepDate, searchQuery, includeAncestorPeriods, includeChildPeriods, includeChildTeams, showChildren, directChildrenOnly, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds, getDescendantObjectiveIds]);
+  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterTypeNotSet, filterLevels, filterWorkflowStatuses, filterObjectiveId, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterAssigneeNotSet, filterNextStepDate, filterListId, lists, searchQuery, includeAncestorPeriods, includeChildPeriods, includeChildTeams, showChildren, directChildrenOnly, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds, getDescendantObjectiveIds]);
 
   // Get IDs of all filtered objectives for quick lookup
   const filteredObjectiveIds = useMemo(
@@ -1379,6 +1391,38 @@ export function ObjectiveTree() {
                   )}
                 </div>
               </div>
+
+              {/* List Filter */}
+              {lists.length > 0 && (
+                <div className="flex items-center gap-3">
+                  <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0">List</label>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <select
+                      value={filterListId || ''}
+                      onChange={(e) => setFilterList(e.target.value || null)}
+                      className="px-2 py-1 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">All</option>
+                      {lists.map((list: List) => (
+                        <option key={list.id} value={list.id}>
+                          {list.name} ({list.items.length})
+                        </option>
+                      ))}
+                    </select>
+                    {filterListId && (
+                      <button
+                        onClick={() => setFilterList(null)}
+                        className="text-gray-400 hover:text-gray-600"
+                        title="Clear filter"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Display Options */}

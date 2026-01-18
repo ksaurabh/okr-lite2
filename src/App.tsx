@@ -7,13 +7,14 @@ import { ChecklistPage } from './components/checklist';
 import { ProgressPage } from './components/progress';
 import { PeriodsPage } from './components/periods';
 import { UpdatesPage } from './components/updates';
+import { ListsPage } from './components/lists';
 import { AdminPage } from './components/admin';
 import { SettingsPage } from './components/settings';
 import { LoginPage, UnauthorizedPage, AuthCallback, AdminInviteAccept } from './components/auth';
 import { Modal } from './components/common';
 import { useOKRStore } from './store/okrStore';
 
-type View = 'dashboard' | 'objectives' | 'checklist' | 'progress' | 'updates' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin';
+type View = 'dashboard' | 'objectives' | 'checklist' | 'progress' | 'updates' | 'lists' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin';
 
 function AppContent() {
   const [currentView, setCurrentView] = useState<View>('dashboard');
@@ -22,16 +23,18 @@ function AppContent() {
   const fetchData = useOKRStore((state) => state.fetchData);
   const fetchUserPreferences = useOKRStore((state) => state.fetchUserPreferences);
   const fetchViews = useOKRStore((state) => state.fetchViews);
+  const fetchLists = useOKRStore((state) => state.fetchLists);
   const isDataLoading = useOKRStore((state) => state.isLoading);
 
-  // Fetch OKR data, user preferences, and views when authenticated
+  // Fetch OKR data, user preferences, views, and lists when authenticated
   useEffect(() => {
     if (isAuthenticated && isAllowed) {
       fetchData();
       fetchUserPreferences();
       fetchViews();
+      fetchLists();
     }
-  }, [isAuthenticated, isAllowed, fetchData, fetchUserPreferences, fetchViews]);
+  }, [isAuthenticated, isAllowed, fetchData, fetchUserPreferences, fetchViews, fetchLists]);
 
   // Handle OAuth callback
   if (window.location.pathname === '/auth/callback') {
@@ -77,6 +80,7 @@ function AppContent() {
       {currentView === 'checklist' && <ChecklistPage />}
       {currentView === 'progress' && <ProgressPage />}
       {currentView === 'updates' && <UpdatesPage />}
+      {currentView === 'lists' && <ListsPage />}
       {currentView === 'teams' && (
         <div className="text-center py-12 text-gray-500">
           <p>Manage teams from the sidebar</p>

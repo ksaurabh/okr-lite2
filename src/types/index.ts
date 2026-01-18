@@ -127,9 +127,13 @@ export interface OKRState {
   filterOwnerOperator: FilterOperator;
   filterAssigneeIds: string[];
   filterAssigneeOperator: FilterOperator;
+  filterAssigneeNotSet: boolean;
   filterNextStepDate: NextStepDateFilter | null;
   filterLevels: ObjectiveLevel[];
   filterObjectiveId: string | null;
+  filterWorkflowStatuses: WorkflowStatus[];
+  filterListId: string | null;
+  filterListShowChildren: boolean;
 }
 
 // Organization types
@@ -190,4 +194,18 @@ export interface SavedView {
   filters: SavedViewFilters;
   visibleColumns: string[];
   columnWidths: Record<string, number>;
+}
+
+// List types
+export interface ListItem {
+  objectiveId: string;
+  order: number;
+}
+
+export interface List {
+  id: string;
+  name: string;
+  items: ListItem[];
+  createdAt: string;
+  updatedAt: string;
 }

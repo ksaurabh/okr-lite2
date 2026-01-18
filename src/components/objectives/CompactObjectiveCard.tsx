@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import type { Objective, ObjectiveLevel, ObjectiveType, WorkflowStatus, Period, User, Team, Tag } from '../../types';
+import type { Objective, ObjectiveLevel, ObjectiveType, WorkflowStatus, Period, User, Team, Tag, List } from '../../types';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
 import { SlidePane } from '../common/SlidePane';
@@ -85,9 +85,16 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   const [parentSearch, setParentSearch] = useState('');
   const [editingTags, setEditingTags] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [showListDropdown, setShowListDropdown] = useState(false);
+  const [isCreatingList, setIsCreatingList] = useState(false);
+  const [newListName, setNewListName] = useState('');
+  const newListInputRef = useRef<HTMLInputElement>(null);
   const tagsDropdownRef = useRef<HTMLDivElement>(null);
+  const listDropdownRef = useRef<HTMLDivElement>(null);
   const tagsButtonRef = useRef<HTMLButtonElement>(null);
   const [tagsDropdownPosition, setTagsDropdownPosition] = useState<{ top: number; left: number } | null>(null);
+  const [listDropdownPosition, setListDropdownPosition] = useState<{ top: number; left: number } | null>(null);
+  const listButtonRef = useRef<HTMLButtonElement>(null);
   const quickAddInputRef = useRef<HTMLInputElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const levelSelectRef = useRef<HTMLSelectElement>(null);
@@ -123,6 +130,9 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   const columnWidths = useOKRStore((state: OKRStore) => state.columnWidths);
   const visibleColumns = useOKRStore((state: OKRStore) => state.visibleColumns);
   const setFilterObjective = useOKRStore((state: OKRStore) => state.setFilterObjective);
+  const lists = useOKRStore((state: OKRStore) => state.lists);
+  const addItemToList = useOKRStore((state: OKRStore) => state.addItemToList);
+  const createList = useOKRStore((state: OKRStore) => state.createList);
 
   const { user, isSuperAdmin, isOrgAdmin, organization } = useAuth();
   const userEmail = user?.email || '';
@@ -520,6 +530,40 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [editingTags]);
 
+  // List dropdown positioning
+  useEffect(() => {
+    if (showListDropdown && listButtonRef.current) {
+      const rect = listButtonRef.current.getBoundingClientRect();
+      setListDropdownPosition({ top: rect.bottom + 2, left: rect.left });
+    } else {
+      setListDropdownPosition(null);
+    }
+  }, [showListDropdown]);
+
+  // Close list dropdown when clicking outside
+  useEffect(() => {
+    if (!showListDropdown) return;
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (listDropdownRef.current && !listDropdownRef.current.contains(e.target as Node) &&
+          listButtonRef.current && !listButtonRef.current.contains(e.target as Node)) {
+        setShowListDropdown(false);
+        setIsCreatingList(false);
+        setNewListName('');
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showListDropdown]);
+
+  // Focus new list input when creating
+  useEffect(() => {
+    if (isCreatingList && newListInputRef.current) {
+      newListInputRef.current.focus();
+    }
+  }, [isCreatingList]);
+
   const handleTitleSave = async () => {
     setEditingTitle(false);
     const trimmedTitle = editTitleValue.trim();
@@ -678,6 +722,24 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   const handleRemoveTag = async (tagId: string) => {
     const newTagIds = (objective.tagIds || []).filter(id => id !== tagId);
     await updateObjective(objective.id, { tagIds: newTagIds }, userEmail);
+  };
+
+  const handleAddToList = async (listId: string) => {
+    await addItemToList(listId, objective.id);
+    setShowListDropdown(false);
+    setIsCreatingList(false);
+    setNewListName('');
+  };
+
+  const handleCreateListAndAdd = async () => {
+    if (!newListName.trim()) return;
+    const newList = await createList(newListName.trim());
+    if (newList) {
+      await addItemToList(newList.id, objective.id);
+    }
+    setShowListDropdown(false);
+    setIsCreatingList(false);
+    setNewListName('');
   };
 
   const handleQuickAdd = async () => {
@@ -851,6 +913,93 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
               <circle cx="12" cy="12" r="5" fill="currentColor" />
             </svg>
           </button>
+
+          {/* Add to list button */}
+          <div className="relative">
+            <button
+              ref={listButtonRef}
+              onClick={() => setShowListDropdown(!showListDropdown)}
+              className={`p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 ${showListDropdown ? 'text-blue-600 opacity-100' : 'text-gray-400 hover:text-gray-600'}`}
+              title="Add to list"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+              </svg>
+            </button>
+            {showListDropdown && listDropdownPosition && (
+              <div
+                ref={listDropdownRef}
+                className="fixed z-[100] bg-white border border-gray-300 rounded shadow-lg min-w-[150px]"
+                style={{ top: listDropdownPosition.top, left: listDropdownPosition.left }}
+              >
+                <div className="py-1">
+                  <div className="px-2 py-1 text-xs font-medium text-gray-500 flex items-center justify-between">
+                    <span>Add to list</span>
+                    {!isCreatingList && (
+                      <button
+                        onClick={() => setIsCreatingList(true)}
+                        className="p-0.5 text-blue-600 hover:text-blue-800 rounded hover:bg-blue-50"
+                        title="Create new list"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                  {isCreatingList && (
+                    <div className="px-2 py-1 border-b border-gray-200 mb-1">
+                      <input
+                        ref={newListInputRef}
+                        type="text"
+                        value={newListName}
+                        onChange={(e) => setNewListName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleCreateListAndAdd();
+                          } else if (e.key === 'Escape') {
+                            setIsCreatingList(false);
+                            setNewListName('');
+                          }
+                        }}
+                        placeholder="List name..."
+                        className="w-full text-xs px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      />
+                      <div className="flex justify-end gap-1 mt-1">
+                        <button
+                          onClick={() => {
+                            setIsCreatingList(false);
+                            setNewListName('');
+                          }}
+                          className="px-2 py-0.5 text-xs text-gray-500 hover:text-gray-700"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleCreateListAndAdd}
+                          disabled={!newListName.trim()}
+                          className="px-2 py-0.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                        >
+                          Create
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {lists.map((list: List) => (
+                    <button
+                      key={list.id}
+                      onClick={() => handleAddToList(list.id)}
+                      className="w-full text-left text-xs px-2 py-1.5 hover:bg-gray-100 text-gray-700"
+                    >
+                      {list.name}
+                      <span className="text-gray-400 ml-1">({list.items.length})</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Edit button - inline with title */}
           {canModify && (

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Objective, KeyResult, Team, Period, Tag, OKRState, ObjectiveHistoryEntry, FieldChange, FilterOperator, ObjectiveType, NextStepDateFilter, ObjectiveLevel, SavedView, SavedViewFilters, WorkflowStatus } from '../types';
+import type { Objective, KeyResult, Team, Period, Tag, OKRState, ObjectiveHistoryEntry, FieldChange, FilterOperator, ObjectiveType, NextStepDateFilter, ObjectiveLevel, SavedView, SavedViewFilters, WorkflowStatus, List } from '../types';
 import { api } from '../utils/api';
 import { generateId, calculateObjectiveProgress, determineStatus, calculateKeyResultProgress } from '../utils/calculations';
 
@@ -11,7 +11,7 @@ const FILTER_STORAGE_KEY = 'okr-lite-filters';
 function loadFilterState() {
   try {
     const data = localStorage.getItem(FILTER_STORAGE_KEY);
-    if (!data) return { activePeriodId: null, filterTagIds: [], filterTeamIds: [], filterTypes: [] as ObjectiveType[], filterTypeNotSet: false, filterOwnerIds: [], filterOwnerOperator: 'equals' as FilterOperator, filterAssigneeIds: [], filterAssigneeOperator: 'equals' as FilterOperator, filterAssigneeNotSet: false, filterNextStepDate: null as NextStepDateFilter | null, filterLevels: [] as ObjectiveLevel[], filterObjectiveId: null as string | null, filterWorkflowStatuses: [] as WorkflowStatus[] };
+    if (!data) return { activePeriodId: null, filterTagIds: [], filterTeamIds: [], filterTypes: [] as ObjectiveType[], filterTypeNotSet: false, filterOwnerIds: [], filterOwnerOperator: 'equals' as FilterOperator, filterAssigneeIds: [], filterAssigneeOperator: 'equals' as FilterOperator, filterAssigneeNotSet: false, filterNextStepDate: null as NextStepDateFilter | null, filterLevels: [] as ObjectiveLevel[], filterObjectiveId: null as string | null, filterWorkflowStatuses: [] as WorkflowStatus[], filterListId: null as string | null, filterListShowChildren: false };
     const parsed = JSON.parse(data);
     return {
       activePeriodId: parsed.activePeriodId || null,
@@ -28,9 +28,11 @@ function loadFilterState() {
       filterLevels: (parsed.filterLevels || []) as ObjectiveLevel[],
       filterObjectiveId: (parsed.filterObjectiveId || null) as string | null,
       filterWorkflowStatuses: (parsed.filterWorkflowStatuses || []) as WorkflowStatus[],
+      filterListId: (parsed.filterListId || null) as string | null,
+      filterListShowChildren: parsed.filterListShowChildren || false,
     };
   } catch {
-    return { activePeriodId: null, filterTagIds: [], filterTeamIds: [], filterTypes: [] as ObjectiveType[], filterTypeNotSet: false, filterOwnerIds: [], filterOwnerOperator: 'equals' as FilterOperator, filterAssigneeIds: [], filterAssigneeOperator: 'equals' as FilterOperator, filterAssigneeNotSet: false, filterNextStepDate: null as NextStepDateFilter | null, filterLevels: [] as ObjectiveLevel[], filterObjectiveId: null as string | null, filterWorkflowStatuses: [] as WorkflowStatus[] };
+    return { activePeriodId: null, filterTagIds: [], filterTeamIds: [], filterTypes: [] as ObjectiveType[], filterTypeNotSet: false, filterOwnerIds: [], filterOwnerOperator: 'equals' as FilterOperator, filterAssigneeIds: [], filterAssigneeOperator: 'equals' as FilterOperator, filterAssigneeNotSet: false, filterNextStepDate: null as NextStepDateFilter | null, filterLevels: [] as ObjectiveLevel[], filterObjectiveId: null as string | null, filterWorkflowStatuses: [] as WorkflowStatus[], filterListId: null as string | null, filterListShowChildren: false };
   }
 }
 
@@ -49,6 +51,8 @@ interface FilterState {
   filterLevels: ObjectiveLevel[];
   filterObjectiveId: string | null;
   filterWorkflowStatuses: WorkflowStatus[];
+  filterListId: string | null;
+  filterListShowChildren: boolean;
 }
 
 function saveFilterState(state: FilterState) {
@@ -119,6 +123,10 @@ interface OKRActions {
   setFilterObjective: (objectiveId: string | null) => void;
   filterWorkflowStatuses: WorkflowStatus[];
   toggleFilterWorkflowStatus: (status: WorkflowStatus) => void;
+  filterListId: string | null;
+  filterListShowChildren: boolean;
+  setFilterList: (listId: string | null) => void;
+  toggleFilterListShowChildren: () => void;
   clearAllFilters: () => void;
 
   // Allowed Domains (legacy - kept for compatibility)
@@ -153,6 +161,16 @@ interface OKRActions {
   setDefaultView: (viewId: string) => Promise<void>;
   clearActiveView: () => void;
   renameView: (viewId: string, newName: string) => Promise<void>;
+
+  // Lists
+  lists: List[];
+  fetchLists: () => Promise<void>;
+  createList: (name: string) => Promise<List | null>;
+  deleteList: (listId: string) => Promise<void>;
+  renameList: (listId: string, newName: string) => Promise<void>;
+  addItemToList: (listId: string, objectiveId: string) => Promise<void>;
+  removeItemFromList: (listId: string, objectiveId: string) => Promise<void>;
+  reorderListItems: (listId: string, items: { objectiveId: string; order: number }[]) => Promise<void>;
 }
 
 export interface ColumnWidths {
@@ -297,6 +315,8 @@ const defaultState: OKRState = {
   filterLevels: [] as ObjectiveLevel[],
   filterObjectiveId: null,
   filterWorkflowStatuses: [] as WorkflowStatus[],
+  filterListId: null,
+  filterListShowChildren: false,
 };
 
 export const useOKRStore = create<OKRStore>((set, get) => ({
@@ -309,6 +329,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
   visibleColumns: DEFAULT_VISIBLE_COLUMNS,
   savedViews: [],
   activeViewId: null,
+  lists: [],
 
   fetchData: async () => {
     set({ isLoading: true, error: null });
@@ -797,14 +818,29 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       const filterWorkflowStatuses = state.filterWorkflowStatuses.includes(status)
         ? state.filterWorkflowStatuses.filter((s: WorkflowStatus) => s !== status)
         : [...state.filterWorkflowStatuses, status];
-      saveFilterState({ activePeriodId: state.activePeriodId, filterTagIds: state.filterTagIds, filterTeamIds: state.filterTeamIds, filterTypes: state.filterTypes, filterTypeNotSet: state.filterTypeNotSet, filterOwnerIds: state.filterOwnerIds, filterOwnerOperator: state.filterOwnerOperator, filterAssigneeIds: state.filterAssigneeIds, filterAssigneeOperator: state.filterAssigneeOperator, filterAssigneeNotSet: state.filterAssigneeNotSet, filterNextStepDate: state.filterNextStepDate, filterLevels: state.filterLevels, filterObjectiveId: state.filterObjectiveId, filterWorkflowStatuses });
+      saveFilterState({ activePeriodId: state.activePeriodId, filterTagIds: state.filterTagIds, filterTeamIds: state.filterTeamIds, filterTypes: state.filterTypes, filterTypeNotSet: state.filterTypeNotSet, filterOwnerIds: state.filterOwnerIds, filterOwnerOperator: state.filterOwnerOperator, filterAssigneeIds: state.filterAssigneeIds, filterAssigneeOperator: state.filterAssigneeOperator, filterAssigneeNotSet: state.filterAssigneeNotSet, filterNextStepDate: state.filterNextStepDate, filterLevels: state.filterLevels, filterObjectiveId: state.filterObjectiveId, filterWorkflowStatuses, filterListId: state.filterListId, filterListShowChildren: state.filterListShowChildren });
       return { ...state, filterWorkflowStatuses };
+    });
+  },
+
+  setFilterList: (listId: string | null) => {
+    set((state: OKRStore) => {
+      saveFilterState({ activePeriodId: state.activePeriodId, filterTagIds: state.filterTagIds, filterTeamIds: state.filterTeamIds, filterTypes: state.filterTypes, filterTypeNotSet: state.filterTypeNotSet, filterOwnerIds: state.filterOwnerIds, filterOwnerOperator: state.filterOwnerOperator, filterAssigneeIds: state.filterAssigneeIds, filterAssigneeOperator: state.filterAssigneeOperator, filterAssigneeNotSet: state.filterAssigneeNotSet, filterNextStepDate: state.filterNextStepDate, filterLevels: state.filterLevels, filterObjectiveId: state.filterObjectiveId, filterWorkflowStatuses: state.filterWorkflowStatuses, filterListId: listId, filterListShowChildren: state.filterListShowChildren });
+      return { ...state, filterListId: listId };
+    });
+  },
+
+  toggleFilterListShowChildren: () => {
+    set((state: OKRStore) => {
+      const filterListShowChildren = !state.filterListShowChildren;
+      saveFilterState({ activePeriodId: state.activePeriodId, filterTagIds: state.filterTagIds, filterTeamIds: state.filterTeamIds, filterTypes: state.filterTypes, filterTypeNotSet: state.filterTypeNotSet, filterOwnerIds: state.filterOwnerIds, filterOwnerOperator: state.filterOwnerOperator, filterAssigneeIds: state.filterAssigneeIds, filterAssigneeOperator: state.filterAssigneeOperator, filterAssigneeNotSet: state.filterAssigneeNotSet, filterNextStepDate: state.filterNextStepDate, filterLevels: state.filterLevels, filterObjectiveId: state.filterObjectiveId, filterWorkflowStatuses: state.filterWorkflowStatuses, filterListId: state.filterListId, filterListShowChildren });
+      return { ...state, filterListShowChildren };
     });
   },
 
   clearAllFilters: () => {
     set((state: OKRStore) => {
-      saveFilterState({ activePeriodId: null, filterTagIds: [], filterTeamIds: [], filterTypes: [], filterTypeNotSet: false, filterOwnerIds: [], filterOwnerOperator: 'equals', filterAssigneeIds: [], filterAssigneeOperator: 'equals', filterAssigneeNotSet: false, filterNextStepDate: null, filterLevels: [], filterObjectiveId: null, filterWorkflowStatuses: [] });
+      saveFilterState({ activePeriodId: null, filterTagIds: [], filterTeamIds: [], filterTypes: [], filterTypeNotSet: false, filterOwnerIds: [], filterOwnerOperator: 'equals', filterAssigneeIds: [], filterAssigneeOperator: 'equals', filterAssigneeNotSet: false, filterNextStepDate: null, filterLevels: [], filterObjectiveId: null, filterWorkflowStatuses: [], filterListId: null, filterListShowChildren: false });
       return {
         ...state,
         activePeriodId: null,
@@ -821,6 +857,8 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
         filterLevels: [],
         filterObjectiveId: null,
         filterWorkflowStatuses: [],
+        filterListId: null,
+        filterListShowChildren: false,
       };
     });
   },
@@ -1210,6 +1248,135 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       }
     } catch (err) {
       console.error('Failed to rename view:', err);
+    }
+  },
+
+  // Lists
+  fetchLists: async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/users/me/lists`, {
+        credentials: 'include',
+      });
+      if (response.ok) {
+        const data = await response.json();
+        set({ lists: data.lists || [] });
+      }
+    } catch (err) {
+      console.error('Failed to fetch lists:', err);
+    }
+  },
+
+  createList: async (name: string) => {
+    try {
+      const response = await fetch(`${API_URL}/api/users/me/lists`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        set({ lists: data.lists });
+        return data.list;
+      }
+    } catch (err) {
+      console.error('Failed to create list:', err);
+    }
+    return null;
+  },
+
+  deleteList: async (listId: string) => {
+    try {
+      const response = await fetch(`${API_URL}/api/users/me/lists/${listId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        set({ lists: data.lists });
+      }
+    } catch (err) {
+      console.error('Failed to delete list:', err);
+    }
+  },
+
+  renameList: async (listId: string, newName: string) => {
+    try {
+      const response = await fetch(`${API_URL}/api/users/me/lists/${listId}`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name: newName }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        set({ lists: data.lists });
+      }
+    } catch (err) {
+      console.error('Failed to rename list:', err);
+    }
+  },
+
+  addItemToList: async (listId: string, objectiveId: string) => {
+    try {
+      const response = await fetch(`${API_URL}/api/users/me/lists/${listId}/items`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ objectiveId }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        set({ lists: data.lists });
+      }
+    } catch (err) {
+      console.error('Failed to add item to list:', err);
+    }
+  },
+
+  removeItemFromList: async (listId: string, objectiveId: string) => {
+    try {
+      const response = await fetch(`${API_URL}/api/users/me/lists/${listId}/items/${objectiveId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        set({ lists: data.lists });
+      }
+    } catch (err) {
+      console.error('Failed to remove item from list:', err);
+    }
+  },
+
+  reorderListItems: async (listId: string, items: { objectiveId: string; order: number }[]) => {
+    try {
+      const response = await fetch(`${API_URL}/api/users/me/lists/${listId}/reorder`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ items }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        set({ lists: data.lists });
+      }
+    } catch (err) {
+      console.error('Failed to reorder list items:', err);
     }
   },
 }));

@@ -230,6 +230,30 @@ function generateViewId() {
   return `view-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 }
 
+// Helper functions for user lists
+function getUserLists(email) {
+  const users = getUsers();
+  const user = users.find(u => u.email === email);
+  return user?.lists || [];
+}
+
+function saveUserLists(email, lists) {
+  const users = getUsers();
+  const userIndex = users.findIndex(u => u.email === email);
+
+  if (userIndex === -1) {
+    return null;
+  }
+
+  users[userIndex].lists = lists;
+  saveUsers(users);
+  return users[userIndex].lists;
+}
+
+function generateListId() {
+  return `list-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+}
+
 // Helper functions for OKR data
 function getOKRData() {
   try {
@@ -842,6 +866,167 @@ app.put('/api/users/me/views/:viewId/default', requireAuth, (req, res) => {
 
   const savedViews = saveUserViews(req.user.email, views);
   res.json({ view: views[viewIndex], views: savedViews });
+});
+
+// ============ Lists API Routes ============
+
+// Get all lists for the current user
+app.get('/api/users/me/lists', requireAuth, (req, res) => {
+  const lists = getUserLists(req.user.email);
+  res.json({ lists });
+});
+
+// Create a new list
+app.post('/api/users/me/lists', requireAuth, (req, res) => {
+  const { name } = req.body;
+
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: 'List name is required' });
+  }
+
+  const now = new Date().toISOString();
+  const newList = {
+    id: generateListId(),
+    name: name.trim(),
+    items: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const lists = getUserLists(req.user.email);
+  lists.push(newList);
+  const savedLists = saveUserLists(req.user.email, lists);
+
+  res.json({ list: newList, lists: savedLists });
+});
+
+// Update a list (rename)
+app.put('/api/users/me/lists/:listId', requireAuth, (req, res) => {
+  const { listId } = req.params;
+  const { name } = req.body;
+
+  const lists = getUserLists(req.user.email);
+  const listIndex = lists.findIndex(l => l.id === listId);
+
+  if (listIndex === -1) {
+    return res.status(404).json({ error: 'List not found' });
+  }
+
+  if (name && name.trim()) {
+    lists[listIndex].name = name.trim();
+  }
+  lists[listIndex].updatedAt = new Date().toISOString();
+
+  const savedLists = saveUserLists(req.user.email, lists);
+  res.json({ list: lists[listIndex], lists: savedLists });
+});
+
+// Delete a list
+app.delete('/api/users/me/lists/:listId', requireAuth, (req, res) => {
+  const { listId } = req.params;
+
+  const lists = getUserLists(req.user.email);
+  const listIndex = lists.findIndex(l => l.id === listId);
+
+  if (listIndex === -1) {
+    return res.status(404).json({ error: 'List not found' });
+  }
+
+  lists.splice(listIndex, 1);
+  const savedLists = saveUserLists(req.user.email, lists);
+
+  res.json({ lists: savedLists });
+});
+
+// Add an item to a list
+app.post('/api/users/me/lists/:listId/items', requireAuth, (req, res) => {
+  const { listId } = req.params;
+  const { objectiveId } = req.body;
+
+  if (!objectiveId) {
+    return res.status(400).json({ error: 'objectiveId is required' });
+  }
+
+  const lists = getUserLists(req.user.email);
+  const listIndex = lists.findIndex(l => l.id === listId);
+
+  if (listIndex === -1) {
+    return res.status(404).json({ error: 'List not found' });
+  }
+
+  // Check if item already exists in list
+  if (lists[listIndex].items.some(item => item.objectiveId === objectiveId)) {
+    return res.status(409).json({ error: 'Item already exists in list' });
+  }
+
+  // Add item with order at the end
+  const maxOrder = lists[listIndex].items.length > 0
+    ? Math.max(...lists[listIndex].items.map(i => i.order))
+    : -1;
+
+  lists[listIndex].items.push({
+    objectiveId,
+    order: maxOrder + 1,
+  });
+  lists[listIndex].updatedAt = new Date().toISOString();
+
+  const savedLists = saveUserLists(req.user.email, lists);
+  res.json({ list: lists[listIndex], lists: savedLists });
+});
+
+// Remove an item from a list
+app.delete('/api/users/me/lists/:listId/items/:objectiveId', requireAuth, (req, res) => {
+  const { listId, objectiveId } = req.params;
+
+  const lists = getUserLists(req.user.email);
+  const listIndex = lists.findIndex(l => l.id === listId);
+
+  if (listIndex === -1) {
+    return res.status(404).json({ error: 'List not found' });
+  }
+
+  const itemIndex = lists[listIndex].items.findIndex(i => i.objectiveId === objectiveId);
+  if (itemIndex === -1) {
+    return res.status(404).json({ error: 'Item not found in list' });
+  }
+
+  lists[listIndex].items.splice(itemIndex, 1);
+  lists[listIndex].updatedAt = new Date().toISOString();
+
+  const savedLists = saveUserLists(req.user.email, lists);
+  res.json({ list: lists[listIndex], lists: savedLists });
+});
+
+// Reorder items in a list
+app.put('/api/users/me/lists/:listId/reorder', requireAuth, (req, res) => {
+  const { listId } = req.params;
+  const { items } = req.body; // Array of { objectiveId, order }
+
+  if (!Array.isArray(items)) {
+    return res.status(400).json({ error: 'items array is required' });
+  }
+
+  const lists = getUserLists(req.user.email);
+  const listIndex = lists.findIndex(l => l.id === listId);
+
+  if (listIndex === -1) {
+    return res.status(404).json({ error: 'List not found' });
+  }
+
+  // Update order for each item
+  items.forEach(({ objectiveId, order }) => {
+    const item = lists[listIndex].items.find(i => i.objectiveId === objectiveId);
+    if (item) {
+      item.order = order;
+    }
+  });
+
+  // Sort by order
+  lists[listIndex].items.sort((a, b) => a.order - b.order);
+  lists[listIndex].updatedAt = new Date().toISOString();
+
+  const savedLists = saveUserLists(req.user.email, lists);
+  res.json({ list: lists[listIndex], lists: savedLists });
 });
 
 app.post('/api/users', requireOrgAdminOrSuperAdmin, (req, res) => {
