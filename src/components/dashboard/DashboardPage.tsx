@@ -29,12 +29,17 @@ interface TypesByOwnerStats {
 }
 
 // Widget wrapper component for consistent sizing
-function DashboardWidget({ children, title, subtitle }: { children: React.ReactNode; title: string; subtitle?: string }) {
+function DashboardWidget({ children, title, subtitle, headerAction }: { children: React.ReactNode; title: string; subtitle?: string; headerAction?: React.ReactNode }) {
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 h-full flex flex-col overflow-hidden">
       <div className="p-3 border-b border-gray-200 flex-shrink-0">
-        <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
-        {subtitle && <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>}
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
+            {subtitle && <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>}
+          </div>
+          {headerAction && <div className="flex-shrink-0">{headerAction}</div>}
+        </div>
       </div>
       <div className="flex-1 overflow-auto">
         {children}
@@ -43,14 +48,31 @@ function DashboardWidget({ children, title, subtitle }: { children: React.ReactN
   );
 }
 
+// Type filter options
+const TYPE_OPTIONS: { value: ObjectiveType | 'all'; label: string }[] = [
+  { value: 'all', label: 'All Types' },
+  { value: 'initiative', label: 'Initiatives' },
+  { value: 'saga', label: 'Sagas' },
+  { value: 'epic', label: 'Epics' },
+  { value: 'story', label: 'Stories' },
+  { value: 'subtask', label: 'Subtasks' },
+];
+
 // Items by Next Step widget
 interface ItemsByNextStepWidgetProps {
   orgObjectives: Objective[];
   orgUsers: User[];
-  onCellClick: (ownerId: string | undefined, nextStepFilter: NextStepDateFilter | null) => void;
+  onCellClick: (ownerId: string | undefined, nextStepFilter: NextStepDateFilter | null, typeFilter: ObjectiveType | null) => void;
 }
 
 function ItemsByNextStepWidget({ orgObjectives, orgUsers, onCellClick }: ItemsByNextStepWidgetProps) {
+  const [selectedType, setSelectedType] = useState<ObjectiveType | 'all'>('all');
+
+  const filteredObjectives = useMemo(() => {
+    if (selectedType === 'all') return orgObjectives;
+    return orgObjectives.filter(obj => obj.type === selectedType);
+  }, [orgObjectives, selectedType]);
+
   const itemsByNextStep = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -59,7 +81,7 @@ function ItemsByNextStepWidget({ orgObjectives, orgUsers, onCellClick }: ItemsBy
 
     const grouped = new Map<string | undefined, { total: number; notSet: number; inPast: number; next7d: number; inFuture: number }>();
 
-    orgObjectives.forEach((obj: Objective) => {
+    filteredObjectives.forEach((obj: Objective) => {
       const key = obj.ownerId;
       if (!grouped.has(key)) {
         grouped.set(key, { total: 0, notSet: 0, inPast: 0, next7d: 0, inFuture: 0 });
@@ -96,7 +118,7 @@ function ItemsByNextStepWidget({ orgObjectives, orgUsers, onCellClick }: ItemsBy
 
     stats.sort((a, b) => b.total - a.total);
     return stats;
-  }, [orgObjectives, orgUsers]);
+  }, [filteredObjectives, orgUsers]);
 
   const totals = useMemo(() => {
     return itemsByNextStep.reduce(
@@ -111,10 +133,23 @@ function ItemsByNextStepWidget({ orgObjectives, orgUsers, onCellClick }: ItemsBy
     );
   }, [itemsByNextStep]);
 
+  const typeFilter = selectedType === 'all' ? null : selectedType;
+
   return (
     <DashboardWidget
       title="Items by Next Step"
       subtitle={`${totals.total} items across ${itemsByNextStep.length} owners`}
+      headerAction={
+        <select
+          value={selectedType}
+          onChange={(e) => setSelectedType(e.target.value as ObjectiveType | 'all')}
+          className="text-xs border border-gray-300 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+        >
+          {TYPE_OPTIONS.map(opt => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+      }
     >
       {itemsByNextStep.length === 0 ? (
         <div className="p-4 text-center text-gray-500">
@@ -152,7 +187,7 @@ function ItemsByNextStepWidget({ orgObjectives, orgUsers, onCellClick }: ItemsBy
                 </td>
                 <td className="px-2 py-2 whitespace-nowrap text-right font-medium">
                   <button
-                    onClick={() => onCellClick(stat.ownerId, null)}
+                    onClick={() => onCellClick(stat.ownerId, null, typeFilter)}
                     className="text-blue-600 hover:text-blue-800 hover:underline"
                   >
                     {stat.total}
@@ -161,7 +196,7 @@ function ItemsByNextStepWidget({ orgObjectives, orgUsers, onCellClick }: ItemsBy
                 <td className="px-2 py-2 whitespace-nowrap text-right">
                   {stat.notSet ? (
                     <button
-                      onClick={() => onCellClick(stat.ownerId, 'not_set')}
+                      onClick={() => onCellClick(stat.ownerId, 'not_set', typeFilter)}
                       className="text-blue-600 hover:text-blue-800 hover:underline"
                     >
                       {stat.notSet}
@@ -171,7 +206,7 @@ function ItemsByNextStepWidget({ orgObjectives, orgUsers, onCellClick }: ItemsBy
                 <td className="px-2 py-2 whitespace-nowrap text-right">
                   {stat.inPast ? (
                     <button
-                      onClick={() => onCellClick(stat.ownerId, 'past')}
+                      onClick={() => onCellClick(stat.ownerId, 'past', typeFilter)}
                       className="text-blue-600 hover:text-blue-800 hover:underline"
                     >
                       {stat.inPast}
@@ -181,7 +216,7 @@ function ItemsByNextStepWidget({ orgObjectives, orgUsers, onCellClick }: ItemsBy
                 <td className="px-2 py-2 whitespace-nowrap text-right">
                   {stat.next7d ? (
                     <button
-                      onClick={() => onCellClick(stat.ownerId, 'next_7d')}
+                      onClick={() => onCellClick(stat.ownerId, 'next_7d', typeFilter)}
                       className="text-blue-600 hover:text-blue-800 hover:underline"
                     >
                       {stat.next7d}
@@ -191,7 +226,7 @@ function ItemsByNextStepWidget({ orgObjectives, orgUsers, onCellClick }: ItemsBy
                 <td className="px-2 py-2 whitespace-nowrap text-right">
                   {stat.inFuture ? (
                     <button
-                      onClick={() => onCellClick(stat.ownerId, 'future')}
+                      onClick={() => onCellClick(stat.ownerId, 'future', typeFilter)}
                       className="text-blue-600 hover:text-blue-800 hover:underline"
                     >
                       {stat.inFuture}
@@ -397,6 +432,7 @@ export function DashboardPage({ onViewChange }: DashboardPageProps) {
   const clearAllFilters = useOKRStore((state: OKRStore) => state.clearAllFilters);
   const setFilterOwners = useOKRStore((state: OKRStore) => state.setFilterOwners);
   const setFilterNextStepDate = useOKRStore((state: OKRStore) => state.setFilterNextStepDate);
+  const toggleFilterType = useOKRStore((state: OKRStore) => state.toggleFilterType);
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -424,7 +460,7 @@ export function DashboardPage({ onViewChange }: DashboardPageProps) {
     [objectives, orgId, userEmail, isAdmin]
   );
 
-  const handleNextStepCellClick = useCallback((ownerId: string | undefined, nextStepFilter: NextStepDateFilter | null) => {
+  const handleNextStepCellClick = useCallback((ownerId: string | undefined, nextStepFilter: NextStepDateFilter | null, typeFilter: ObjectiveType | null) => {
     clearAllFilters();
     if (ownerId) {
       setFilterOwners([ownerId]);
@@ -432,8 +468,11 @@ export function DashboardPage({ onViewChange }: DashboardPageProps) {
     if (nextStepFilter) {
       setFilterNextStepDate(nextStepFilter);
     }
+    if (typeFilter) {
+      toggleFilterType(typeFilter);
+    }
     onViewChange('objectives');
-  }, [clearAllFilters, setFilterOwners, setFilterNextStepDate, onViewChange]);
+  }, [clearAllFilters, setFilterOwners, setFilterNextStepDate, toggleFilterType, onViewChange]);
 
   // Calculate row height as roughly 1/3 of viewport height minus header space
   // Using calc with vh units for responsive sizing
