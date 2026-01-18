@@ -337,7 +337,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
 
   const hasChildren = childObjectives.length > 0;
   const badge = levelBadges[objective.level];
-  const canAddChild = objective.level !== 'individual';
+  const canAddChild = true; // All objectives can have children (stories, tasks, subtasks)
 
   const levelOptions: { value: ObjectiveLevel; label: string }[] = [
     { value: 'company', label: 'Company' },
