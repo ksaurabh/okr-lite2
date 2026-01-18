@@ -5,10 +5,14 @@ import type { Objective, User, ObjectiveType } from '../../types';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
-interface OwnerStats {
+interface NextStepByOwnerStats {
   ownerId: string | undefined;
   ownerName: string;
-  count: number;
+  total: number;
+  notSet: number;
+  inPast: number;
+  next7d: number;
+  inFuture: number;
 }
 
 interface TypesByOwnerStats {
@@ -37,91 +41,144 @@ function DashboardWidget({ children, title, subtitle }: { children: React.ReactN
   );
 }
 
-// Items without Next Step by Owner widget
-function ItemsWithoutNextStepWidget({ orgObjectives, orgUsers }: { orgObjectives: Objective[]; orgUsers: User[] }) {
-  const itemsWithoutNextStepByOwner = useMemo(() => {
-    const withoutNextStep = orgObjectives.filter((obj: Objective) => !obj.nextStepDate);
+// Items by Next Step widget
+function ItemsByNextStepWidget({ orgObjectives, orgUsers }: { orgObjectives: Objective[]; orgUsers: User[] }) {
+  const itemsByNextStep = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const sevenDaysFromNow = new Date(today);
+    sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
 
-    const grouped = new Map<string | undefined, Objective[]>();
-    withoutNextStep.forEach((obj: Objective) => {
+    const grouped = new Map<string | undefined, { total: number; notSet: number; inPast: number; next7d: number; inFuture: number }>();
+
+    orgObjectives.forEach((obj: Objective) => {
       const key = obj.ownerId;
       if (!grouped.has(key)) {
-        grouped.set(key, []);
+        grouped.set(key, { total: 0, notSet: 0, inPast: 0, next7d: 0, inFuture: 0 });
       }
-      grouped.get(key)!.push(obj);
+      const counts = grouped.get(key)!;
+      counts.total++;
+
+      if (!obj.nextStepDate) {
+        counts.notSet++;
+      } else {
+        const [year, month, day] = obj.nextStepDate.split('-').map(Number);
+        const stepDate = new Date(year, month - 1, day);
+        stepDate.setHours(0, 0, 0, 0);
+
+        if (stepDate < today) {
+          counts.inPast++;
+        } else if (stepDate <= sevenDaysFromNow) {
+          counts.next7d++;
+        } else {
+          counts.inFuture++;
+        }
+      }
     });
 
-    const stats: OwnerStats[] = [];
-    grouped.forEach((items, ownerId) => {
+    const stats: NextStepByOwnerStats[] = [];
+    grouped.forEach((counts, ownerId) => {
       const owner = orgUsers.find((u: User) => u.id === ownerId);
       stats.push({
         ownerId,
         ownerName: owner?.name || (ownerId ? 'Unknown' : 'Unassigned'),
-        count: items.length,
+        ...counts,
       });
     });
 
-    stats.sort((a, b) => b.count - a.count);
+    stats.sort((a, b) => b.total - a.total);
     return stats;
   }, [orgObjectives, orgUsers]);
 
-  const totalWithoutNextStep = itemsWithoutNextStepByOwner.reduce((sum, s) => sum + s.count, 0);
+  const totals = useMemo(() => {
+    return itemsByNextStep.reduce(
+      (acc, stat) => ({
+        total: acc.total + stat.total,
+        notSet: acc.notSet + stat.notSet,
+        inPast: acc.inPast + stat.inPast,
+        next7d: acc.next7d + stat.next7d,
+        inFuture: acc.inFuture + stat.inFuture,
+      }),
+      { total: 0, notSet: 0, inPast: 0, next7d: 0, inFuture: 0 }
+    );
+  }, [itemsByNextStep]);
 
   return (
     <DashboardWidget
-      title="Items without Next Step"
-      subtitle={`${totalWithoutNextStep} ${totalWithoutNextStep === 1 ? 'item' : 'items'} by owner`}
+      title="Items by Next Step"
+      subtitle={`${totals.total} items across ${itemsByNextStep.length} owners`}
     >
-      {itemsWithoutNextStepByOwner.length === 0 ? (
+      {itemsByNextStep.length === 0 ? (
         <div className="p-4 text-center text-gray-500">
-          <svg className="mx-auto h-8 w-8 text-green-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <p className="text-xs">All items have a next step!</p>
+          <p className="text-xs">No items found</p>
         </div>
       ) : (
         <table className="min-w-full divide-y divide-gray-200 text-xs">
           <thead className="bg-gray-50 sticky top-0">
             <tr>
-              <th scope="col" className="px-3 py-2 text-left font-medium text-gray-500 uppercase tracking-wider">
+              <th scope="col" className="px-2 py-2 text-left font-medium text-gray-500 uppercase tracking-wider">
                 Owner
               </th>
-              <th scope="col" className="px-3 py-2 text-right font-medium text-gray-500 uppercase tracking-wider">
-                Count
+              <th scope="col" className="px-2 py-2 text-right font-medium text-gray-500 uppercase tracking-wider">
+                Total
               </th>
-              <th scope="col" className="px-3 py-2 text-right font-medium text-gray-500 uppercase tracking-wider">
-                %
+              <th scope="col" className="px-2 py-2 text-right font-medium text-gray-500 uppercase tracking-wider" title="Not Set">
+                None
+              </th>
+              <th scope="col" className="px-2 py-2 text-right font-medium text-gray-500 uppercase tracking-wider" title="In the Past">
+                Past
+              </th>
+              <th scope="col" className="px-2 py-2 text-right font-medium text-gray-500 uppercase tracking-wider" title="Next 7 Days">
+                7d
+              </th>
+              <th scope="col" className="px-2 py-2 text-right font-medium text-gray-500 uppercase tracking-wider" title="In the Future">
+                Future
               </th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {itemsWithoutNextStepByOwner.map((stat) => (
+            {itemsByNextStep.map((stat) => (
               <tr key={stat.ownerId || 'unassigned'} className="hover:bg-gray-50">
-                <td className="px-3 py-2 whitespace-nowrap text-gray-900">
+                <td className="px-2 py-2 whitespace-nowrap text-gray-900 truncate max-w-[100px]" title={stat.ownerName}>
                   {stat.ownerName}
                 </td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-900 text-right">
-                  {stat.count}
+                <td className="px-2 py-2 whitespace-nowrap text-gray-900 text-right font-medium">
+                  {stat.total}
                 </td>
-                <td className="px-3 py-2 whitespace-nowrap text-gray-500 text-right">
-                  {totalWithoutNextStep > 0
-                    ? `${Math.round((stat.count / totalWithoutNextStep) * 100)}%`
-                    : '0%'
-                  }
+                <td className="px-2 py-2 whitespace-nowrap text-gray-900 text-right">
+                  {stat.notSet || '-'}
+                </td>
+                <td className="px-2 py-2 whitespace-nowrap text-gray-900 text-right">
+                  {stat.inPast || '-'}
+                </td>
+                <td className="px-2 py-2 whitespace-nowrap text-gray-900 text-right">
+                  {stat.next7d || '-'}
+                </td>
+                <td className="px-2 py-2 whitespace-nowrap text-gray-900 text-right">
+                  {stat.inFuture || '-'}
                 </td>
               </tr>
             ))}
           </tbody>
           <tfoot className="bg-gray-50 sticky bottom-0">
             <tr>
-              <td className="px-3 py-2 font-medium text-gray-900">
+              <td className="px-2 py-2 font-medium text-gray-900">
                 Total
               </td>
-              <td className="px-3 py-2 font-medium text-gray-900 text-right">
-                {totalWithoutNextStep}
+              <td className="px-2 py-2 font-medium text-gray-900 text-right">
+                {totals.total}
               </td>
-              <td className="px-3 py-2 text-gray-500 text-right">
-                100%
+              <td className="px-2 py-2 font-medium text-gray-900 text-right">
+                {totals.notSet}
+              </td>
+              <td className="px-2 py-2 font-medium text-gray-900 text-right">
+                {totals.inPast}
+              </td>
+              <td className="px-2 py-2 font-medium text-gray-900 text-right">
+                {totals.next7d}
+              </td>
+              <td className="px-2 py-2 font-medium text-gray-900 text-right">
+                {totals.inFuture}
               </td>
             </tr>
           </tfoot>
@@ -335,8 +392,8 @@ export function DashboardPage() {
         style={{ gridAutoRows: cellHeight }}
       >
         {/* Row 1 */}
-        {/* Cell (1,1) - Items without Next Step by Owner */}
-        <ItemsWithoutNextStepWidget orgObjectives={orgObjectives} orgUsers={orgUsers} />
+        {/* Cell (1,1) - Items by Next Step */}
+        <ItemsByNextStepWidget orgObjectives={orgObjectives} orgUsers={orgUsers} />
 
         {/* Cell (1,2) - Items by Type & Owner */}
         <TypesByOwnerWidget orgObjectives={orgObjectives} orgUsers={orgUsers} />
