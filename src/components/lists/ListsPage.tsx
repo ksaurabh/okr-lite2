@@ -1,8 +1,63 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
-import type { List, Objective } from '../../types';
+import type { Objective, User, WorkflowStatus } from '../../types';
 
-export function ListsPage() {
+const API_URL = import.meta.env.VITE_API_URL || '';
+
+type View = 'dashboard' | 'objectives' | 'checklist' | 'progress' | 'updates' | 'lists' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin';
+
+interface ListsPageProps {
+  onViewChange: (view: View) => void;
+}
+
+const WORKFLOW_STATUS_LABELS: Record<WorkflowStatus, string> = {
+  todo: 'To Do',
+  planning: 'In Planning',
+  in_progress: 'In Progress',
+  acceptance: 'In Acceptance',
+  done: 'Done',
+  archived: 'Archived',
+};
+
+const LIST_COLUMN_WIDTHS_KEY = 'okr-list-column-widths';
+
+interface ListColumnWidths {
+  name: number;
+  parent: number;
+  owner: number;
+  assignee: number;
+  status: number;
+}
+
+const DEFAULT_LIST_COLUMN_WIDTHS: ListColumnWidths = {
+  name: 300,
+  parent: 200,
+  owner: 150,
+  assignee: 150,
+  status: 120,
+};
+
+function loadListColumnWidths(): ListColumnWidths {
+  try {
+    const data = localStorage.getItem(LIST_COLUMN_WIDTHS_KEY);
+    if (data) {
+      return { ...DEFAULT_LIST_COLUMN_WIDTHS, ...JSON.parse(data) };
+    }
+  } catch {
+    // ignore
+  }
+  return DEFAULT_LIST_COLUMN_WIDTHS;
+}
+
+function saveListColumnWidths(widths: ListColumnWidths): void {
+  try {
+    localStorage.setItem(LIST_COLUMN_WIDTHS_KEY, JSON.stringify(widths));
+  } catch {
+    // ignore
+  }
+}
+
+export function ListsPage({ onViewChange }: ListsPageProps) {
   const [selectedListId, setSelectedListId] = useState<string | null>(null);
   const [newListName, setNewListName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
@@ -10,6 +65,11 @@ export function ListsPage() {
   const [editingName, setEditingName] = useState('');
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
   const [isListsCollapsed, setIsListsCollapsed] = useState(false);
+  const [columnWidths, setColumnWidths] = useState<ListColumnWidths>(loadListColumnWidths);
+  const [resizingColumn, setResizingColumn] = useState<keyof ListColumnWidths | null>(null);
+  const [orgUsers, setOrgUsers] = useState<User[]>([]);
+  const resizeStartX = useRef<number>(0);
+  const resizeStartWidth = useRef<number>(0);
 
   const lists = useOKRStore((state: OKRStore) => state.lists);
   const objectives = useOKRStore((state: OKRStore) => state.objectives);
@@ -19,10 +79,61 @@ export function ListsPage() {
   const renameList = useOKRStore((state: OKRStore) => state.renameList);
   const removeItemFromList = useOKRStore((state: OKRStore) => state.removeItemFromList);
   const reorderListItems = useOKRStore((state: OKRStore) => state.reorderListItems);
+  const setFilterObjective = useOKRStore((state: OKRStore) => state.setFilterObjective);
+  const clearAllFilters = useOKRStore((state: OKRStore) => state.clearAllFilters);
 
   useEffect(() => {
     fetchLists();
   }, [fetchLists]);
+
+  // Fetch users for owner/assignee display
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/users`, { credentials: 'include' });
+        if (response.ok) {
+          const data = await response.json();
+          setOrgUsers(data.users || []);
+        }
+      } catch (err) {
+        console.error('Failed to fetch users:', err);
+      }
+    };
+    fetchUsers();
+  }, []);
+
+  // Column resize handlers
+  const handleResizeStart = useCallback((column: keyof ListColumnWidths, e: React.MouseEvent) => {
+    e.preventDefault();
+    setResizingColumn(column);
+    resizeStartX.current = e.clientX;
+    resizeStartWidth.current = columnWidths[column];
+  }, [columnWidths]);
+
+  useEffect(() => {
+    if (!resizingColumn) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const delta = e.clientX - resizeStartX.current;
+      const newWidth = Math.max(100, resizeStartWidth.current + delta);
+      setColumnWidths(prev => {
+        const updated = { ...prev, [resizingColumn]: newWidth };
+        saveListColumnWidths(updated);
+        return updated;
+      });
+    };
+
+    const handleMouseUp = () => {
+      setResizingColumn(null);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [resizingColumn]);
 
   const selectedList = lists.find(l => l.id === selectedListId);
 
@@ -106,6 +217,18 @@ export function ListsPage() {
   const getObjective = useCallback((objectiveId: string): Objective | undefined => {
     return objectives.find(o => o.id === objectiveId);
   }, [objectives]);
+
+  const getUserName = useCallback((userId: string | undefined): string => {
+    if (!userId) return '-';
+    const user = orgUsers.find(u => u.id === userId);
+    return user?.name || '-';
+  }, [orgUsers]);
+
+  const handleNavigateToObjective = useCallback((objectiveId: string) => {
+    clearAllFilters();
+    setFilterObjective(objectiveId);
+    onViewChange('objectives');
+  }, [clearAllFilters, setFilterObjective, onViewChange]);
 
   // Sort items by order
   const sortedItems = selectedList?.items
@@ -283,48 +406,132 @@ export function ListsPage() {
                 <p className="text-sm mt-1">Add items from the Objectives page using the bookmark icon</p>
               </div>
             ) : (
-              <div className="space-y-2">
-                {sortedItems.map((item, index) => {
-                  const objective = getObjective(item.objectiveId);
-                  if (!objective) return null;
-
-                  return (
-                    <div
-                      key={item.objectiveId}
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, item.objectiveId)}
-                      onDragOver={handleDragOver}
-                      onDrop={(e) => handleDrop(e, item.objectiveId)}
-                      onDragEnd={handleDragEnd}
-                      className={`flex items-center gap-3 p-3 bg-white border border-gray-200 rounded-lg cursor-move hover:shadow-sm transition-shadow ${
-                        draggedItemId === item.objectiveId ? 'opacity-50' : ''
-                      }`}
-                    >
-                      <div className="text-gray-400 cursor-grab active:cursor-grabbing">
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
-                        </svg>
-                      </div>
-                      <span className="text-xs text-gray-400 w-6">{index + 1}</span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 truncate">{objective.title}</p>
-                        {objective.type && (
-                          <span className="text-xs text-gray-500 capitalize">{objective.type}</span>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => handleRemoveItem(item.objectiveId)}
-                        className="p-1 text-gray-400 hover:text-red-600"
-                        title="Remove from list"
+              <table className="w-full table-fixed">
+                <thead>
+                  <tr className="border-b border-gray-200">
+                    <th className="w-8 py-2"></th>
+                    <th className="w-8 py-2 text-xs font-medium text-gray-500 text-left">#</th>
+                    <th className="py-2 pl-2 text-xs font-medium text-gray-500 text-left relative" style={{ width: columnWidths.name }}>
+                      Name
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 group"
+                        onMouseDown={(e) => handleResizeStart('name', e)}
                       >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
+                        <div className="absolute right-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-gray-300 group-hover:bg-blue-400" />
+                      </div>
+                    </th>
+                    <th className="py-2 pl-3 text-xs font-medium text-gray-500 text-left relative" style={{ width: columnWidths.parent }}>
+                      Parent
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 group"
+                        onMouseDown={(e) => handleResizeStart('parent', e)}
+                      >
+                        <div className="absolute right-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-gray-300 group-hover:bg-blue-400" />
+                      </div>
+                    </th>
+                    <th className="py-2 pl-3 text-xs font-medium text-gray-500 text-left relative" style={{ width: columnWidths.owner }}>
+                      Owner
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 group"
+                        onMouseDown={(e) => handleResizeStart('owner', e)}
+                      >
+                        <div className="absolute right-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-gray-300 group-hover:bg-blue-400" />
+                      </div>
+                    </th>
+                    <th className="py-2 pl-3 text-xs font-medium text-gray-500 text-left relative" style={{ width: columnWidths.assignee }}>
+                      Assignee
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 group"
+                        onMouseDown={(e) => handleResizeStart('assignee', e)}
+                      >
+                        <div className="absolute right-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-gray-300 group-hover:bg-blue-400" />
+                      </div>
+                    </th>
+                    <th className="py-2 pl-3 text-xs font-medium text-gray-500 text-left relative" style={{ width: columnWidths.status }}>
+                      Status
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400 group"
+                        onMouseDown={(e) => handleResizeStart('status', e)}
+                      >
+                        <div className="absolute right-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-gray-300 group-hover:bg-blue-400" />
+                      </div>
+                    </th>
+                    <th className="w-8 py-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedItems.map((item, index) => {
+                    const objective = getObjective(item.objectiveId);
+                    if (!objective) return null;
+                    const parentObjective = objective.parentId ? getObjective(objective.parentId) : null;
+
+                    return (
+                      <tr
+                        key={item.objectiveId}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, item.objectiveId)}
+                        onDragOver={handleDragOver}
+                        onDrop={(e) => handleDrop(e, item.objectiveId)}
+                        onDragEnd={handleDragEnd}
+                        className={`border-b border-gray-100 hover:bg-gray-50 cursor-move ${
+                          draggedItemId === item.objectiveId ? 'opacity-50' : ''
+                        }`}
+                      >
+                        <td className="py-2 px-1">
+                          <div className="text-gray-400 cursor-grab active:cursor-grabbing">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                            </svg>
+                          </div>
+                        </td>
+                        <td className="py-2 text-xs text-gray-400">{index + 1}</td>
+                        <td className="py-2 pl-2 pr-4 overflow-hidden" style={{ width: columnWidths.name }}>
+                          <button
+                            onClick={() => handleNavigateToObjective(objective.id)}
+                            className="text-sm text-blue-600 hover:text-blue-800 hover:underline truncate block text-left w-full"
+                            title={`Go to ${objective.title}`}
+                          >
+                            {objective.title}
+                          </button>
+                        </td>
+                        <td className="py-2 pl-3 pr-4 overflow-hidden" style={{ width: columnWidths.parent }}>
+                          {parentObjective ? (
+                            <button
+                              onClick={() => handleNavigateToObjective(parentObjective.id)}
+                              className="text-sm text-blue-600 hover:text-blue-800 hover:underline truncate block text-left w-full"
+                              title={`Go to ${parentObjective.title}`}
+                            >
+                              {parentObjective.title}
+                            </button>
+                          ) : (
+                            <span className="text-sm text-gray-500 truncate block">-</span>
+                          )}
+                        </td>
+                        <td className="py-2 pl-3 pr-4 overflow-hidden" style={{ width: columnWidths.owner }}>
+                          <span className="text-sm text-gray-500 truncate block">{getUserName(objective.ownerId)}</span>
+                        </td>
+                        <td className="py-2 pl-3 pr-4 overflow-hidden" style={{ width: columnWidths.assignee }}>
+                          <span className="text-sm text-gray-500 truncate block">{getUserName(objective.assigneeId)}</span>
+                        </td>
+                        <td className="py-2 pl-3 pr-4 overflow-hidden" style={{ width: columnWidths.status }}>
+                          <span className="text-sm text-gray-500 truncate block">{WORKFLOW_STATUS_LABELS[objective.workflowStatus || 'todo']}</span>
+                        </td>
+                        <td className="py-2 px-1">
+                          <button
+                            onClick={() => handleRemoveItem(item.objectiveId)}
+                            className="p-1 text-gray-400 hover:text-red-600"
+                            title="Remove from list"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             )}
           </div>
         ) : (

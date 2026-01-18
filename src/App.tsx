@@ -80,7 +80,7 @@ function AppContent() {
       {currentView === 'checklist' && <ChecklistPage />}
       {currentView === 'progress' && <ProgressPage />}
       {currentView === 'updates' && <UpdatesPage />}
-      {currentView === 'lists' && <ListsPage />}
+      {currentView === 'lists' && <ListsPage onViewChange={setCurrentView} />}
       {currentView === 'teams' && (
         <div className="text-center py-12 text-gray-500">
           <p>Manage teams from the sidebar</p>
