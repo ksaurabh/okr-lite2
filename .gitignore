@@ -18,6 +18,9 @@ dist-ssr
 # Server data files
 server/*.json
 
+# Claude Code settings
+.claude/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
