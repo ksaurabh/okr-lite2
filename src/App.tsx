@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Layout } from './components/layout';
+import { DashboardPage } from './components/dashboard';
 import { ObjectiveTree, ObjectiveForm } from './components/objectives';
 import { ChecklistPage } from './components/checklist';
 import { ProgressPage } from './components/progress';
@@ -12,10 +13,10 @@ import { LoginPage, UnauthorizedPage, AuthCallback, AdminInviteAccept } from './
 import { Modal } from './components/common';
 import { useOKRStore } from './store/okrStore';
 
-type View = 'objectives' | 'checklist' | 'progress' | 'updates' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin';
+type View = 'dashboard' | 'objectives' | 'checklist' | 'progress' | 'updates' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin';
 
 function AppContent() {
-  const [currentView, setCurrentView] = useState<View>('objectives');
+  const [currentView, setCurrentView] = useState<View>('dashboard');
   const [showAddObjective, setShowAddObjective] = useState(false);
   const { isLoading, isAuthenticated, isAllowed } = useAuth();
   const fetchData = useOKRStore((state) => state.fetchData);
@@ -71,6 +72,7 @@ function AppContent() {
       onViewChange={setCurrentView}
       onAddObjective={() => setShowAddObjective(true)}
     >
+      {currentView === 'dashboard' && <DashboardPage />}
       {currentView === 'objectives' && <ObjectiveTree />}
       {currentView === 'checklist' && <ChecklistPage />}
       {currentView === 'progress' && <ProgressPage />}
