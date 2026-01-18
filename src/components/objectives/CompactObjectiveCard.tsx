@@ -150,10 +150,12 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   }, []);
 
   const childObjectives = useMemo(
-    () => allObjectives.filter((o: Objective) =>
-      o.parentId === objective.id &&
-      (!filteredObjectiveIds || filteredObjectiveIds.has(o.id))
-    ),
+    () => allObjectives
+      .filter((o: Objective) =>
+        o.parentId === objective.id &&
+        (!filteredObjectiveIds || filteredObjectiveIds.has(o.id))
+      )
+      .sort((a: Objective, b: Objective) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
     [allObjectives, objective.id, filteredObjectiveIds]
   );
 
@@ -226,6 +228,42 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
     () => periods.find((p: Period) => p.id === objective.periodId),
     [periods, objective.periodId]
   );
+
+  // Get siblings (objectives with same parent) for reordering
+  const siblings = useMemo(
+    () => allObjectives
+      .filter((o: Objective) => o.parentId === objective.parentId)
+      .sort((a: Objective, b: Objective) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
+    [allObjectives, objective.parentId]
+  );
+
+  const siblingIndex = useMemo(
+    () => siblings.findIndex((o: Objective) => o.id === objective.id),
+    [siblings, objective.id]
+  );
+
+  const canMoveUp = siblingIndex > 0;
+  const canMoveDown = siblingIndex < siblings.length - 1 && siblingIndex >= 0;
+
+  const handleMoveUp = async () => {
+    if (!canMoveUp) return;
+    const prevSibling = siblings[siblingIndex - 1];
+    const prevOrder = prevSibling.sortOrder ?? 0;
+    const currentOrder = objective.sortOrder ?? 0;
+    // Swap sort orders
+    await updateObjective(objective.id, { sortOrder: prevOrder }, userEmail);
+    await updateObjective(prevSibling.id, { sortOrder: currentOrder }, userEmail);
+  };
+
+  const handleMoveDown = async () => {
+    if (!canMoveDown) return;
+    const nextSibling = siblings[siblingIndex + 1];
+    const nextOrder = nextSibling.sortOrder ?? 0;
+    const currentOrder = objective.sortOrder ?? 0;
+    // Swap sort orders
+    await updateObjective(objective.id, { sortOrder: nextOrder }, userEmail);
+    await updateObjective(nextSibling.id, { sortOrder: currentOrder }, userEmail);
+  };
 
   const hasChildren = childObjectives.length > 0;
   const badge = levelBadges[objective.level];
@@ -576,6 +614,11 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
 
     setIsAdding(true);
     try {
+      // Calculate sortOrder for new child (add at end)
+      const maxSortOrder = childObjectives.reduce(
+        (max, child) => Math.max(max, child.sortOrder ?? 0),
+        0
+      );
       await addObjective(
         {
           title: quickAddTitle.trim(),
@@ -588,6 +631,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           assigneeId: objective.assigneeId,
           tagIds: [],
           workflowStatus: 'todo',
+          sortOrder: maxSortOrder + 1,
         },
         {
           orgId: organization?.id || '',
@@ -1146,9 +1190,29 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
         )}
 
         {/* Actions column */}
-        <div className="w-16 px-2 py-1.5 flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+        <div className="w-24 px-2 py-1.5 flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
           {canModify && (
             <>
+              <button
+                onClick={handleMoveUp}
+                disabled={!canMoveUp}
+                className={`p-1 rounded ${canMoveUp ? 'text-gray-400 hover:text-gray-600' : 'text-gray-200 cursor-not-allowed'}`}
+                title="Move up"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                </svg>
+              </button>
+              <button
+                onClick={handleMoveDown}
+                disabled={!canMoveDown}
+                className={`p-1 rounded ${canMoveDown ? 'text-gray-400 hover:text-gray-600' : 'text-gray-200 cursor-not-allowed'}`}
+                title="Move down"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
               <button
                 onClick={() => setShowEdit(true)}
                 className="p-1 text-gray-400 hover:text-gray-600 rounded"
@@ -1202,7 +1266,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           <div className="px-1" style={{ width: columnWidths.valuePoints }} />
           <div className="px-1" style={{ width: columnWidths.tags }} />
           <div className="px-2" style={{ width: columnWidths.progress }} />
-          <div className="w-16 px-2" />
+          <div className="w-24 px-2" />
         </div>
       )}
 

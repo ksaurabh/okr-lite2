@@ -42,6 +42,7 @@ export interface Objective {
   storyPoints?: number;
   valuePoints?: number;
   link?: ObjectiveLink;
+  sortOrder?: number;
   progress: number;
   status: ObjectiveStatus;
   workflowStatus: WorkflowStatus;
