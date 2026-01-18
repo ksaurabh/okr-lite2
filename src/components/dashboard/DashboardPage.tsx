@@ -280,22 +280,62 @@ function ItemsByNextStepWidget({ orgObjectives, orgUsers, onCellClick }: ItemsBy
                 Total
               </td>
               <td className="px-2 py-2 font-medium text-gray-900 text-right">
-                {totals.total}
+                <button
+                  onClick={() => onCellClick(undefined, null, typeFilter)}
+                  className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                >
+                  {totals.total}
+                </button>
               </td>
               <td className="px-2 py-2 font-medium text-gray-900 text-right">
-                {totals.notSet}
+                {totals.notSet ? (
+                  <button
+                    onClick={() => onCellClick(undefined, 'not_set', typeFilter)}
+                    className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                  >
+                    {totals.notSet}
+                  </button>
+                ) : totals.notSet}
               </td>
               <td className="px-2 py-2 font-medium text-gray-900 text-right">
-                {totals.inPast}
+                {totals.inPast ? (
+                  <button
+                    onClick={() => onCellClick(undefined, 'past', typeFilter)}
+                    className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                  >
+                    {totals.inPast}
+                  </button>
+                ) : totals.inPast}
               </td>
               <td className="px-2 py-2 font-medium text-gray-900 text-right">
-                {totals.today}
+                {totals.today ? (
+                  <button
+                    onClick={() => onCellClick(undefined, 'today', typeFilter)}
+                    className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                  >
+                    {totals.today}
+                  </button>
+                ) : totals.today}
               </td>
               <td className="px-2 py-2 font-medium text-gray-900 text-right">
-                {totals.next7d}
+                {totals.next7d ? (
+                  <button
+                    onClick={() => onCellClick(undefined, 'next_7d', typeFilter)}
+                    className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                  >
+                    {totals.next7d}
+                  </button>
+                ) : totals.next7d}
               </td>
               <td className="px-2 py-2 font-medium text-gray-900 text-right">
-                {totals.inFuture}
+                {totals.inFuture ? (
+                  <button
+                    onClick={() => onCellClick(undefined, 'future', typeFilter)}
+                    className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                  >
+                    {totals.inFuture}
+                  </button>
+                ) : totals.inFuture}
               </td>
             </tr>
           </tfoot>
