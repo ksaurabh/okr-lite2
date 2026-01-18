@@ -438,6 +438,265 @@ function TypesByOwnerWidget({ orgObjectives, orgUsers }: { orgObjectives: Object
   );
 }
 
+// Items by Type and Next Step widget (filter by owner)
+interface TypeByNextStepStats {
+  type: ObjectiveType;
+  typeLabel: string;
+  total: number;
+  notSet: number;
+  inPast: number;
+  today: number;
+  next7d: number;
+  inFuture: number;
+}
+
+interface ItemsByTypeAndNextStepWidgetProps {
+  orgObjectives: Objective[];
+  orgUsers: User[];
+  onCellClick: (ownerId: string | undefined, nextStepFilter: NextStepDateFilter | null, typeFilter: ObjectiveType | null) => void;
+}
+
+function ItemsByTypeAndNextStepWidget({ orgObjectives, orgUsers, onCellClick }: ItemsByTypeAndNextStepWidgetProps) {
+  const [selectedOwnerId, setSelectedOwnerId] = useState<string | 'all'>('all');
+
+  const filteredObjectives = useMemo(() => {
+    // Exclude done and archived items
+    let result = orgObjectives.filter(obj => obj.workflowStatus !== 'done' && obj.workflowStatus !== 'archived');
+    if (selectedOwnerId !== 'all') {
+      result = result.filter(obj => obj.ownerId === selectedOwnerId);
+    }
+    return result;
+  }, [orgObjectives, selectedOwnerId]);
+
+  const typesByNextStep = useMemo(() => {
+    const now = Date.now();
+    const twentyFourHoursMs = 24 * 60 * 60 * 1000;
+    const sevenDaysMs = 7 * twentyFourHoursMs;
+
+    const typeLabels: Record<ObjectiveType, string> = {
+      initiative: 'Initiative',
+      saga: 'Saga',
+      epic: 'Epic',
+      story: 'Story',
+      subtask: 'Subtask',
+    };
+
+    const types: ObjectiveType[] = ['initiative', 'saga', 'epic', 'story', 'subtask'];
+    const stats: TypeByNextStepStats[] = types.map(type => ({
+      type,
+      typeLabel: typeLabels[type],
+      total: 0,
+      notSet: 0,
+      inPast: 0,
+      today: 0,
+      next7d: 0,
+      inFuture: 0,
+    }));
+
+    const typeIndexMap = new Map(types.map((t, i) => [t, i]));
+
+    filteredObjectives.forEach((obj: Objective) => {
+      if (!obj.type) return;
+      const idx = typeIndexMap.get(obj.type);
+      if (idx === undefined) return;
+
+      const stat = stats[idx];
+      stat.total++;
+
+      if (!obj.nextStepDate) {
+        stat.notSet++;
+      } else {
+        const [year, month, day] = obj.nextStepDate.split('-').map(Number);
+        const stepDate = new Date(year, month - 1, day);
+        stepDate.setHours(0, 0, 0, 0);
+        const stepMs = stepDate.getTime();
+        const stepEndMs = stepMs + twentyFourHoursMs;
+        const diffFromNow = stepEndMs - now;
+
+        if (diffFromNow < 0) {
+          stat.inPast++;
+        } else if (diffFromNow < twentyFourHoursMs) {
+          stat.today++;
+        } else if (diffFromNow < sevenDaysMs) {
+          stat.next7d++;
+        } else {
+          stat.inFuture++;
+        }
+      }
+    });
+
+    return stats;
+  }, [filteredObjectives]);
+
+  const totals = useMemo(() => {
+    return typesByNextStep.reduce(
+      (acc, stat) => ({
+        total: acc.total + stat.total,
+        notSet: acc.notSet + stat.notSet,
+        inPast: acc.inPast + stat.inPast,
+        today: acc.today + stat.today,
+        next7d: acc.next7d + stat.next7d,
+        inFuture: acc.inFuture + stat.inFuture,
+      }),
+      { total: 0, notSet: 0, inPast: 0, today: 0, next7d: 0, inFuture: 0 }
+    );
+  }, [typesByNextStep]);
+
+  const ownerName = selectedOwnerId === 'all'
+    ? 'All Owners'
+    : orgUsers.find(u => u.id === selectedOwnerId)?.name || 'Unknown';
+
+  // Get owner ID for filter (undefined if "all" selected)
+  const ownerIdForFilter = selectedOwnerId === 'all' ? undefined : selectedOwnerId;
+
+  return (
+    <DashboardWidget
+      title="Items by Type & Next Step"
+      subtitle={`${totals.total} items (${ownerName})`}
+      headerAction={
+        <select
+          value={selectedOwnerId}
+          onChange={(e) => setSelectedOwnerId(e.target.value)}
+          className="text-xs border border-gray-300 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 max-w-[120px]"
+        >
+          <option value="all">All Owners</option>
+          {orgUsers.map(user => (
+            <option key={user.id} value={user.id}>{user.name}</option>
+          ))}
+        </select>
+      }
+    >
+      {totals.total === 0 ? (
+        <div className="p-4 text-center text-gray-500">
+          <p className="text-xs">No items found</p>
+        </div>
+      ) : (
+        <table className="min-w-full divide-y divide-gray-200 text-xs">
+          <thead className="bg-gray-50 sticky top-0">
+            <tr>
+              <th scope="col" className="px-2 py-2 text-left font-medium text-gray-500 uppercase tracking-wider">
+                Type
+              </th>
+              <th scope="col" className="px-2 py-2 text-right font-medium text-gray-500 uppercase tracking-wider">
+                Total
+              </th>
+              <th scope="col" className="px-2 py-2 text-right font-medium text-gray-500 uppercase tracking-wider" title="Not Set">
+                None
+              </th>
+              <th scope="col" className="px-2 py-2 text-right font-medium text-gray-500 uppercase tracking-wider" title="In the Past">
+                Past
+              </th>
+              <th scope="col" className="px-2 py-2 text-right font-medium text-gray-500 uppercase tracking-wider" title="Today">
+                Today
+              </th>
+              <th scope="col" className="px-2 py-2 text-right font-medium text-gray-500 uppercase tracking-wider" title="Next 7 Days">
+                7d
+              </th>
+              <th scope="col" className="px-2 py-2 text-right font-medium text-gray-500 uppercase tracking-wider" title="In the Future">
+                Future
+              </th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {typesByNextStep.map((stat) => (
+              <tr key={stat.type} className="hover:bg-gray-50">
+                <td className="px-2 py-2 whitespace-nowrap text-gray-900">
+                  {stat.typeLabel}
+                </td>
+                <td className="px-2 py-2 whitespace-nowrap text-right font-medium">
+                  {stat.total ? (
+                    <button
+                      onClick={() => onCellClick(ownerIdForFilter, null, stat.type)}
+                      className="text-blue-600 hover:text-blue-800 hover:underline"
+                    >
+                      {stat.total}
+                    </button>
+                  ) : '-'}
+                </td>
+                <td className="px-2 py-2 whitespace-nowrap text-right">
+                  {stat.notSet ? (
+                    <button
+                      onClick={() => onCellClick(ownerIdForFilter, 'not_set', stat.type)}
+                      className="text-blue-600 hover:text-blue-800 hover:underline"
+                    >
+                      {stat.notSet}
+                    </button>
+                  ) : '-'}
+                </td>
+                <td className="px-2 py-2 whitespace-nowrap text-right">
+                  {stat.inPast ? (
+                    <button
+                      onClick={() => onCellClick(ownerIdForFilter, 'past', stat.type)}
+                      className="text-blue-600 hover:text-blue-800 hover:underline"
+                    >
+                      {stat.inPast}
+                    </button>
+                  ) : '-'}
+                </td>
+                <td className="px-2 py-2 whitespace-nowrap text-right">
+                  {stat.today ? (
+                    <button
+                      onClick={() => onCellClick(ownerIdForFilter, 'today', stat.type)}
+                      className="text-blue-600 hover:text-blue-800 hover:underline"
+                    >
+                      {stat.today}
+                    </button>
+                  ) : '-'}
+                </td>
+                <td className="px-2 py-2 whitespace-nowrap text-right">
+                  {stat.next7d ? (
+                    <button
+                      onClick={() => onCellClick(ownerIdForFilter, 'next_7d', stat.type)}
+                      className="text-blue-600 hover:text-blue-800 hover:underline"
+                    >
+                      {stat.next7d}
+                    </button>
+                  ) : '-'}
+                </td>
+                <td className="px-2 py-2 whitespace-nowrap text-right">
+                  {stat.inFuture ? (
+                    <button
+                      onClick={() => onCellClick(ownerIdForFilter, 'future', stat.type)}
+                      className="text-blue-600 hover:text-blue-800 hover:underline"
+                    >
+                      {stat.inFuture}
+                    </button>
+                  ) : '-'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot className="bg-gray-50 sticky bottom-0">
+            <tr>
+              <td className="px-2 py-2 font-medium text-gray-900">
+                Total
+              </td>
+              <td className="px-2 py-2 font-medium text-gray-900 text-right">
+                {totals.total}
+              </td>
+              <td className="px-2 py-2 font-medium text-gray-900 text-right">
+                {totals.notSet}
+              </td>
+              <td className="px-2 py-2 font-medium text-gray-900 text-right">
+                {totals.inPast}
+              </td>
+              <td className="px-2 py-2 font-medium text-gray-900 text-right">
+                {totals.today}
+              </td>
+              <td className="px-2 py-2 font-medium text-gray-900 text-right">
+                {totals.next7d}
+              </td>
+              <td className="px-2 py-2 font-medium text-gray-900 text-right">
+                {totals.inFuture}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      )}
+    </DashboardWidget>
+  );
+}
+
 // Empty placeholder widget
 function EmptyWidget() {
   return (
@@ -533,8 +792,8 @@ export function DashboardPage({ onViewChange }: DashboardPageProps) {
         {/* Cell (1,2) - Items by Type & Owner */}
         <TypesByOwnerWidget orgObjectives={orgObjectives} orgUsers={orgUsers} />
 
-        {/* Cell (1,3) - Empty */}
-        <EmptyWidget />
+        {/* Cell (1,3) - Items by Type & Next Step */}
+        <ItemsByTypeAndNextStepWidget orgObjectives={orgObjectives} orgUsers={orgUsers} onCellClick={handleNextStepCellClick} />
 
         {/* Row 2 */}
         {/* Cell (2,1) - Empty */}
