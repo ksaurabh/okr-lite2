@@ -1018,9 +1018,10 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
 
       if (response.ok) {
         const data = await response.json();
+        const newViewId = data.view?.id;
         set({
-          savedViews: data.views,
-          activeViewId: data.view.id,
+          savedViews: Array.isArray(data.views) ? data.views : [],
+          activeViewId: newViewId || null,
         });
         return data.view;
       }
