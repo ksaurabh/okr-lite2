@@ -72,7 +72,7 @@ function AppContent() {
       onViewChange={setCurrentView}
       onAddObjective={() => setShowAddObjective(true)}
     >
-      {currentView === 'dashboard' && <DashboardPage />}
+      {currentView === 'dashboard' && <DashboardPage onViewChange={setCurrentView} />}
       {currentView === 'objectives' && <ObjectiveTree />}
       {currentView === 'checklist' && <ChecklistPage />}
       {currentView === 'progress' && <ProgressPage />}

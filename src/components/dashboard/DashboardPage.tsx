@@ -1,7 +1,9 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
-import type { Objective, User, ObjectiveType } from '../../types';
+import type { Objective, User, ObjectiveType, NextStepDateFilter } from '../../types';
+
+type View = 'dashboard' | 'objectives' | 'checklist' | 'progress' | 'updates' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -42,7 +44,13 @@ function DashboardWidget({ children, title, subtitle }: { children: React.ReactN
 }
 
 // Items by Next Step widget
-function ItemsByNextStepWidget({ orgObjectives, orgUsers }: { orgObjectives: Objective[]; orgUsers: User[] }) {
+interface ItemsByNextStepWidgetProps {
+  orgObjectives: Objective[];
+  orgUsers: User[];
+  onCellClick: (ownerId: string | undefined, nextStepFilter: NextStepDateFilter | null) => void;
+}
+
+function ItemsByNextStepWidget({ orgObjectives, orgUsers, onCellClick }: ItemsByNextStepWidgetProps) {
   const itemsByNextStep = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -142,20 +150,53 @@ function ItemsByNextStepWidget({ orgObjectives, orgUsers }: { orgObjectives: Obj
                 <td className="px-2 py-2 whitespace-nowrap text-gray-900 truncate max-w-[100px]" title={stat.ownerName}>
                   {stat.ownerName}
                 </td>
-                <td className="px-2 py-2 whitespace-nowrap text-gray-900 text-right font-medium">
-                  {stat.total}
+                <td className="px-2 py-2 whitespace-nowrap text-right font-medium">
+                  <button
+                    onClick={() => onCellClick(stat.ownerId, null)}
+                    className="text-blue-600 hover:text-blue-800 hover:underline"
+                  >
+                    {stat.total}
+                  </button>
                 </td>
-                <td className="px-2 py-2 whitespace-nowrap text-gray-900 text-right">
-                  {stat.notSet || '-'}
+                <td className="px-2 py-2 whitespace-nowrap text-right">
+                  {stat.notSet ? (
+                    <button
+                      onClick={() => onCellClick(stat.ownerId, 'not_set')}
+                      className="text-blue-600 hover:text-blue-800 hover:underline"
+                    >
+                      {stat.notSet}
+                    </button>
+                  ) : '-'}
                 </td>
-                <td className="px-2 py-2 whitespace-nowrap text-gray-900 text-right">
-                  {stat.inPast || '-'}
+                <td className="px-2 py-2 whitespace-nowrap text-right">
+                  {stat.inPast ? (
+                    <button
+                      onClick={() => onCellClick(stat.ownerId, 'past')}
+                      className="text-blue-600 hover:text-blue-800 hover:underline"
+                    >
+                      {stat.inPast}
+                    </button>
+                  ) : '-'}
                 </td>
-                <td className="px-2 py-2 whitespace-nowrap text-gray-900 text-right">
-                  {stat.next7d || '-'}
+                <td className="px-2 py-2 whitespace-nowrap text-right">
+                  {stat.next7d ? (
+                    <button
+                      onClick={() => onCellClick(stat.ownerId, 'next_7d')}
+                      className="text-blue-600 hover:text-blue-800 hover:underline"
+                    >
+                      {stat.next7d}
+                    </button>
+                  ) : '-'}
                 </td>
-                <td className="px-2 py-2 whitespace-nowrap text-gray-900 text-right">
-                  {stat.inFuture || '-'}
+                <td className="px-2 py-2 whitespace-nowrap text-right">
+                  {stat.inFuture ? (
+                    <button
+                      onClick={() => onCellClick(stat.ownerId, 'future')}
+                      className="text-blue-600 hover:text-blue-800 hover:underline"
+                    >
+                      {stat.inFuture}
+                    </button>
+                  ) : '-'}
                 </td>
               </tr>
             ))}
@@ -341,13 +382,21 @@ function EmptyWidget() {
   );
 }
 
-export function DashboardPage() {
+interface DashboardPageProps {
+  onViewChange: (view: View) => void;
+}
+
+export function DashboardPage({ onViewChange }: DashboardPageProps) {
   const [orgUsers, setOrgUsers] = useState<User[]>([]);
 
   const { organization, user, isSuperAdmin, isOrgAdmin } = useAuth();
   const orgId = organization?.id || '';
   const userEmail = user?.email || '';
   const isAdmin = isSuperAdmin || isOrgAdmin;
+
+  const clearAllFilters = useOKRStore((state: OKRStore) => state.clearAllFilters);
+  const setFilterOwners = useOKRStore((state: OKRStore) => state.setFilterOwners);
+  const setFilterNextStepDate = useOKRStore((state: OKRStore) => state.setFilterNextStepDate);
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -375,6 +424,17 @@ export function DashboardPage() {
     [objectives, orgId, userEmail, isAdmin]
   );
 
+  const handleNextStepCellClick = useCallback((ownerId: string | undefined, nextStepFilter: NextStepDateFilter | null) => {
+    clearAllFilters();
+    if (ownerId) {
+      setFilterOwners([ownerId]);
+    }
+    if (nextStepFilter) {
+      setFilterNextStepDate(nextStepFilter);
+    }
+    onViewChange('objectives');
+  }, [clearAllFilters, setFilterOwners, setFilterNextStepDate, onViewChange]);
+
   // Calculate row height as roughly 1/3 of viewport height minus header space
   // Using calc with vh units for responsive sizing
   const cellHeight = 'calc((100vh - 180px) / 3)';
@@ -393,7 +453,7 @@ export function DashboardPage() {
       >
         {/* Row 1 */}
         {/* Cell (1,1) - Items by Next Step */}
-        <ItemsByNextStepWidget orgObjectives={orgObjectives} orgUsers={orgUsers} />
+        <ItemsByNextStepWidget orgObjectives={orgObjectives} orgUsers={orgUsers} onCellClick={handleNextStepCellClick} />
 
         {/* Cell (1,2) - Items by Type & Owner */}
         <TypesByOwnerWidget orgObjectives={orgObjectives} orgUsers={orgUsers} />
