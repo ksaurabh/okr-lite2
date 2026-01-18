@@ -602,7 +602,7 @@ export function ObjectiveTree() {
 
   return (
     <div className="space-y-6">
-      {/* Views and Search Row */}
+      {/* Views, Columns, and Search Row */}
       <div className="flex items-center gap-4">
         {/* View Selector */}
         <div className="relative" ref={viewDropdownRef}>
@@ -694,6 +694,44 @@ export function ObjectiveTree() {
                   </button>
                 ))}
               </div>
+            </div>
+          )}
+        </div>
+
+        {/* Column Visibility Toggle */}
+        <div className="relative" ref={columnMenuRef}>
+          <button
+            onClick={() => setShowColumnMenu(!showColumnMenu)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-sm hover:bg-gray-50 shadow-sm text-gray-600"
+            title="Show/hide columns"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2m0 10V7m6 10V7" />
+            </svg>
+            <span>Columns</span>
+            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {showColumnMenu && (
+            <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-2 min-w-[180px]">
+              <div className="px-3 py-1.5 text-xs font-medium text-gray-500 border-b border-gray-100 mb-1">
+                Show/Hide Columns
+              </div>
+              {(DEFAULT_VISIBLE_COLUMNS.filter(c => c !== 'title') as ColumnKey[]).map((col) => (
+                <label
+                  key={col}
+                  className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer text-sm text-gray-700 normal-case"
+                >
+                  <input
+                    type="checkbox"
+                    checked={visibleColumns.includes(col)}
+                    onChange={() => toggleColumnVisibility(col)}
+                    className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  {COLUMN_LABELS[col]}
+                </label>
+              ))}
             </div>
           )}
         </div>
@@ -1443,40 +1481,6 @@ export function ObjectiveTree() {
                 />
               </div>
             )}
-            {/* Column visibility toggle */}
-            <div className="relative w-20 px-2 py-2" ref={columnMenuRef}>
-              <button
-                onClick={() => setShowColumnMenu(!showColumnMenu)}
-                className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 px-2 py-1 rounded"
-                title="Show/hide columns"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2m0 10V7m6 10V7" />
-                </svg>
-                <span>Columns</span>
-              </button>
-              {showColumnMenu && (
-                <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-2 min-w-[180px]">
-                  <div className="px-3 py-1.5 text-xs font-medium text-gray-500 border-b border-gray-100 mb-1">
-                    Show/Hide Columns
-                  </div>
-                  {(DEFAULT_VISIBLE_COLUMNS.filter(c => c !== 'title') as ColumnKey[]).map((col) => (
-                    <label
-                      key={col}
-                      className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer text-sm text-gray-700 normal-case"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={visibleColumns.includes(col)}
-                        onChange={() => toggleColumnVisibility(col)}
-                        className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      {COLUMN_LABELS[col]}
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
 
           {/* Table body */}
