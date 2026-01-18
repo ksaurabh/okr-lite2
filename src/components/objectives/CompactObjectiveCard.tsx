@@ -83,6 +83,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   const [editingParent, setEditingParent] = useState(false);
   const [parentSearch, setParentSearch] = useState('');
   const [editingTags, setEditingTags] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
   const tagsDropdownRef = useRef<HTMLDivElement>(null);
   const tagsButtonRef = useRef<HTMLButtonElement>(null);
   const [tagsDropdownPosition, setTagsDropdownPosition] = useState<{ top: number; left: number } | null>(null);
@@ -263,6 +264,75 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
     // Swap sort orders
     await updateObjective(objective.id, { sortOrder: nextOrder }, userEmail);
     await updateObjective(nextSibling.id, { sortOrder: currentOrder }, userEmail);
+  };
+
+  // Drag and drop handlers
+  const handleDragStart = (e: React.DragEvent) => {
+    e.dataTransfer.setData('text/plain', JSON.stringify({
+      id: objective.id,
+      parentId: objective.parentId,
+      sortOrder: objective.sortOrder ?? 0,
+    }));
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+
+    // Only show drag-over effect for siblings (same parent)
+    try {
+      const data = e.dataTransfer.types.includes('text/plain');
+      if (data) {
+        setIsDragOver(true);
+      }
+    } catch {
+      // Ignore errors during drag
+    }
+  };
+
+  const handleDragLeave = () => {
+    setIsDragOver(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+
+    try {
+      const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+      const draggedId = data.id;
+      const draggedParentId = data.parentId;
+
+      // Only allow drop between siblings (same parent)
+      if (draggedParentId !== objective.parentId || draggedId === objective.id) {
+        return;
+      }
+
+      // Find the dragged objective in siblings
+      const draggedIndex = siblings.findIndex((o: Objective) => o.id === draggedId);
+      if (draggedIndex === -1) return;
+
+      const targetIndex = siblingIndex;
+      if (draggedIndex === targetIndex) return;
+
+      // Reorder: move dragged item to target position
+      const newSiblings = [...siblings];
+      const [draggedItem] = newSiblings.splice(draggedIndex, 1);
+      newSiblings.splice(targetIndex, 0, draggedItem);
+
+      // Update sortOrder for all affected siblings
+      const updates = newSiblings.map((sibling, index) =>
+        updateObjective(sibling.id, { sortOrder: index }, userEmail)
+      );
+      await Promise.all(updates);
+    } catch (err) {
+      console.error('Drop failed:', err);
+    }
+  };
+
+  const handleDragEnd = () => {
+    setIsDragOver(false);
   };
 
   const hasChildren = childObjectives.length > 0;
@@ -662,7 +732,15 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   return (
     <div>
       {/* Main tree table row */}
-      <div className="group flex items-center hover:bg-gray-50 border-b border-gray-100">
+      <div
+        className={`group flex items-center hover:bg-gray-50 border-b border-gray-100 ${isDragOver ? 'bg-blue-50 border-blue-300' : ''} ${canModify ? 'cursor-grab active:cursor-grabbing' : ''}`}
+        draggable={canModify}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onDragEnd={handleDragEnd}
+      >
         {/* Tree column - uses title width */}
         <div className="flex items-center gap-1 py-1.5 px-2 min-w-0" style={{ width: columnWidths.title, minWidth: 150, paddingLeft: depth * 20 + 8 }}>
           {/* Expand/collapse chevron */}
