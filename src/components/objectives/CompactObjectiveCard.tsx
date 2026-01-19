@@ -75,6 +75,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   const [editingAssignee, setEditingAssignee] = useState(false);
   const [editingPeriod, setEditingPeriod] = useState(false);
   const [editingNextStepDate, setEditingNextStepDate] = useState(false);
+  const [editingResolved, setEditingResolved] = useState(false);
   const [editingNextStep, setEditingNextStep] = useState(false);
   const [nextStepValue, setNextStepValue] = useState(objectiveProp.nextStep || '');
   const [editingStoryPoints, setEditingStoryPoints] = useState(false);
@@ -105,6 +106,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   const assigneeSelectRef = useRef<HTMLSelectElement>(null);
   const periodSelectRef = useRef<HTMLSelectElement>(null);
   const nextStepDateInputRef = useRef<HTMLInputElement>(null);
+  const resolvedInputRef = useRef<HTMLInputElement>(null);
   const nextStepInputRef = useRef<HTMLInputElement>(null);
   const storyPointsInputRef = useRef<HTMLInputElement>(null);
   const valuePointsInputRef = useRef<HTMLInputElement>(null);
@@ -434,6 +436,12 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   }, [editingNextStepDate]);
 
   useEffect(() => {
+    if (editingResolved && resolvedInputRef.current) {
+      resolvedInputRef.current.focus();
+    }
+  }, [editingResolved]);
+
+  useEffect(() => {
     if (editingNextStep && nextStepInputRef.current) {
       nextStepInputRef.current.focus();
       nextStepInputRef.current.select();
@@ -638,6 +646,13 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
     setEditingNextStepDate(false);
     if (newDate !== (objective.nextStepDate || '')) {
       await updateObjective(objective.id, { nextStepDate: newDate || undefined }, userEmail);
+    }
+  };
+
+  const handleResolvedChange = async (newDate: string) => {
+    setEditingResolved(false);
+    if (newDate !== (objective.resolvedAt || '')) {
+      await updateObjective(objective.id, { resolvedAt: newDate || undefined }, userEmail);
     }
   };
 
@@ -1527,6 +1542,33 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
         {visibleColumns.includes('progress') && (
         <div className="px-2 py-1.5 text-xs text-gray-500 font-medium text-right flex-shrink-0" style={{ width: columnWidths.progress }}>
           {objective.progress}%
+        </div>
+        )}
+
+        {/* Resolved column - editable date picker */}
+        {visibleColumns.includes('resolved') && (
+        <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.resolved }}>
+          {editingResolved ? (
+            <input
+              ref={resolvedInputRef}
+              type="date"
+              value={objective.resolvedAt || ''}
+              onChange={(e) => handleResolvedChange(e.target.value)}
+              onBlur={() => setEditingResolved(false)}
+              className="w-full text-xs px-1 py-0.5 border border-blue-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          ) : (
+            <button
+              onClick={() => canModify && setEditingResolved(true)}
+              className={`w-full text-left text-xs px-1 py-0.5 rounded truncate ${canModify ? 'hover:bg-gray-100 cursor-pointer' : 'cursor-default'} ${objective.resolvedAt ? 'text-gray-600' : 'text-gray-300'}`}
+              disabled={!canModify}
+            >
+              {objective.resolvedAt ? (() => {
+                const [year, month, day] = objective.resolvedAt.split('-').map(Number);
+                return new Date(year, month - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+              })() : '—'}
+            </button>
+          )}
         </div>
         )}
 

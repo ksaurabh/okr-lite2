@@ -55,6 +55,7 @@ export interface Objective {
   progress: number;
   status: ObjectiveStatus;
   workflowStatus: WorkflowStatus;
+  resolvedAt?: string;
   periodId: string;
   createdAt: string;
   updatedAt: string;

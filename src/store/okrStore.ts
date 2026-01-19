@@ -196,6 +196,7 @@ export interface ColumnWidths {
   valuePoints: number;
   tags: number;
   progress: number;
+  resolved: number;
 }
 
 export const DEFAULT_COLUMN_WIDTHS: ColumnWidths = {
@@ -215,6 +216,7 @@ export const DEFAULT_COLUMN_WIDTHS: ColumnWidths = {
   valuePoints: 56,  // w-14
   tags: 160,        // w-40
   progress: 56,     // w-14
+  resolved: 96,     // w-24
 };
 
 export type ColumnKey = keyof ColumnWidths;
@@ -236,6 +238,7 @@ export const COLUMN_LABELS: Record<ColumnKey, string> = {
   valuePoints: 'VP',
   tags: 'Tags',
   progress: 'Progress',
+  resolved: 'Resolved',
 };
 
 export const DEFAULT_VISIBLE_COLUMNS: ColumnKey[] = [
@@ -412,32 +415,48 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     const getTagNames = (ids: string[] | undefined) => ids ? ids.map(id => state.tags.find(t => t.id === id)?.name || id).join(', ') : undefined;
     const getObjectiveTitle = (id: string | undefined) => id ? state.objectives.find(o => o.id === id)?.title || id : undefined;
 
-    // Track changes
+    // Track changes - helper to normalize empty/undefined values
+    const normalize = (val: unknown) => val === '' || val === null ? undefined : val;
+    const normalizeArray = (val: unknown[] | undefined) => !val || val.length === 0 ? undefined : val;
     const changes: FieldChange[] = [];
 
-    if ('title' in updates && updates.title !== existingObj.title) {
+    if ('title' in updates && normalize(updates.title) !== normalize(existingObj.title)) {
       changes.push({ field: 'title', oldValue: existingObj.title, newValue: updates.title });
     }
-    if ('description' in updates && updates.description !== existingObj.description) {
+    if ('description' in updates && normalize(updates.description) !== normalize(existingObj.description)) {
       changes.push({ field: 'description', oldValue: existingObj.description || '(empty)', newValue: updates.description || '(empty)' });
     }
-    if ('level' in updates && updates.level !== existingObj.level) {
+    if ('level' in updates && normalize(updates.level) !== normalize(existingObj.level)) {
       changes.push({ field: 'level', oldValue: existingObj.level, newValue: updates.level });
     }
-    if ('periodId' in updates && updates.periodId !== existingObj.periodId) {
+    if ('periodId' in updates && normalize(updates.periodId) !== normalize(existingObj.periodId)) {
       changes.push({ field: 'period', oldValue: getPeriodName(existingObj.periodId), newValue: getPeriodName(updates.periodId) });
     }
-    if ('teamId' in updates && updates.teamId !== existingObj.teamId) {
+    if ('teamId' in updates && normalize(updates.teamId) !== normalize(existingObj.teamId)) {
       changes.push({ field: 'team', oldValue: getTeamName(existingObj.teamId) || '(none)', newValue: getTeamName(updates.teamId) || '(none)' });
     }
-    if ('tagIds' in updates && JSON.stringify(updates.tagIds) !== JSON.stringify(existingObj.tagIds)) {
+    if ('tagIds' in updates && JSON.stringify(normalizeArray(updates.tagIds)) !== JSON.stringify(normalizeArray(existingObj.tagIds))) {
       changes.push({ field: 'tags', oldValue: getTagNames(existingObj.tagIds) || '(none)', newValue: getTagNames(updates.tagIds) || '(none)' });
     }
-    if ('parentId' in updates && updates.parentId !== existingObj.parentId) {
+    if ('parentId' in updates && normalize(updates.parentId) !== normalize(existingObj.parentId)) {
       changes.push({ field: 'parent', oldValue: getObjectiveTitle(existingObj.parentId) || '(none)', newValue: getObjectiveTitle(updates.parentId) || '(none)' });
     }
     if ('shared' in updates && updates.shared !== existingObj.shared) {
       changes.push({ field: 'visibility', oldValue: existingObj.shared ? 'Shared' : 'Private', newValue: updates.shared ? 'Shared' : 'Private' });
+    }
+    if ('ownerId' in updates && normalize(updates.ownerId) !== normalize(existingObj.ownerId)) {
+      const getOwnerName = (id: string | undefined) => id ? state.objectives.find(o => o.id === id)?.title || id : undefined;
+      changes.push({ field: 'owner', oldValue: getOwnerName(existingObj.ownerId) || '(none)', newValue: getOwnerName(updates.ownerId) || '(none)' });
+    }
+    if ('assigneeId' in updates && normalize(updates.assigneeId) !== normalize(existingObj.assigneeId)) {
+      const getAssigneeName = (id: string | undefined) => id ? state.objectives.find(o => o.id === id)?.title || id : undefined;
+      changes.push({ field: 'assignee', oldValue: getAssigneeName(existingObj.assigneeId) || '(none)', newValue: getAssigneeName(updates.assigneeId) || '(none)' });
+    }
+    if ('resolvedAt' in updates && normalize(updates.resolvedAt) !== normalize(existingObj.resolvedAt)) {
+      changes.push({ field: 'resolved', oldValue: existingObj.resolvedAt || '(none)', newValue: updates.resolvedAt || '(none)' });
+    }
+    if ('workflowStatus' in updates && normalize(updates.workflowStatus) !== normalize(existingObj.workflowStatus)) {
+      changes.push({ field: 'status', oldValue: existingObj.workflowStatus || '(none)', newValue: updates.workflowStatus || '(none)' });
     }
 
     // Add history entry if there are changes
@@ -453,8 +472,20 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       updatedHistory = [...updatedHistory, historyEntry];
     }
 
+    // Auto-set resolvedAt when workflow status changes to/from done (only if not manually set)
+    let resolvedAtUpdate: { resolvedAt?: string } = {};
+    if (!('resolvedAt' in updates) && 'workflowStatus' in updates && updates.workflowStatus !== existingObj.workflowStatus) {
+      if (updates.workflowStatus === 'done') {
+        // Set resolvedAt to today's date (YYYY-MM-DD format)
+        resolvedAtUpdate = { resolvedAt: now.split('T')[0] };
+      } else if (existingObj.workflowStatus === 'done') {
+        // Clear resolvedAt when moving away from done
+        resolvedAtUpdate = { resolvedAt: undefined };
+      }
+    }
+
     try {
-      const updatedObjective = await api.updateObjective(id, { ...updates, history: updatedHistory });
+      const updatedObjective = await api.updateObjective(id, { ...updates, ...resolvedAtUpdate, history: updatedHistory });
       set((state: OKRStore) => {
         const newState = {
           ...state,

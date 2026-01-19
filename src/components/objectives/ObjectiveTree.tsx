@@ -811,7 +811,7 @@ export function ObjectiveTree() {
               <div className="px-3 py-1.5 text-xs font-medium text-gray-500 border-b border-gray-100 mb-1">
                 Show/Hide Columns
               </div>
-              {(DEFAULT_VISIBLE_COLUMNS.filter(c => c !== 'title') as ColumnKey[]).map((col) => (
+              {(Object.keys(COLUMN_LABELS).filter(c => c !== 'title') as ColumnKey[]).map((col) => (
                 <label
                   key={col}
                   className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer text-sm text-gray-700 normal-case"
@@ -1704,6 +1704,15 @@ export function ObjectiveTree() {
                 <div
                   className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
                   onMouseDown={(e) => handleResizeStart('progress', e)}
+                />
+              </div>
+            )}
+            {visibleColumns.includes('resolved') && (
+              <div className="relative flex items-center" style={{ width: columnWidths.resolved }}>
+                <div className="px-1 py-2 flex-1">Resolved</div>
+                <div
+                  className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                  onMouseDown={(e) => handleResizeStart('resolved', e)}
                 />
               </div>
             )}

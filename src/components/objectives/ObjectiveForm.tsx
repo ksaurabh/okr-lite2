@@ -40,6 +40,7 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
   const [assigneeId, setAssigneeId] = useState(objective?.assigneeId || parentObjective?.assigneeId || '');
   const [storyPoints, setStoryPoints] = useState(objective?.storyPoints?.toString() || '');
   const [valuePoints, setValuePoints] = useState(objective?.valuePoints?.toString() || '');
+  const [resolvedAt, setResolvedAt] = useState(objective?.resolvedAt || '');
   const [linkUrl, setLinkUrl] = useState(objective?.link?.url || '');
   const [linkDescription, setLinkDescription] = useState(objective?.link?.description || '');
   const [orgUsers, setOrgUsers] = useState<User[]>([]);
@@ -178,6 +179,7 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
           periodId,
           shared: !isPrivate,
           link: linkObj,
+          resolvedAt: resolvedAt || undefined,
         };
         // Only include points if user has permission to edit them
         if (canEditStoryPoints && parsedStoryPoints !== undefined && !isNaN(parsedStoryPoints) && parsedStoryPoints >= 0) {
@@ -383,6 +385,19 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
             }`}
           />
         </div>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Resolved Date
+          <span className="text-xs text-gray-400 ml-1">(auto-set when marked done)</span>
+        </label>
+        <input
+          type="date"
+          value={resolvedAt}
+          onChange={(e) => setResolvedAt(e.target.value)}
+          className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
       </div>
 
       <div className="grid grid-cols-2 gap-4">
