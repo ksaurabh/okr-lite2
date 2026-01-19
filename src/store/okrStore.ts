@@ -278,6 +278,7 @@ export interface BackupData {
   teams: Team[];
   periods: Period[];
   tags: Tag[];
+  lists?: List[];
   users?: BackupUser[];
   organizations?: BackupOrganization[];
 }
@@ -946,6 +947,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       teams: state.teams,
       periods: state.periods,
       tags: state.tags,
+      lists: state.lists,
     };
   },
 
@@ -958,6 +960,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
         teams: data.teams || [],
         periods: data.periods || [],
         tags: data.tags || [],
+        lists: data.lists || [],
         activePeriodId: null,
         filterTagIds: [],
         filterTeamIds: [],
