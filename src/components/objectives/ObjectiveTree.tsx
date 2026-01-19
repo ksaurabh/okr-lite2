@@ -177,6 +177,8 @@ export function ObjectiveTree() {
   const toggleFilterLevel = useOKRStore((state: OKRStore) => state.toggleFilterLevel);
   const filterWorkflowStatuses = useOKRStore((state: OKRStore) => state.filterWorkflowStatuses);
   const toggleFilterWorkflowStatus = useOKRStore((state: OKRStore) => state.toggleFilterWorkflowStatus);
+  const filterKeyResultsOnly = useOKRStore((state: OKRStore) => state.filterKeyResultsOnly);
+  const toggleFilterKeyResultsOnly = useOKRStore((state: OKRStore) => state.toggleFilterKeyResultsOnly);
   const filterObjectiveId = useOKRStore((state: OKRStore) => state.filterObjectiveId);
   const setFilterObjective = useOKRStore((state: OKRStore) => state.setFilterObjective);
   const lists = useOKRStore((state: OKRStore) => state.lists);
@@ -317,7 +319,7 @@ export function ObjectiveTree() {
     [tags, orgId, userEmail, isAdmin]
   );
 
-  const hasActiveFilters = activePeriodId || filterTagIds.length > 0 || filterTeamIds.length > 0 || filterTypes.length > 0 || filterTypeNotSet || filterOwnerIds.length > 0 || filterAssigneeIds.length > 0 || filterAssigneeNotSet || filterNextStepDate || filterLevels.length > 0 || filterWorkflowStatuses.length > 0 || filterObjectiveId || filterListId || searchQuery.trim();
+  const hasActiveFilters = activePeriodId || filterTagIds.length > 0 || filterTeamIds.length > 0 || filterTypes.length > 0 || filterTypeNotSet || filterOwnerIds.length > 0 || filterAssigneeIds.length > 0 || filterAssigneeNotSet || filterNextStepDate || filterLevels.length > 0 || filterWorkflowStatuses.length > 0 || filterKeyResultsOnly || filterObjectiveId || filterListId || searchQuery.trim();
 
   // Get all ancestor period IDs for a given period (including the period itself)
   const getAncestorPeriodIds = useMemo(() => {
@@ -558,6 +560,11 @@ export function ObjectiveTree() {
       }
     }
 
+    // Filter by key results only
+    if (filterKeyResultsOnly) {
+      result = result.filter((obj: Objective) => obj.isKeyResult === true);
+    }
+
     // Optionally include children of matching objectives
     if (showChildren && result.length > 0) {
       const matchingIds = new Set(result.map((obj: Objective) => obj.id));
@@ -591,7 +598,7 @@ export function ObjectiveTree() {
     }
 
     return result;
-  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterTypeNotSet, filterLevels, filterWorkflowStatuses, filterObjectiveId, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterAssigneeNotSet, filterNextStepDate, filterListId, lists, searchQuery, includeAncestorPeriods, includeChildPeriods, includeChildTeams, showChildren, directChildrenOnly, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds, getDescendantObjectiveIds]);
+  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterTypeNotSet, filterLevels, filterWorkflowStatuses, filterKeyResultsOnly, filterObjectiveId, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterAssigneeNotSet, filterNextStepDate, filterListId, lists, searchQuery, includeAncestorPeriods, includeChildPeriods, includeChildTeams, showChildren, directChildrenOnly, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds, getDescendantObjectiveIds]);
 
   // Get IDs of all filtered objectives for quick lookup
   const filteredObjectiveIds = useMemo(
@@ -1210,6 +1217,20 @@ export function ObjectiveTree() {
                 </div>
               </div>
 
+              {/* Key Results Only Filter */}
+              <div className="flex items-center gap-3">
+                <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0">Key Results</label>
+                <label className="inline-flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={filterKeyResultsOnly}
+                    onChange={() => toggleFilterKeyResultsOnly()}
+                    className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  Show only Key Results
+                </label>
+              </div>
+
               {/* Next Step Date Filter */}
               <div className="flex items-center gap-3">
                 <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0">Next Date</label>
@@ -1511,6 +1532,15 @@ export function ObjectiveTree() {
                 <div
                   className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
                   onMouseDown={(e) => handleResizeStart('workflowStatus', e)}
+                />
+              </div>
+            )}
+            {visibleColumns.includes('keyResult') && (
+              <div className="relative flex items-center" style={{ width: columnWidths.keyResult }}>
+                <div className="px-1 py-2 flex-1">KR</div>
+                <div
+                  className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                  onMouseDown={(e) => handleResizeStart('keyResult', e)}
                 />
               </div>
             )}

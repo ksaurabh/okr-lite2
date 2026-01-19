@@ -51,6 +51,7 @@ export interface Objective {
   link?: ObjectiveLink;
   sortOrder?: number;
   progressUpdates?: ProgressUpdate[];
+  isKeyResult?: boolean;
   progress: number;
   status: ObjectiveStatus;
   workflowStatus: WorkflowStatus;
@@ -132,6 +133,7 @@ export interface OKRState {
   filterLevels: ObjectiveLevel[];
   filterObjectiveId: string | null;
   filterWorkflowStatuses: WorkflowStatus[];
+  filterKeyResultsOnly: boolean;
   filterListId: string | null;
   filterListShowChildren: boolean;
 }

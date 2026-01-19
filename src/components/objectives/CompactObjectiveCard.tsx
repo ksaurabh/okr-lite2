@@ -1116,6 +1116,32 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           </div>
         )}
 
+        {/* Key Result column - toggle with one click */}
+        {visibleColumns.includes('keyResult') && (
+          <div className="px-1 py-1 flex-shrink-0 flex items-center justify-center" style={{ width: columnWidths.keyResult }}>
+            <button
+              onClick={async () => {
+                if (canModify) {
+                  await updateObjective(objective.id, { isKeyResult: !objective.isKeyResult }, userEmail);
+                }
+              }}
+              className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${
+                objective.isKeyResult
+                  ? 'bg-blue-600 border-blue-600 text-white'
+                  : 'border-gray-300 hover:border-gray-400'
+              } ${canModify ? 'cursor-pointer' : 'cursor-default opacity-50'}`}
+              disabled={!canModify}
+              title={objective.isKeyResult ? 'Remove Key Result flag' : 'Mark as Key Result'}
+            >
+              {objective.isKeyResult && (
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                </svg>
+              )}
+            </button>
+          </div>
+        )}
+
         {/* Parent column - editable with search */}
         {visibleColumns.includes('parent') && (
           <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.parent }}>
