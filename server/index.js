@@ -876,6 +876,18 @@ app.get('/api/users/me/lists', requireAuth, (req, res) => {
   res.json({ lists });
 });
 
+// Bulk replace all lists (for import)
+app.put('/api/users/me/lists', requireAuth, (req, res) => {
+  const { lists } = req.body;
+
+  if (!Array.isArray(lists)) {
+    return res.status(400).json({ error: 'Lists must be an array' });
+  }
+
+  const savedLists = saveUserLists(req.user.email, lists);
+  res.json({ lists: savedLists });
+});
+
 // Create a new list
 app.post('/api/users/me/lists', requireAuth, (req, res) => {
   const { name, color } = req.body;

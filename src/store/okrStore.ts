@@ -140,7 +140,7 @@ interface OKRActions {
 
   // Backup & Restore
   exportData: () => BackupData;
-  importData: (data: BackupData) => void;
+  importData: (data: BackupData) => Promise<void>;
 
   // Utilities
   recalculateProgress: () => void;
@@ -951,7 +951,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     };
   },
 
-  importData: (data: BackupData) => {
+  importData: async (data: BackupData) => {
     set((state: OKRStore) => {
       const newState = {
         ...state,
@@ -977,6 +977,20 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       saveFilterState({ activePeriodId: null, filterTagIds: [], filterTeamIds: [], filterTypes: [], filterTypeNotSet: false, filterOwnerIds: [], filterOwnerOperator: 'equals', filterAssigneeIds: [], filterAssigneeOperator: 'equals', filterNextStepDate: null, filterLevels: [], filterObjectiveId: null, filterWorkflowStatuses: [] });
       return recalculateAllProgress(newState);
     });
+
+    // Save lists to server
+    if (data.lists && data.lists.length > 0) {
+      try {
+        await fetch(`${API_URL}/api/users/me/lists`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ lists: data.lists }),
+        });
+      } catch (err) {
+        console.error('Failed to import lists:', err);
+      }
+    }
   },
 
   fetchUserPreferences: async () => {
