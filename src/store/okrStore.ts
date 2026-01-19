@@ -169,9 +169,10 @@ interface OKRActions {
   // Lists
   lists: List[];
   fetchLists: () => Promise<void>;
-  createList: (name: string) => Promise<List | null>;
+  createList: (name: string, color?: string) => Promise<List | null>;
   deleteList: (listId: string) => Promise<void>;
   renameList: (listId: string, newName: string) => Promise<void>;
+  updateListColor: (listId: string, color: string) => Promise<void>;
   addItemToList: (listId: string, objectiveId: string) => Promise<void>;
   removeItemFromList: (listId: string, objectiveId: string) => Promise<void>;
   reorderListItems: (listId: string, items: { objectiveId: string; order: number }[]) => Promise<void>;
@@ -1283,7 +1284,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     }
   },
 
-  createList: async (name: string) => {
+  createList: async (name: string, color?: string) => {
     try {
       const response = await fetch(`${API_URL}/api/users/me/lists`, {
         method: 'POST',
@@ -1291,7 +1292,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, color: color || '#6b7280' }),
       });
 
       if (response.ok) {
@@ -1338,6 +1339,26 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       }
     } catch (err) {
       console.error('Failed to rename list:', err);
+    }
+  },
+
+  updateListColor: async (listId: string, color: string) => {
+    try {
+      const response = await fetch(`${API_URL}/api/users/me/lists/${listId}`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ color }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        set({ lists: data.lists });
+      }
+    } catch (err) {
+      console.error('Failed to update list color:', err);
     }
   },
 

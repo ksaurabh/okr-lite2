@@ -730,6 +730,12 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
     return list?.items.some(item => item.objectiveId === objective.id) || false;
   };
 
+  // Get lists that contain this objective
+  const objectiveLists = useMemo(
+    () => lists.filter(list => list.items.some(item => item.objectiveId === objective.id)),
+    [lists, objective.id]
+  );
+
   const handleToggleList = async (listId: string) => {
     if (isInList(listId)) {
       await removeItemFromList(listId, objective.id);
@@ -866,6 +872,27 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
             </span>
           )}
 
+          {/* Colored bookmark icons for lists */}
+          {objectiveLists.length > 0 && (
+            <div className="flex items-center gap-0.5 flex-shrink-0">
+              {objectiveLists.map((list: List) => (
+                <span key={list.id} className="relative group/bookmark">
+                  <svg
+                    className="w-3.5 h-3.5"
+                    fill={list.color}
+                    stroke={list.color}
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                  </svg>
+                  <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 px-2 py-1 text-xs text-white bg-gray-800 rounded whitespace-nowrap opacity-0 group-hover/bookmark:opacity-100 transition-opacity duration-75 pointer-events-none z-50">
+                    {list.name}
+                  </span>
+                </span>
+              ))}
+            </div>
+          )}
+
           {/* External link */}
           {objective.link?.url && (
             <a
@@ -889,50 +916,64 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
             const indicator = getNextStepDateIndicator(objective.nextStepDate);
             if (!indicator) return null;
             return (
-              <span
-                className={`w-2 h-2 rounded-full flex-shrink-0 ${indicator.color}`}
-                title={indicator.tooltip}
-              />
+              <span className="relative flex-shrink-0 group/indicator">
+                <span className={`w-2 h-2 rounded-full block ${indicator.color}`} />
+                <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 px-2 py-1 text-xs text-white bg-gray-800 rounded whitespace-nowrap opacity-0 group-hover/indicator:opacity-100 transition-opacity duration-75 pointer-events-none z-50">
+                  {indicator.tooltip}
+                </span>
+              </span>
             );
           })()}
 
           {/* Quick add button - inline with title */}
           {canAddChild && (
-            <button
-              onClick={() => setShowQuickAdd(!showQuickAdd)}
-              className={`p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 ${showQuickAdd ? 'text-blue-600 bg-blue-50 opacity-100' : 'text-gray-400 hover:text-blue-600'}`}
-              title="Add child objective"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
-            </button>
+            <span className="relative group/quickadd flex-shrink-0">
+              <button
+                onClick={() => setShowQuickAdd(!showQuickAdd)}
+                className={`p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity ${showQuickAdd ? 'text-blue-600 bg-blue-50 opacity-100' : 'text-gray-400 hover:text-blue-600'}`}
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+              </button>
+              <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 px-2 py-1 text-xs text-white bg-gray-800 rounded whitespace-nowrap opacity-0 group-hover/quickadd:opacity-100 transition-opacity duration-75 pointer-events-none z-50">
+                Add child
+              </span>
+            </span>
           )}
 
           {/* Filter to descendants button */}
-          <button
-            onClick={() => setFilterObjective(objective.id)}
-            className="p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 text-gray-400 hover:text-gray-600"
-            title="Filter to show descendants"
-          >
-            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
-              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" />
-              <circle cx="12" cy="12" r="5" fill="currentColor" />
-            </svg>
-          </button>
+          <span className="relative group/filter flex-shrink-0">
+            <button
+              onClick={() => setFilterObjective(objective.id)}
+              className="p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-gray-600"
+            >
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" />
+                <circle cx="12" cy="12" r="5" fill="currentColor" />
+              </svg>
+            </button>
+            <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 px-2 py-1 text-xs text-white bg-gray-800 rounded whitespace-nowrap opacity-0 group-hover/filter:opacity-100 transition-opacity duration-75 pointer-events-none z-50">
+              Filter to descendants
+            </span>
+          </span>
 
           {/* Add to list button */}
-          <div className="relative">
+          <div className="relative group/list">
             <button
               ref={listButtonRef}
               onClick={() => setShowListDropdown(!showListDropdown)}
               className={`p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 ${showListDropdown ? 'text-blue-600 opacity-100' : 'text-gray-400 hover:text-gray-600'}`}
-              title="Add to list"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
               </svg>
             </button>
+            {!showListDropdown && (
+              <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 px-2 py-1 text-xs text-white bg-gray-800 rounded whitespace-nowrap opacity-0 group-hover/list:opacity-100 transition-opacity duration-75 pointer-events-none z-50">
+                Add to list
+              </span>
+            )}
             {showListDropdown && listDropdownPosition && (
               <div
                 ref={listDropdownRef}
@@ -1020,15 +1061,19 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
 
           {/* Edit button - inline with title */}
           {canModify && (
-            <button
-              onClick={() => setShowEdit(true)}
-              className="p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 text-gray-400 hover:text-gray-600"
-              title="Edit objective"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-              </svg>
-            </button>
+            <span className="relative group/edit flex-shrink-0">
+              <button
+                onClick={() => setShowEdit(true)}
+                className="p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              </button>
+              <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 px-2 py-1 text-xs text-white bg-gray-800 rounded whitespace-nowrap opacity-0 group-hover/edit:opacity-100 transition-opacity duration-75 pointer-events-none z-50">
+                Edit
+              </span>
+            </span>
           )}
         </div>
 

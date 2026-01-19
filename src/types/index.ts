@@ -207,6 +207,7 @@ export interface ListItem {
 export interface List {
   id: string;
   name: string;
+  color: string;
   items: ListItem[];
   createdAt: string;
   updatedAt: string;

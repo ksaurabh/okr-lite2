@@ -19,6 +19,18 @@ const WORKFLOW_STATUS_LABELS: Record<WorkflowStatus, string> = {
   archived: 'Archived',
 };
 
+const LIST_COLORS = [
+  '#6b7280', // gray
+  '#ef4444', // red
+  '#f97316', // orange
+  '#eab308', // yellow
+  '#22c55e', // green
+  '#14b8a6', // teal
+  '#3b82f6', // blue
+  '#8b5cf6', // violet
+  '#ec4899', // pink
+];
+
 const LIST_COLUMN_WIDTHS_KEY = 'okr-list-column-widths';
 
 interface ListColumnWidths {
@@ -60,9 +72,11 @@ function saveListColumnWidths(widths: ListColumnWidths): void {
 export function ListsPage({ onViewChange }: ListsPageProps) {
   const [selectedListId, setSelectedListId] = useState<string | null>(null);
   const [newListName, setNewListName] = useState('');
+  const [newListColor, setNewListColor] = useState(LIST_COLORS[0]);
   const [isCreating, setIsCreating] = useState(false);
   const [editingListId, setEditingListId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
+  const [editingColorListId, setEditingColorListId] = useState<string | null>(null);
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
   const [isListsCollapsed, setIsListsCollapsed] = useState(false);
   const [columnWidths, setColumnWidths] = useState<ListColumnWidths>(loadListColumnWidths);
@@ -77,6 +91,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
   const createList = useOKRStore((state: OKRStore) => state.createList);
   const deleteList = useOKRStore((state: OKRStore) => state.deleteList);
   const renameList = useOKRStore((state: OKRStore) => state.renameList);
+  const updateListColor = useOKRStore((state: OKRStore) => state.updateListColor);
   const removeItemFromList = useOKRStore((state: OKRStore) => state.removeItemFromList);
   const reorderListItems = useOKRStore((state: OKRStore) => state.reorderListItems);
   const setFilterObjective = useOKRStore((state: OKRStore) => state.setFilterObjective);
@@ -139,12 +154,18 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
 
   const handleCreateList = async () => {
     if (!newListName.trim()) return;
-    const list = await createList(newListName.trim());
+    const list = await createList(newListName.trim(), newListColor);
     if (list) {
       setNewListName('');
+      setNewListColor(LIST_COLORS[0]);
       setIsCreating(false);
       setSelectedListId(list.id);
     }
+  };
+
+  const handleColorChange = async (listId: string, color: string) => {
+    await updateListColor(listId, color);
+    setEditingColorListId(null);
   };
 
   const handleDeleteList = async (listId: string, e: React.MouseEvent) => {
@@ -281,17 +302,30 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                       if (e.key === 'Escape') {
                         setIsCreating(false);
                         setNewListName('');
+                        setNewListColor(LIST_COLORS[0]);
                       }
                     }}
                     placeholder="List name"
                     className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                     autoFocus
                   />
+                  <div className="flex items-center gap-1 mt-2">
+                    {LIST_COLORS.map(color => (
+                      <button
+                        key={color}
+                        onClick={() => setNewListColor(color)}
+                        className={`w-5 h-5 rounded-full border-2 ${newListColor === color ? 'border-gray-800' : 'border-transparent'}`}
+                        style={{ backgroundColor: color }}
+                        title={color}
+                      />
+                    ))}
+                  </div>
                   <div className="flex justify-end gap-2 mt-2">
                     <button
                       onClick={() => {
                         setIsCreating(false);
                         setNewListName('');
+                        setNewListColor(LIST_COLORS[0]);
                       }}
                       className="px-2 py-1 text-xs text-gray-600 hover:text-gray-800"
                     >
@@ -354,6 +388,32 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                         />
                       ) : (
                         <>
+                          <div className="relative">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingColorListId(editingColorListId === list.id ? null : list.id);
+                              }}
+                              className="w-3 h-3 rounded-full mr-2 flex-shrink-0"
+                              style={{ backgroundColor: list.color || '#6b7280' }}
+                              title="Change color"
+                            />
+                            {editingColorListId === list.id && (
+                              <div
+                                className="absolute left-0 top-5 z-10 bg-white rounded-md shadow-lg border border-gray-200 p-1.5 flex gap-1"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {LIST_COLORS.map(color => (
+                                  <button
+                                    key={color}
+                                    onClick={() => handleColorChange(list.id, color)}
+                                    className={`w-5 h-5 rounded-full border-2 ${list.color === color ? 'border-gray-800' : 'border-transparent hover:border-gray-400'}`}
+                                    style={{ backgroundColor: color }}
+                                  />
+                                ))}
+                              </div>
+                            )}
+                          </div>
                           <span className="text-sm truncate flex-1">{list.name}</span>
                           <span className="text-xs text-gray-500 mr-2">{list.items.length}</span>
                           <div className="hidden group-hover:flex items-center gap-1">

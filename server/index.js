@@ -878,7 +878,7 @@ app.get('/api/users/me/lists', requireAuth, (req, res) => {
 
 // Create a new list
 app.post('/api/users/me/lists', requireAuth, (req, res) => {
-  const { name } = req.body;
+  const { name, color } = req.body;
 
   if (!name || !name.trim()) {
     return res.status(400).json({ error: 'List name is required' });
@@ -888,6 +888,7 @@ app.post('/api/users/me/lists', requireAuth, (req, res) => {
   const newList = {
     id: generateListId(),
     name: name.trim(),
+    color: color || '#6b7280',
     items: [],
     createdAt: now,
     updatedAt: now,
@@ -900,10 +901,10 @@ app.post('/api/users/me/lists', requireAuth, (req, res) => {
   res.json({ list: newList, lists: savedLists });
 });
 
-// Update a list (rename)
+// Update a list (rename or change color)
 app.put('/api/users/me/lists/:listId', requireAuth, (req, res) => {
   const { listId } = req.params;
-  const { name } = req.body;
+  const { name, color } = req.body;
 
   const lists = getUserLists(req.user.email);
   const listIndex = lists.findIndex(l => l.id === listId);
@@ -914,6 +915,9 @@ app.put('/api/users/me/lists/:listId', requireAuth, (req, res) => {
 
   if (name && name.trim()) {
     lists[listIndex].name = name.trim();
+  }
+  if (color) {
+    lists[listIndex].color = color;
   }
   lists[listIndex].updatedAt = new Date().toISOString();
 
