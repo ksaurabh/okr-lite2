@@ -182,8 +182,9 @@ export function ObjectiveTree() {
   const filterObjectiveId = useOKRStore((state: OKRStore) => state.filterObjectiveId);
   const setFilterObjective = useOKRStore((state: OKRStore) => state.setFilterObjective);
   const lists = useOKRStore((state: OKRStore) => state.lists);
-  const filterListId = useOKRStore((state: OKRStore) => state.filterListId);
-  const setFilterList = useOKRStore((state: OKRStore) => state.setFilterList);
+  const filterListIds = useOKRStore((state: OKRStore) => state.filterListIds);
+  const toggleFilterList = useOKRStore((state: OKRStore) => state.toggleFilterList);
+  const clearFilterLists = useOKRStore((state: OKRStore) => state.clearFilterLists);
   const clearAllFilters = useOKRStore((state: OKRStore) => state.clearAllFilters);
   const columnWidths = useOKRStore((state: OKRStore) => state.columnWidths);
   const setColumnWidths = useOKRStore((state: OKRStore) => state.setColumnWidths);
@@ -219,6 +220,10 @@ export function ObjectiveTree() {
   const [editingViewName, setEditingViewName] = useState('');
   const viewDropdownRef = useRef<HTMLDivElement>(null);
 
+  // List filter dropdown state
+  const [showListDropdown, setShowListDropdown] = useState(false);
+  const listDropdownRef = useRef<HTMLDivElement>(null);
+
   // Close column menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -247,6 +252,17 @@ export function ObjectiveTree() {
       if (objectiveDropdownRef.current && !objectiveDropdownRef.current.contains(event.target as Node)) {
         setShowObjectiveDropdown(false);
         setObjectiveSearch('');
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Close list dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (listDropdownRef.current && !listDropdownRef.current.contains(event.target as Node)) {
+        setShowListDropdown(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -319,7 +335,7 @@ export function ObjectiveTree() {
     [tags, orgId, userEmail, isAdmin]
   );
 
-  const hasActiveFilters = activePeriodId || filterTagIds.length > 0 || filterTeamIds.length > 0 || filterTypes.length > 0 || filterTypeNotSet || filterOwnerIds.length > 0 || filterAssigneeIds.length > 0 || filterAssigneeNotSet || filterNextStepDate || filterLevels.length > 0 || filterWorkflowStatuses.length > 0 || filterKeyResultsOnly || filterObjectiveId || filterListId || searchQuery.trim();
+  const hasActiveFilters = activePeriodId || filterTagIds.length > 0 || filterTeamIds.length > 0 || filterTypes.length > 0 || filterTypeNotSet || filterOwnerIds.length > 0 || filterAssigneeIds.length > 0 || filterAssigneeNotSet || filterNextStepDate || filterLevels.length > 0 || filterWorkflowStatuses.length > 0 || filterKeyResultsOnly || filterObjectiveId || filterListIds.length > 0 || searchQuery.trim();
 
   // Get all ancestor period IDs for a given period (including the period itself)
   const getAncestorPeriodIds = useMemo(() => {
@@ -551,13 +567,13 @@ export function ObjectiveTree() {
       });
     }
 
-    // Filter by list membership
-    if (filterListId) {
-      const selectedList = lists.find(l => l.id === filterListId);
-      if (selectedList) {
-        const listObjectiveIds = new Set(selectedList.items.map(item => item.objectiveId));
-        result = result.filter((obj: Objective) => listObjectiveIds.has(obj.id));
-      }
+    // Filter by list membership (OR logic - item must be in at least one selected list)
+    if (filterListIds.length > 0) {
+      const selectedLists = lists.filter(l => filterListIds.includes(l.id));
+      const listObjectiveIds = new Set(
+        selectedLists.flatMap(list => list.items.map(item => item.objectiveId))
+      );
+      result = result.filter((obj: Objective) => listObjectiveIds.has(obj.id));
     }
 
     // Filter by key results only
@@ -598,7 +614,7 @@ export function ObjectiveTree() {
     }
 
     return result;
-  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterTypeNotSet, filterLevels, filterWorkflowStatuses, filterKeyResultsOnly, filterObjectiveId, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterAssigneeNotSet, filterNextStepDate, filterListId, lists, searchQuery, includeAncestorPeriods, includeChildPeriods, includeChildTeams, showChildren, directChildrenOnly, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds, getDescendantObjectiveIds]);
+  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterTypeNotSet, filterLevels, filterWorkflowStatuses, filterKeyResultsOnly, filterObjectiveId, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterAssigneeNotSet, filterNextStepDate, filterListIds, lists, searchQuery, includeAncestorPeriods, includeChildPeriods, includeChildTeams, showChildren, directChildrenOnly, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds, getDescendantObjectiveIds]);
 
   // Get IDs of all filtered objectives for quick lookup
   const filteredObjectiveIds = useMemo(
@@ -1418,21 +1434,69 @@ export function ObjectiveTree() {
                 <div className="flex items-center gap-3">
                   <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0">List</label>
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <select
-                      value={filterListId || ''}
-                      onChange={(e) => setFilterList(e.target.value || null)}
-                      className="px-2 py-1 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      <option value="">All</option>
-                      {lists.map((list: List) => (
-                        <option key={list.id} value={list.id}>
-                          {list.name} ({list.items.length})
-                        </option>
-                      ))}
-                    </select>
-                    {filterListId && (
+                    <div className="relative" ref={listDropdownRef}>
                       <button
-                        onClick={() => setFilterList(null)}
+                        onClick={() => setShowListDropdown(!showListDropdown)}
+                        className="flex items-center gap-1.5 px-2 py-1 text-xs border border-gray-300 rounded-md bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      >
+                        {filterListIds.length > 0 ? (
+                          <>
+                            <div className="flex items-center gap-0.5">
+                              {filterListIds.slice(0, 3).map(listId => {
+                                const list = lists.find(l => l.id === listId);
+                                return list ? (
+                                  <span
+                                    key={listId}
+                                    className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
+                                    style={{ backgroundColor: list.color || '#6b7280' }}
+                                    title={list.name}
+                                  />
+                                ) : null;
+                              })}
+                              {filterListIds.length > 3 && (
+                                <span className="text-gray-400 text-xs">+{filterListIds.length - 3}</span>
+                              )}
+                            </div>
+                            <span>{filterListIds.length} selected</span>
+                          </>
+                        ) : (
+                          <span>All</span>
+                        )}
+                        <svg className="w-3 h-3 text-gray-400 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+                      {showListDropdown && (
+                        <div className="absolute z-50 mt-1 bg-white border border-gray-300 rounded-md shadow-lg min-w-[180px]">
+                          {lists.map((list: List) => {
+                            const isSelected = filterListIds.includes(list.id);
+                            return (
+                              <button
+                                key={list.id}
+                                onClick={() => toggleFilterList(list.id)}
+                                className={`w-full text-left px-2 py-1.5 text-xs hover:bg-gray-100 flex items-center gap-1.5 ${isSelected ? 'bg-blue-50' : ''}`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => {}}
+                                  className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                />
+                                <span
+                                  className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
+                                  style={{ backgroundColor: list.color || '#6b7280' }}
+                                />
+                                <span className={isSelected ? 'text-blue-700' : ''}>{list.name}</span>
+                                <span className="text-gray-400">({list.items.length})</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                    {filterListIds.length > 0 && (
+                      <button
+                        onClick={() => clearFilterLists()}
                         className="text-gray-400 hover:text-gray-600"
                         title="Clear filter"
                       >

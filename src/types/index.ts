@@ -134,7 +134,7 @@ export interface OKRState {
   filterObjectiveId: string | null;
   filterWorkflowStatuses: WorkflowStatus[];
   filterKeyResultsOnly: boolean;
-  filterListId: string | null;
+  filterListIds: string[];
   filterListShowChildren: boolean;
 }
 
