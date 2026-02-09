@@ -8,12 +8,21 @@ interface WorkLogEntry {
   createdAt: string;
   startTime: string | null;
   endTime: string | null;
+  timeSpentMinutes: number | null;
 }
 
 function toLocalDatetime(iso: string): string {
   const d = new Date(iso);
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function formatDuration(totalMinutes: number): string {
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
 }
 
 export function LogWorkPage() {
@@ -25,6 +34,8 @@ export function LogWorkPage() {
   const [editMessage, setEditMessage] = useState('');
   const [editStartTime, setEditStartTime] = useState('');
   const [editEndTime, setEditEndTime] = useState('');
+  const [editSpentHours, setEditSpentHours] = useState('');
+  const [editSpentMinutes, setEditSpentMinutes] = useState('');
 
   const fetchWorkLogs = useCallback(async () => {
     try {
@@ -45,6 +56,13 @@ export function LogWorkPage() {
   useEffect(() => {
     fetchWorkLogs();
   }, [fetchWorkLogs]);
+
+  const getTimeSpentMinutes = (h: string, m: string): number | null => {
+    const hours = parseInt(h) || 0;
+    const mins = parseInt(m) || 0;
+    if (hours === 0 && mins === 0) return null;
+    return hours * 60 + mins;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -76,6 +94,13 @@ export function LogWorkPage() {
     setEditMessage(entry.message);
     setEditStartTime(entry.startTime ? toLocalDatetime(entry.startTime) : '');
     setEditEndTime(entry.endTime ? toLocalDatetime(entry.endTime) : '');
+    if (entry.timeSpentMinutes != null) {
+      setEditSpentHours(String(Math.floor(entry.timeSpentMinutes / 60)));
+      setEditSpentMinutes(String(entry.timeSpentMinutes % 60));
+    } else {
+      setEditSpentHours('');
+      setEditSpentMinutes('');
+    }
   };
 
   const cancelEditing = () => {
@@ -83,16 +108,21 @@ export function LogWorkPage() {
     setEditMessage('');
     setEditStartTime('');
     setEditEndTime('');
+    setEditSpentHours('');
+    setEditSpentMinutes('');
   };
 
   const handleUpdate = async (entryId: string) => {
     const trimmed = editMessage.trim();
     if (!trimmed) return;
 
-    const payload: { message: string; startTime: string | null; endTime: string | null } = {
+    const timeSpentMinutes = getTimeSpentMinutes(editSpentHours, editSpentMinutes);
+
+    const payload = {
       message: trimmed,
       startTime: editStartTime ? new Date(editStartTime).toISOString() : null,
       endTime: editEndTime ? new Date(editEndTime).toISOString() : null,
+      timeSpentMinutes,
     };
 
     try {
@@ -156,16 +186,8 @@ export function LogWorkPage() {
     const endDate = new Date(entry.endTime);
     const diffMs = endDate.getTime() - startDate.getTime();
     const diffMins = Math.round(diffMs / 60000);
-    let duration: string;
-    if (diffMins < 60) {
-      duration = `${diffMins}m`;
-    } else {
-      const h = Math.floor(diffMins / 60);
-      const m = diffMins % 60;
-      duration = m > 0 ? `${h}h ${m}m` : `${h}h`;
-    }
 
-    return { start, end, duration };
+    return { start, end, duration: formatDuration(diffMins) };
   };
 
   // Sort most recent first
@@ -212,6 +234,28 @@ export function LogWorkPage() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                   <div className="flex flex-wrap items-center gap-3">
+                    <label className="text-sm text-gray-600">Time spent:</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editSpentHours}
+                      onChange={(e) => setEditSpentHours(e.target.value)}
+                      placeholder="0"
+                      className="w-16 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-center"
+                    />
+                    <span className="text-sm text-gray-500">h</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="59"
+                      value={editSpentMinutes}
+                      onChange={(e) => setEditSpentMinutes(e.target.value)}
+                      placeholder="0"
+                      className="w-16 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-center"
+                    />
+                    <span className="text-sm text-gray-500">m</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
                     <label className="text-sm text-gray-600">Start:</label>
                     <input
                       type="datetime-local"
@@ -254,10 +298,15 @@ export function LogWorkPage() {
               >
                 <div className="min-w-0">
                   <p className="text-gray-900">{entry.message}</p>
-                  <div className="flex items-center gap-3 mt-1">
+                  <div className="flex items-center gap-3 mt-1 flex-wrap">
                     <p className="text-xs text-gray-400" title={new Date(entry.createdAt).toLocaleString()}>
                       {formatRelative(entry.createdAt)}
                     </p>
+                    {entry.timeSpentMinutes != null && (
+                      <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
+                        {formatDuration(entry.timeSpentMinutes)}
+                      </span>
+                    )}
                     {range && (
                       <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
                         {range.start} – {range.end} ({range.duration})

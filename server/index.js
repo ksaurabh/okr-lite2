@@ -1079,7 +1079,7 @@ app.get('/api/users/me/worklogs', requireAuth, (req, res) => {
 
 // Create a new work log entry
 app.post('/api/users/me/worklogs', requireAuth, (req, res) => {
-  const { message, startTime, endTime } = req.body;
+  const { message, startTime, endTime, timeSpentMinutes } = req.body;
 
   if (!message || !message.trim()) {
     return res.status(400).json({ error: 'Message is required' });
@@ -1092,6 +1092,7 @@ app.post('/api/users/me/worklogs', requireAuth, (req, res) => {
     createdAt: now,
     startTime: startTime || null,
     endTime: endTime || null,
+    timeSpentMinutes: timeSpentMinutes != null ? timeSpentMinutes : null,
   };
 
   const workLogs = getUserWorkLogs(req.user.email);
@@ -1104,7 +1105,7 @@ app.post('/api/users/me/worklogs', requireAuth, (req, res) => {
 // Update a work log entry
 app.put('/api/users/me/worklogs/:entryId', requireAuth, (req, res) => {
   const { entryId } = req.params;
-  const { message, startTime, endTime } = req.body;
+  const { message, startTime, endTime, timeSpentMinutes } = req.body;
   const workLogs = getUserWorkLogs(req.user.email);
   const entryIndex = workLogs.findIndex(e => e.id === entryId);
 
@@ -1115,6 +1116,7 @@ app.put('/api/users/me/worklogs/:entryId', requireAuth, (req, res) => {
   if (message !== undefined) workLogs[entryIndex].message = message.trim();
   if (startTime !== undefined) workLogs[entryIndex].startTime = startTime;
   if (endTime !== undefined) workLogs[entryIndex].endTime = endTime;
+  if (timeSpentMinutes !== undefined) workLogs[entryIndex].timeSpentMinutes = timeSpentMinutes;
 
   const savedWorkLogs = saveUserWorkLogs(req.user.email, workLogs);
   res.json({ entry: workLogs[entryIndex], workLogs: savedWorkLogs });
