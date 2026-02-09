@@ -278,6 +278,30 @@ function generateWorkLogId() {
   return `wl-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 }
 
+// Helper functions for user todos
+function getUserTodos(email) {
+  const users = getUsers();
+  const user = users.find(u => u.email === email);
+  return user?.todos || [];
+}
+
+function saveUserTodos(email, todos) {
+  const users = getUsers();
+  const userIndex = users.findIndex(u => u.email === email);
+
+  if (userIndex === -1) {
+    return null;
+  }
+
+  users[userIndex].todos = todos;
+  saveUsers(users);
+  return users[userIndex].todos;
+}
+
+function generateTodoId() {
+  return `todo-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+}
+
 // Helper functions for OKR data
 function getOKRData() {
   try {
@@ -1136,6 +1160,91 @@ app.delete('/api/users/me/worklogs/:entryId', requireAuth, (req, res) => {
   const savedWorkLogs = saveUserWorkLogs(req.user.email, workLogs);
 
   res.json({ workLogs: savedWorkLogs });
+});
+
+// ============ Todos API Routes ============
+
+// Get all todos for the current user
+app.get('/api/users/me/todos', requireAuth, (req, res) => {
+  const todos = getUserTodos(req.user.email);
+  res.json({ todos });
+});
+
+// Create a new todo
+app.post('/api/users/me/todos', requireAuth, (req, res) => {
+  const { text } = req.body;
+
+  if (!text || !text.trim()) {
+    return res.status(400).json({ error: 'Text is required' });
+  }
+
+  const todos = getUserTodos(req.user.email);
+  const maxOrder = todos.length > 0 ? Math.max(...todos.map(t => t.order)) : -1;
+  const now = new Date().toISOString();
+  const newTodo = {
+    id: generateTodoId(),
+    text: text.trim(),
+    order: maxOrder + 1,
+    createdAt: now,
+  };
+
+  todos.push(newTodo);
+  const savedTodos = saveUserTodos(req.user.email, todos);
+
+  res.json({ todo: newTodo, todos: savedTodos });
+});
+
+// Reorder todos (must be before :todoId route)
+app.put('/api/users/me/todos/reorder', requireAuth, (req, res) => {
+  const { orderedIds } = req.body;
+
+  if (!Array.isArray(orderedIds)) {
+    return res.status(400).json({ error: 'orderedIds must be an array' });
+  }
+
+  const todos = getUserTodos(req.user.email);
+  for (let i = 0; i < orderedIds.length; i++) {
+    const todo = todos.find(t => t.id === orderedIds[i]);
+    if (todo) todo.order = i;
+  }
+
+  todos.sort((a, b) => a.order - b.order);
+  const savedTodos = saveUserTodos(req.user.email, todos);
+
+  res.json({ todos: savedTodos });
+});
+
+// Update a todo
+app.put('/api/users/me/todos/:todoId', requireAuth, (req, res) => {
+  const { todoId } = req.params;
+  const { text } = req.body;
+  const todos = getUserTodos(req.user.email);
+  const todoIndex = todos.findIndex(t => t.id === todoId);
+
+  if (todoIndex === -1) {
+    return res.status(404).json({ error: 'Todo not found' });
+  }
+
+  if (text !== undefined) todos[todoIndex].text = text.trim();
+
+  const savedTodos = saveUserTodos(req.user.email, todos);
+  res.json({ todo: todos[todoIndex], todos: savedTodos });
+});
+
+// Delete a todo
+app.delete('/api/users/me/todos/:todoId', requireAuth, (req, res) => {
+  const { todoId } = req.params;
+  const todos = getUserTodos(req.user.email);
+  const todoIndex = todos.findIndex(t => t.id === todoId);
+
+  if (todoIndex === -1) {
+    return res.status(404).json({ error: 'Todo not found' });
+  }
+
+  todos.splice(todoIndex, 1);
+  const savedTodos = saveUserTodos(req.user.email, todos);
+
+  res.json({ todos: savedTodos });
 });
 
 app.post('/api/users', requireOrgAdminOrSuperAdmin, (req, res) => {
