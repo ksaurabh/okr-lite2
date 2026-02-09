@@ -8,13 +8,14 @@ import { ProgressPage } from './components/progress';
 import { PeriodsPage } from './components/periods';
 import { UpdatesPage } from './components/updates';
 import { ListsPage } from './components/lists';
+import { LogWorkPage } from './components/logwork';
 import { AdminPage } from './components/admin';
 import { SettingsPage } from './components/settings';
 import { LoginPage, UnauthorizedPage, AuthCallback, AdminInviteAccept } from './components/auth';
 import { Modal } from './components/common';
 import { useOKRStore } from './store/okrStore';
 
-type View = 'dashboard' | 'objectives' | 'checklist' | 'progress' | 'updates' | 'lists' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin';
+type View = 'dashboard' | 'objectives' | 'checklist' | 'progress' | 'updates' | 'lists' | 'logwork' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin';
 
 function AppContent() {
   const [currentView, setCurrentView] = useState<View>('dashboard');
@@ -81,6 +82,7 @@ function AppContent() {
       {currentView === 'progress' && <ProgressPage />}
       {currentView === 'updates' && <UpdatesPage />}
       {currentView === 'lists' && <ListsPage onViewChange={setCurrentView} />}
+      {currentView === 'logwork' && <LogWorkPage />}
       {currentView === 'teams' && (
         <div className="text-center py-12 text-gray-500">
           <p>Manage teams from the sidebar</p>

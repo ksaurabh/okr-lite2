@@ -4,7 +4,7 @@ import type { Objective, User, WorkflowStatus } from '../../types';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
-type View = 'dashboard' | 'objectives' | 'checklist' | 'progress' | 'updates' | 'lists' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin';
+type View = 'dashboard' | 'objectives' | 'checklist' | 'progress' | 'updates' | 'lists' | 'logwork' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin';
 
 interface ListsPageProps {
   onViewChange: (view: View) => void;

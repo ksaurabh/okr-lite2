@@ -3,7 +3,7 @@ import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
 import type { Objective, User, ObjectiveType, NextStepDateFilter } from '../../types';
 
-type View = 'dashboard' | 'objectives' | 'checklist' | 'progress' | 'updates' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin';
+type View = 'dashboard' | 'objectives' | 'checklist' | 'progress' | 'updates' | 'logwork' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 

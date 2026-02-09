@@ -254,6 +254,30 @@ function generateListId() {
   return `list-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 }
 
+// Helper functions for user work logs
+function getUserWorkLogs(email) {
+  const users = getUsers();
+  const user = users.find(u => u.email === email);
+  return user?.workLogs || [];
+}
+
+function saveUserWorkLogs(email, workLogs) {
+  const users = getUsers();
+  const userIndex = users.findIndex(u => u.email === email);
+
+  if (userIndex === -1) {
+    return null;
+  }
+
+  users[userIndex].workLogs = workLogs;
+  saveUsers(users);
+  return users[userIndex].workLogs;
+}
+
+function generateWorkLogId() {
+  return `wl-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+}
+
 // Helper functions for OKR data
 function getOKRData() {
   try {
@@ -1043,6 +1067,73 @@ app.put('/api/users/me/lists/:listId/reorder', requireAuth, (req, res) => {
 
   const savedLists = saveUserLists(req.user.email, lists);
   res.json({ list: lists[listIndex], lists: savedLists });
+});
+
+// ============ Work Logs API Routes ============
+
+// Get all work logs for the current user
+app.get('/api/users/me/worklogs', requireAuth, (req, res) => {
+  const workLogs = getUserWorkLogs(req.user.email);
+  res.json({ workLogs });
+});
+
+// Create a new work log entry
+app.post('/api/users/me/worklogs', requireAuth, (req, res) => {
+  const { message, startTime, endTime } = req.body;
+
+  if (!message || !message.trim()) {
+    return res.status(400).json({ error: 'Message is required' });
+  }
+
+  const now = new Date().toISOString();
+  const newEntry = {
+    id: generateWorkLogId(),
+    message: message.trim(),
+    createdAt: now,
+    startTime: startTime || null,
+    endTime: endTime || null,
+  };
+
+  const workLogs = getUserWorkLogs(req.user.email);
+  workLogs.push(newEntry);
+  const savedWorkLogs = saveUserWorkLogs(req.user.email, workLogs);
+
+  res.json({ entry: newEntry, workLogs: savedWorkLogs });
+});
+
+// Update a work log entry
+app.put('/api/users/me/worklogs/:entryId', requireAuth, (req, res) => {
+  const { entryId } = req.params;
+  const { message, startTime, endTime } = req.body;
+  const workLogs = getUserWorkLogs(req.user.email);
+  const entryIndex = workLogs.findIndex(e => e.id === entryId);
+
+  if (entryIndex === -1) {
+    return res.status(404).json({ error: 'Work log entry not found' });
+  }
+
+  if (message !== undefined) workLogs[entryIndex].message = message.trim();
+  if (startTime !== undefined) workLogs[entryIndex].startTime = startTime;
+  if (endTime !== undefined) workLogs[entryIndex].endTime = endTime;
+
+  const savedWorkLogs = saveUserWorkLogs(req.user.email, workLogs);
+  res.json({ entry: workLogs[entryIndex], workLogs: savedWorkLogs });
+});
+
+// Delete a work log entry
+app.delete('/api/users/me/worklogs/:entryId', requireAuth, (req, res) => {
+  const { entryId } = req.params;
+  const workLogs = getUserWorkLogs(req.user.email);
+  const entryIndex = workLogs.findIndex(e => e.id === entryId);
+
+  if (entryIndex === -1) {
+    return res.status(404).json({ error: 'Work log entry not found' });
+  }
+
+  workLogs.splice(entryIndex, 1);
+  const savedWorkLogs = saveUserWorkLogs(req.user.email, workLogs);
+
+  res.json({ workLogs: savedWorkLogs });
 });
 
 app.post('/api/users', requireOrgAdminOrSuperAdmin, (req, res) => {
