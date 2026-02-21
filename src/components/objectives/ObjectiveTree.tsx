@@ -29,6 +29,16 @@ const NEXT_STEP_DATE_OPTIONS: { value: NextStepDateFilter; label: string }[] = [
   { value: 'future', label: 'In the Future' },
 ];
 
+const LAST_UPDATED_OPTIONS: { value: string; label: string; ms: number }[] = [
+  { value: '30s', label: 'In last 30 seconds', ms: 30 * 1000 },
+  { value: '1m',  label: 'In last 1m',         ms: 60 * 1000 },
+  { value: '5m',  label: 'In last 5m',         ms: 5 * 60 * 1000 },
+  { value: '30m', label: 'In last 30m',        ms: 30 * 60 * 1000 },
+  { value: '1h',  label: 'In last 1h',         ms: 60 * 60 * 1000 },
+  { value: '24h', label: 'In the last 24h',    ms: 24 * 60 * 60 * 1000 },
+  { value: '1w',  label: 'In the last week',   ms: 7 * 24 * 60 * 60 * 1000 },
+];
+
 const WORKFLOW_STATUS_OPTIONS: { value: WorkflowStatus; label: string }[] = [
   { value: 'todo', label: 'To Do' },
   { value: 'planning', label: 'In Planning' },
@@ -122,6 +132,7 @@ export function ObjectiveTree() {
   const [showChildren, setShowChildren] = useState(false);
   const [directChildrenOnly, setDirectChildrenOnly] = useState(false);
   const [openChildrenOnly, setOpenChildrenOnly] = useState(false);
+  const [filterLastUpdated, setFilterLastUpdated] = useState<string | null>(null);
   const [orgUsers, setOrgUsers] = useState<User[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -336,7 +347,7 @@ export function ObjectiveTree() {
     [tags, orgId, userEmail, isAdmin]
   );
 
-  const hasActiveFilters = activePeriodId || filterTagIds.length > 0 || filterTeamIds.length > 0 || filterTypes.length > 0 || filterTypeNotSet || filterOwnerIds.length > 0 || filterAssigneeIds.length > 0 || filterAssigneeNotSet || filterNextStepDate || filterLevels.length > 0 || filterWorkflowStatuses.length > 0 || filterKeyResultsOnly || filterObjectiveId || filterListIds.length > 0 || searchQuery.trim();
+  const hasActiveFilters = activePeriodId || filterTagIds.length > 0 || filterTeamIds.length > 0 || filterTypes.length > 0 || filterTypeNotSet || filterOwnerIds.length > 0 || filterAssigneeIds.length > 0 || filterAssigneeNotSet || filterNextStepDate || filterLastUpdated || filterLevels.length > 0 || filterWorkflowStatuses.length > 0 || filterKeyResultsOnly || filterObjectiveId || filterListIds.length > 0 || searchQuery.trim();
 
   // Get all ancestor period IDs for a given period (including the period itself)
   const getAncestorPeriodIds = useMemo(() => {
@@ -558,6 +569,15 @@ export function ObjectiveTree() {
       }
     }
 
+    // Filter by last updated
+    if (filterLastUpdated) {
+      const option = LAST_UPDATED_OPTIONS.find(o => o.value === filterLastUpdated);
+      if (option) {
+        const cutoff = Date.now() - option.ms;
+        result = result.filter((obj: Objective) => new Date(obj.updatedAt).getTime() >= cutoff);
+      }
+    }
+
     // Filter by search query
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim();
@@ -620,7 +640,7 @@ export function ObjectiveTree() {
     }
 
     return [result, directlyMatchingIds];
-  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterTypeNotSet, filterLevels, filterWorkflowStatuses, filterKeyResultsOnly, filterObjectiveId, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterAssigneeNotSet, filterNextStepDate, filterListIds, lists, searchQuery, includeAncestorPeriods, includeChildPeriods, includeChildTeams, showChildren, directChildrenOnly, openChildrenOnly, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds, getDescendantObjectiveIds]);
+  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterTypeNotSet, filterLevels, filterWorkflowStatuses, filterKeyResultsOnly, filterObjectiveId, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterAssigneeNotSet, filterNextStepDate, filterLastUpdated, filterListIds, lists, searchQuery, includeAncestorPeriods, includeChildPeriods, includeChildTeams, showChildren, directChildrenOnly, openChildrenOnly, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds, getDescendantObjectiveIds]);
 
   // Get IDs of all filtered objectives for quick lookup
   const filteredObjectiveIds = useMemo(
@@ -1308,6 +1328,21 @@ export function ObjectiveTree() {
                 >
                   <option value="">All</option>
                   {NEXT_STEP_DATE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Last Updated Filter */}
+              <div className="flex items-center gap-3">
+                <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0">Updated</label>
+                <select
+                  value={filterLastUpdated || ''}
+                  onChange={(e) => setFilterLastUpdated(e.target.value || null)}
+                  className="px-2 py-1 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">All</option>
+                  {LAST_UPDATED_OPTIONS.map((opt) => (
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
                   ))}
                 </select>
