@@ -826,6 +826,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
     <div>
       {/* Main tree table row */}
       <div
+        data-objective-id={objective.id}
         className={`group flex items-center hover:bg-gray-50 border-b border-gray-100 ${isDragOver ? 'bg-blue-50 border-blue-300' : ''}`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}

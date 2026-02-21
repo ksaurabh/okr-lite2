@@ -9,17 +9,24 @@ import { PeriodsPage } from './components/periods';
 import { UpdatesPage } from './components/updates';
 import { ListsPage } from './components/lists';
 import { LogWorkPage } from './components/logwork';
+import { LogsPage } from './components/logs';
 import { AdminPage } from './components/admin';
 import { SettingsPage } from './components/settings';
 import { LoginPage, UnauthorizedPage, AuthCallback, AdminInviteAccept } from './components/auth';
 import { Modal } from './components/common';
 import { useOKRStore } from './store/okrStore';
 
-type View = 'dashboard' | 'objectives' | 'checklist' | 'progress' | 'updates' | 'lists' | 'logwork' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin';
+type View = 'dashboard' | 'objectives' | 'checklist' | 'progress' | 'updates' | 'lists' | 'logwork' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin' | 'logs';
 
 function AppContent() {
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const [showAddObjective, setShowAddObjective] = useState(false);
+  const [highlightObjectiveId, setHighlightObjectiveId] = useState<string | null>(null);
+
+  const handleNavigateToObjective = (objectiveId: string) => {
+    setHighlightObjectiveId(objectiveId);
+    setCurrentView('objectives');
+  };
   const { isLoading, isAuthenticated, isAllowed } = useAuth();
   const fetchData = useOKRStore((state) => state.fetchData);
   const fetchUserPreferences = useOKRStore((state) => state.fetchUserPreferences);
@@ -77,7 +84,7 @@ function AppContent() {
       onAddObjective={() => setShowAddObjective(true)}
     >
       {currentView === 'dashboard' && <DashboardPage onViewChange={setCurrentView} />}
-      {currentView === 'objectives' && <ObjectiveTree />}
+      {currentView === 'objectives' && <ObjectiveTree highlightObjectiveId={highlightObjectiveId} onHighlightClear={() => setHighlightObjectiveId(null)} />}
       {currentView === 'checklist' && <ChecklistPage />}
       {currentView === 'progress' && <ProgressPage />}
       {currentView === 'updates' && <UpdatesPage />}
@@ -96,6 +103,7 @@ function AppContent() {
       )}
       {currentView === 'settings' && <SettingsPage />}
       {currentView === 'admin' && <AdminPage />}
+      {currentView === 'logs' && <LogsPage onNavigateToObjective={handleNavigateToObjective} />}
 
       <Modal
         isOpen={showAddObjective}

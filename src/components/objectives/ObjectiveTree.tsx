@@ -123,7 +123,12 @@ function PeriodFilterButton({ period, periods, activePeriodId, onSelect, depth }
   );
 }
 
-export function ObjectiveTree() {
+interface ObjectiveTreeProps {
+  highlightObjectiveId?: string | null;
+  onHighlightClear?: () => void;
+}
+
+export function ObjectiveTree({ highlightObjectiveId, onHighlightClear }: ObjectiveTreeProps = {}) {
   const [isFilterExpanded, setIsFilterExpanded] = useState(true);
   const [filterColumns, setFilterColumnsState] = useState<1 | 2>(loadFilterLayout);
   const [includeAncestorPeriods, setIncludeAncestorPeriods] = useState(false);
@@ -303,6 +308,30 @@ export function ObjectiveTree() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Scroll to and flash a highlighted objective
+  useEffect(() => {
+    if (!highlightObjectiveId) return;
+    // Give the tree a moment to render
+    const timer = setTimeout(() => {
+      const el = document.querySelector(`[data-objective-id="${highlightObjectiveId}"]`) as HTMLElement | null;
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.style.transition = 'background-color 0.3s';
+        el.style.backgroundColor = '#fef08a'; // yellow-200
+        setTimeout(() => {
+          el.style.backgroundColor = '';
+          setTimeout(() => {
+            el.style.transition = '';
+            onHighlightClear?.();
+          }, 600);
+        }, 1200);
+      } else {
+        onHighlightClear?.();
+      }
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [highlightObjectiveId, onHighlightClear]);
 
   // Filter layout toggle
   const toggleFilterColumns = useCallback(() => {
