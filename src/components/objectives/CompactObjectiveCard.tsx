@@ -127,6 +127,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   const addObjective = useOKRStore((state: OKRStore) => state.addObjective);
   const updateObjective = useOKRStore((state: OKRStore) => state.updateObjective);
   const deleteObjective = useOKRStore((state: OKRStore) => state.deleteObjective);
+  const cloneObjective = useOKRStore((state: OKRStore) => state.cloneObjective);
   const editorWidth = useOKRStore((state: OKRStore) => state.editorWidth);
   const setEditorWidth = useOKRStore((state: OKRStore) => state.setEditorWidth);
   const columnWidths = useOKRStore((state: OKRStore) => state.columnWidths);
@@ -1573,7 +1574,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
         )}
 
         {/* Actions column */}
-        <div className="w-20 px-2 py-1.5 flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+        <div className="w-24 px-2 py-1.5 flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
           {canModify && (
             <>
               <button
@@ -1594,6 +1595,15 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              <button
+                onClick={() => cloneObjective(objective.id, { orgId: organization?.id || '', userEmail, shared: objective.shared })}
+                className="p-1 text-gray-400 hover:text-blue-500 rounded"
+                title="Clone"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                 </svg>
               </button>
               <button
@@ -1640,7 +1650,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           <div className="px-1" style={{ width: columnWidths.valuePoints }} />
           <div className="px-1" style={{ width: columnWidths.tags }} />
           <div className="px-2" style={{ width: columnWidths.progress }} />
-          <div className="w-20 px-2" />
+          <div className="w-24 px-2" />
         </div>
       )}
 

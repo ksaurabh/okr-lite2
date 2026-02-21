@@ -82,6 +82,8 @@ interface OKRActions {
   updateObjective: (id: string, updates: Partial<Objective>, userEmail: string) => Promise<void>;
   deleteObjective: (id: string) => Promise<void>;
 
+  cloneObjective: (id: string, ctx: CreateContext) => Promise<void>;
+
   // Key Results
   addKeyResult: (keyResult: Omit<KeyResult, 'id' | 'orgId' | 'createdBy' | 'shared' | 'progress' | 'createdAt' | 'updatedAt'>, ctx: CreateContext) => Promise<void>;
   updateKeyResult: (id: string, updates: Partial<KeyResult>) => Promise<void>;
@@ -525,6 +527,37 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       console.error('Failed to delete objective:', error);
       throw error;
     }
+  },
+
+  cloneObjective: async (id: string, ctx: CreateContext) => {
+    const state = get();
+    const objective = state.objectives.find((o: Objective) => o.id === id);
+    if (!objective) return;
+
+    await get().addObjective(
+      {
+        title: `${objective.title} (cloned)`,
+        description: objective.description,
+        level: objective.level,
+        type: objective.type,
+        parentId: objective.parentId,
+        teamId: objective.teamId,
+        ownerId: objective.ownerId,
+        assigneeId: objective.assigneeId,
+        tagIds: objective.tagIds ? [...objective.tagIds] : [],
+        nextStepDate: objective.nextStepDate,
+        nextStep: objective.nextStep,
+        storyPoints: objective.storyPoints,
+        valuePoints: objective.valuePoints,
+        link: objective.link,
+        sortOrder: objective.sortOrder,
+        progressUpdates: [],
+        isKeyResult: objective.isKeyResult,
+        workflowStatus: objective.workflowStatus,
+        periodId: objective.periodId,
+      },
+      ctx
+    );
   },
 
   addKeyResult: async (keyResult, ctx) => {
