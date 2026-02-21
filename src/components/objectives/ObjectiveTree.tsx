@@ -1563,41 +1563,43 @@ export function ObjectiveTree() {
 
             {/* Display Options */}
             {hasActiveFilters && (
-              <div className="pt-3 border-t border-gray-200 space-y-2">
-                <label className="inline-flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={showChildren}
-                    onChange={(e) => {
-                      setShowChildren(e.target.checked);
-                      if (e.target.checked) setDirectChildrenOnly(true);
-                    }}
-                    className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                  />
-                  Show children of matching objectives
-                </label>
-                {showChildren && (
-                  <div className="ml-5 flex items-center gap-4">
-                    <label className="inline-flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={directChildrenOnly}
-                        onChange={(e) => setDirectChildrenOnly(e.target.checked)}
-                        className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      Direct children only
-                    </label>
-                    <label className="inline-flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={openChildrenOnly}
-                        onChange={(e) => setOpenChildrenOnly(e.target.checked)}
-                        className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      Only show open children
-                    </label>
-                  </div>
-                )}
+              <div className="pt-3 border-t border-gray-200">
+                <div className="flex items-center gap-4">
+                  <label className="inline-flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showChildren}
+                      onChange={(e) => {
+                        setShowChildren(e.target.checked);
+                        if (e.target.checked) setDirectChildrenOnly(true);
+                      }}
+                      className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    Show children of matching objectives
+                  </label>
+                  {showChildren && (
+                    <>
+                      <label className="inline-flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={directChildrenOnly}
+                          onChange={(e) => setDirectChildrenOnly(e.target.checked)}
+                          className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        Direct children only
+                      </label>
+                      <label className="inline-flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={openChildrenOnly}
+                          onChange={(e) => setOpenChildrenOnly(e.target.checked)}
+                          className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        Only show open children
+                      </label>
+                    </>
+                  )}
+                </div>
               </div>
             )}
           </div>
