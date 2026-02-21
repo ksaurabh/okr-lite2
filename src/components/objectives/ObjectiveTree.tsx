@@ -404,7 +404,7 @@ export function ObjectiveTree() {
   }, [orgPeriods]);
 
   // Apply all filters
-  const filteredObjectives = useMemo(() => {
+  const [filteredObjectives, directlyMatchingObjectiveIds] = useMemo(() => {
     let result = orgObjectives;
 
     // Filter by period (optionally including ancestor and/or child periods)
@@ -581,6 +581,9 @@ export function ObjectiveTree() {
       result = result.filter((obj: Objective) => obj.isKeyResult === true);
     }
 
+    // Capture the directly matching set before expanding to include children
+    const directlyMatchingIds = new Set(result.map((obj: Objective) => obj.id));
+
     // Optionally include children of matching objectives
     if (showChildren && result.length > 0) {
       const matchingIds = new Set(result.map((obj: Objective) => obj.id));
@@ -613,7 +616,7 @@ export function ObjectiveTree() {
       }
     }
 
-    return result;
+    return [result, directlyMatchingIds];
   }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterTypeNotSet, filterLevels, filterWorkflowStatuses, filterKeyResultsOnly, filterObjectiveId, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterAssigneeNotSet, filterNextStepDate, filterListIds, lists, searchQuery, includeAncestorPeriods, includeChildPeriods, includeChildTeams, showChildren, directChildrenOnly, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds, getDescendantObjectiveIds]);
 
   // Get IDs of all filtered objectives for quick lookup
@@ -1766,13 +1769,13 @@ export function ObjectiveTree() {
           {/* Table body */}
           <div>
             {companyObjectives.map((obj: Objective) => (
-              <CompactObjectiveCard key={obj.id} objective={obj} filteredObjectiveIds={filteredObjectiveIds} />
+              <CompactObjectiveCard key={obj.id} objective={obj} filteredObjectiveIds={filteredObjectiveIds} directlyMatchingIds={directlyMatchingObjectiveIds} />
             ))}
             {teamObjectives.map((obj: Objective) => (
-              <CompactObjectiveCard key={obj.id} objective={obj} filteredObjectiveIds={filteredObjectiveIds} />
+              <CompactObjectiveCard key={obj.id} objective={obj} filteredObjectiveIds={filteredObjectiveIds} directlyMatchingIds={directlyMatchingObjectiveIds} />
             ))}
             {individualObjectives.map((obj: Objective) => (
-              <CompactObjectiveCard key={obj.id} objective={obj} filteredObjectiveIds={filteredObjectiveIds} />
+              <CompactObjectiveCard key={obj.id} objective={obj} filteredObjectiveIds={filteredObjectiveIds} directlyMatchingIds={directlyMatchingObjectiveIds} />
             ))}
           </div>
           </div>

@@ -11,6 +11,7 @@ interface CompactObjectiveCardProps {
   objective: Objective;
   depth?: number;
   filteredObjectiveIds?: Set<string>;
+  directlyMatchingIds?: Set<string>;
 }
 
 const getChildLevel = (parentLevel: ObjectiveLevel): ObjectiveLevel => {
@@ -57,7 +58,7 @@ function getNextStepDateIndicator(nextStepDate?: string): { color: string; toolt
   }
 }
 
-export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filteredObjectiveIds }: CompactObjectiveCardProps) {
+export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filteredObjectiveIds, directlyMatchingIds }: CompactObjectiveCardProps) {
   // Only root-level items (depth 0) are expanded by default
   const [isExpanded, setIsExpanded] = useState(depth === 0);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
@@ -882,7 +883,11 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           ) : (
             <span
               onClick={() => canModify && setEditingTitle(true)}
-              className={`text-sm text-gray-900 truncate ${canModify ? 'cursor-pointer hover:bg-gray-100 px-1 py-0.5 rounded -mx-1' : ''}`}
+              className={`text-sm truncate ${
+                directlyMatchingIds && directlyMatchingIds.size > 0 && !directlyMatchingIds.has(objective.id)
+                  ? 'text-gray-400'
+                  : 'text-gray-900'
+              } ${canModify ? 'cursor-pointer hover:bg-gray-100 px-1 py-0.5 rounded -mx-1' : ''}`}
             >
               {objective.title}
             </span>
@@ -1671,6 +1676,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
               objective={child}
               depth={depth + 1}
               filteredObjectiveIds={filteredObjectiveIds}
+              directlyMatchingIds={directlyMatchingIds}
             />
           ))}
         </>
