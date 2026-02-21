@@ -640,6 +640,28 @@ export function ObjectiveTree() {
   // Get active view
   const activeView = savedViews.find((v: SavedView) => v.id === activeViewId);
 
+  // Detect if current filters have drifted from the saved view
+  const isViewDirty = useMemo(() => {
+    if (!activeView) return false;
+    const f = activeView.filters;
+    const sortedEq = (a: string[], b: string[]) =>
+      JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
+    return (
+      (f.activePeriodId ?? null) !== activePeriodId ||
+      !sortedEq(f.filterTagIds ?? [], filterTagIds) ||
+      !sortedEq(f.filterTeamIds ?? [], filterTeamIds) ||
+      !sortedEq(f.filterTypes ?? [], filterTypes) ||
+      (f.filterTypeNotSet ?? false) !== filterTypeNotSet ||
+      !sortedEq(f.filterOwnerIds ?? [], filterOwnerIds) ||
+      (f.filterOwnerOperator ?? 'equals') !== filterOwnerOperator ||
+      !sortedEq(f.filterAssigneeIds ?? [], filterAssigneeIds) ||
+      (f.filterAssigneeOperator ?? 'equals') !== filterAssigneeOperator ||
+      (f.filterNextStepDate ?? null) !== filterNextStepDate ||
+      !sortedEq(f.filterLevels ?? [], filterLevels) ||
+      (f.filterObjectiveId ?? null) !== filterObjectiveId
+    );
+  }, [activeView, activePeriodId, filterTagIds, filterTeamIds, filterTypes, filterTypeNotSet, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterNextStepDate, filterLevels, filterObjectiveId]);
+
   // View handlers
   const handleCreateView = async () => {
     if (!newViewName.trim()) return;
@@ -790,6 +812,29 @@ export function ObjectiveTree() {
             </div>
           )}
         </div>
+
+        {/* Dirty view indicator */}
+        {activeView && isViewDirty && (
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <span className="flex items-center gap-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded-md">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" />
+              Unsaved changes
+            </span>
+            <button
+              onClick={handleSaveCurrentView}
+              className="px-2.5 py-1 text-xs bg-gray-800 text-white rounded-md hover:bg-gray-700"
+              title={`Update "${activeView.name}"`}
+            >
+              Update
+            </button>
+            <button
+              onClick={() => { setNewViewName(''); setNewViewIsDefault(false); setShowSaveViewDialog(true); }}
+              className="px-2.5 py-1 text-xs bg-white border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+            >
+              Save as New
+            </button>
+          </div>
+        )}
 
         {/* Column Visibility Toggle */}
         <div className="relative" ref={columnMenuRef}>
