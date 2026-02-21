@@ -163,14 +163,15 @@ export function ObjectiveTree() {
   const periods = useOKRStore((state: OKRStore) => state.periods);
   const teams = useOKRStore((state: OKRStore) => state.teams);
   const tags = useOKRStore((state: OKRStore) => state.tags);
-  const activePeriodId = useOKRStore((state: OKRStore) => state.activePeriodId);
+  const filterPeriodIds = useOKRStore((state: OKRStore) => state.filterPeriodIds);
   const filterTagIds = useOKRStore((state: OKRStore) => state.filterTagIds);
   const filterTeamIds = useOKRStore((state: OKRStore) => state.filterTeamIds);
   const filterOwnerIds = useOKRStore((state: OKRStore) => state.filterOwnerIds);
   const filterOwnerOperator = useOKRStore((state: OKRStore) => state.filterOwnerOperator);
   const filterAssigneeIds = useOKRStore((state: OKRStore) => state.filterAssigneeIds);
   const filterAssigneeOperator = useOKRStore((state: OKRStore) => state.filterAssigneeOperator);
-  const setActivePeriod = useOKRStore((state: OKRStore) => state.setActivePeriod);
+  const toggleFilterPeriod = useOKRStore((state: OKRStore) => state.toggleFilterPeriod);
+  const clearFilterPeriods = useOKRStore((state: OKRStore) => state.clearFilterPeriods);
   const toggleFilterTag = useOKRStore((state: OKRStore) => state.toggleFilterTag);
   const toggleFilterTeam = useOKRStore((state: OKRStore) => state.toggleFilterTeam);
   const filterTypes = useOKRStore((state: OKRStore) => state.filterTypes);
@@ -236,6 +237,16 @@ export function ObjectiveTree() {
   const [showListDropdown, setShowListDropdown] = useState(false);
   const listDropdownRef = useRef<HTMLDivElement>(null);
 
+  // Period / Team / Owner / Assignee dropdown state
+  const [showPeriodDropdown, setShowPeriodDropdown] = useState(false);
+  const periodDropdownRef = useRef<HTMLDivElement>(null);
+  const [showTeamDropdown, setShowTeamDropdown] = useState(false);
+  const teamDropdownRef = useRef<HTMLDivElement>(null);
+  const [showOwnerDropdown, setShowOwnerDropdown] = useState(false);
+  const ownerDropdownRef = useRef<HTMLDivElement>(null);
+  const [showAssigneeDropdown, setShowAssigneeDropdown] = useState(false);
+  const assigneeDropdownRef = useRef<HTMLDivElement>(null);
+
   // Close column menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -276,6 +287,18 @@ export function ObjectiveTree() {
       if (listDropdownRef.current && !listDropdownRef.current.contains(event.target as Node)) {
         setShowListDropdown(false);
       }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Close period/team/assignee dropdowns when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (periodDropdownRef.current && !periodDropdownRef.current.contains(event.target as Node)) setShowPeriodDropdown(false);
+      if (teamDropdownRef.current && !teamDropdownRef.current.contains(event.target as Node)) setShowTeamDropdown(false);
+      if (ownerDropdownRef.current && !ownerDropdownRef.current.contains(event.target as Node)) setShowOwnerDropdown(false);
+      if (assigneeDropdownRef.current && !assigneeDropdownRef.current.contains(event.target as Node)) setShowAssigneeDropdown(false);
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -347,7 +370,7 @@ export function ObjectiveTree() {
     [tags, orgId, userEmail, isAdmin]
   );
 
-  const hasActiveFilters = activePeriodId || filterTagIds.length > 0 || filterTeamIds.length > 0 || filterTypes.length > 0 || filterTypeNotSet || filterOwnerIds.length > 0 || filterAssigneeIds.length > 0 || filterAssigneeNotSet || filterNextStepDate || filterLastUpdated || filterLevels.length > 0 || filterWorkflowStatuses.length > 0 || filterKeyResultsOnly || filterObjectiveId || filterListIds.length > 0 || searchQuery.trim();
+  const hasActiveFilters = filterPeriodIds.length > 0 || filterTagIds.length > 0 || filterTeamIds.length > 0 || filterTypes.length > 0 || filterTypeNotSet || filterOwnerIds.length > 0 || filterAssigneeIds.length > 0 || filterAssigneeNotSet || filterNextStepDate || filterLastUpdated || filterLevels.length > 0 || filterWorkflowStatuses.length > 0 || filterKeyResultsOnly || filterObjectiveId || filterListIds.length > 0 || searchQuery.trim();
 
   // Get all ancestor period IDs for a given period (including the period itself)
   const getAncestorPeriodIds = useMemo(() => {
@@ -420,13 +443,17 @@ export function ObjectiveTree() {
     let result = orgObjectives;
 
     // Filter by period (optionally including ancestor and/or child periods)
-    if (activePeriodId) {
-      let validPeriodIds: string[] = [activePeriodId];
+    if (filterPeriodIds.length > 0) {
+      let validPeriodIds: string[] = [...filterPeriodIds];
       if (includeAncestorPeriods) {
-        validPeriodIds = [...new Set([...validPeriodIds, ...getAncestorPeriodIds(activePeriodId)])];
+        filterPeriodIds.forEach(id => {
+          validPeriodIds = [...new Set([...validPeriodIds, ...getAncestorPeriodIds(id)])];
+        });
       }
       if (includeChildPeriods) {
-        validPeriodIds = [...new Set([...validPeriodIds, ...getDescendantPeriodIds(activePeriodId)])];
+        filterPeriodIds.forEach(id => {
+          validPeriodIds = [...new Set([...validPeriodIds, ...getDescendantPeriodIds(id)])];
+        });
       }
       result = result.filter((obj: Objective) => validPeriodIds.includes(obj.periodId));
     }
@@ -640,7 +667,7 @@ export function ObjectiveTree() {
     }
 
     return [result, directlyMatchingIds];
-  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterTypeNotSet, filterLevels, filterWorkflowStatuses, filterKeyResultsOnly, filterObjectiveId, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterAssigneeNotSet, filterNextStepDate, filterLastUpdated, filterListIds, lists, searchQuery, includeAncestorPeriods, includeChildPeriods, includeChildTeams, showChildren, directChildrenOnly, openChildrenOnly, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds, getDescendantObjectiveIds]);
+  }, [orgObjectives, filterPeriodIds, filterTeamIds, filterTagIds, filterTypes, filterTypeNotSet, filterLevels, filterWorkflowStatuses, filterKeyResultsOnly, filterObjectiveId, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterAssigneeNotSet, filterNextStepDate, filterLastUpdated, filterListIds, lists, searchQuery, includeAncestorPeriods, includeChildPeriods, includeChildTeams, showChildren, directChildrenOnly, openChildrenOnly, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds, getDescendantObjectiveIds]);
 
   // Get IDs of all filtered objectives for quick lookup
   const filteredObjectiveIds = useMemo(
@@ -673,7 +700,7 @@ export function ObjectiveTree() {
     const sortedEq = (a: string[], b: string[]) =>
       JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
     return (
-      (f.activePeriodId ?? null) !== activePeriodId ||
+      !sortedEq(f.filterPeriodIds ?? [], filterPeriodIds) ||
       !sortedEq(f.filterTagIds ?? [], filterTagIds) ||
       !sortedEq(f.filterTeamIds ?? [], filterTeamIds) ||
       !sortedEq(f.filterTypes ?? [], filterTypes) ||
@@ -686,7 +713,7 @@ export function ObjectiveTree() {
       !sortedEq(f.filterLevels ?? [], filterLevels) ||
       (f.filterObjectiveId ?? null) !== filterObjectiveId
     );
-  }, [activeView, activePeriodId, filterTagIds, filterTeamIds, filterTypes, filterTypeNotSet, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterNextStepDate, filterLevels, filterObjectiveId]);
+  }, [activeView, filterPeriodIds, filterTagIds, filterTeamIds, filterTypes, filterTypeNotSet, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterNextStepDate, filterLevels, filterObjectiveId]);
 
   // View handlers
   const handleCreateView = async () => {
@@ -1100,326 +1127,305 @@ export function ObjectiveTree() {
                 Clear all
               </button>
             )}
-            {/* Layout toggle */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleFilterColumns();
-              }}
-              className="text-gray-400 hover:text-gray-600"
-              title={filterColumns === 2 ? 'Switch to single column' : 'Switch to two columns'}
-            >
-              {filterColumns === 2 ? (
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-              ) : (
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
-                </svg>
-              )}
-            </button>
           </div>
         </div>
 
         {isFilterExpanded && (
           <div className="px-4 pb-4 border-t border-gray-100 pt-4">
-            <div className={`grid ${filterColumns === 2 ? 'grid-cols-2' : 'grid-cols-1'} gap-x-6 gap-y-3`}>
-              {/* Period Filter */}
-              <div className="flex items-start gap-3">
-                <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Period</label>
-                <div className="flex-1">
-                  <div className="flex flex-wrap gap-1.5">
-                    <button
-                      onClick={() => setActivePeriod(null)}
-                      className={`px-2 py-1 rounded-full text-xs transition-colors ${
-                        !activePeriodId
-                          ? 'bg-gray-800 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      All
-                    </button>
-                    {rootPeriods.map((period: Period) => (
-                      <PeriodFilterButton
-                        key={period.id}
-                        period={period}
-                        periods={orgPeriods}
-                        activePeriodId={activePeriodId}
-                        onSelect={setActivePeriod}
-                        depth={0}
-                      />
-                    ))}
-                  </div>
-                  {activePeriodId && (
-                    <div className="flex items-center gap-3 mt-1.5">
-                      <label className="inline-flex items-center gap-1 text-xs text-gray-500 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={includeAncestorPeriods}
-                          onChange={(e) => setIncludeAncestorPeriods(e.target.checked)}
-                          className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        />
-                        Parent
-                      </label>
-                      <label className="inline-flex items-center gap-1 text-xs text-gray-500 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={includeChildPeriods}
-                          onChange={(e) => setIncludeChildPeriods(e.target.checked)}
-                          className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        />
-                        Child
-                      </label>
+            <div className="flex gap-6">
+              {/* Column 1 - 50%: Period, Team, Owner, Assignee */}
+              <div className="flex-[2] space-y-3 min-w-0">
+                {/* Period Filter */}
+                <div className="flex items-start gap-3">
+                  <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Period</label>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {filterPeriodIds.map(pid => {
+                        const period = orgPeriods.find((p: Period) => p.id === pid);
+                        return period ? (
+                          <span key={pid} className="inline-flex items-center gap-1 px-2 py-1 bg-gray-800 text-white rounded-full text-xs">
+                            {period.name}
+                            <button onClick={() => toggleFilterPeriod(pid)} className="hover:text-gray-300 ml-0.5">
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                          </span>
+                        ) : null;
+                      })}
+                      <div className="relative" ref={periodDropdownRef}>
+                        <button
+                          onClick={() => setShowPeriodDropdown(!showPeriodDropdown)}
+                          className="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+                        >
+                          + Add
+                        </button>
+                        {showPeriodDropdown && (
+                          <div className="absolute z-50 mt-1 bg-white border border-gray-300 rounded-md shadow-lg min-w-[180px] max-h-64 overflow-y-auto">
+                            {orgPeriods.filter((p: Period) => !filterPeriodIds.includes(p.id)).length === 0 ? (
+                              <div className="text-xs text-gray-400 px-3 py-2">All periods selected</div>
+                            ) : orgPeriods.filter((p: Period) => !filterPeriodIds.includes(p.id)).map((period: Period) => (
+                              <button
+                                key={period.id}
+                                onClick={() => { toggleFilterPeriod(period.id); setShowPeriodDropdown(false); }}
+                                className="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 truncate"
+                              >
+                                {period.name}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  )}
+                    {filterPeriodIds.length > 0 && (
+                      <div className="flex items-center gap-3 mt-1.5">
+                        <label className="inline-flex items-center gap-1 text-xs text-gray-500 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={includeAncestorPeriods}
+                            onChange={(e) => setIncludeAncestorPeriods(e.target.checked)}
+                            className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          Parent
+                        </label>
+                        <label className="inline-flex items-center gap-1 text-xs text-gray-500 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={includeChildPeriods}
+                            onChange={(e) => setIncludeChildPeriods(e.target.checked)}
+                            className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          Child
+                        </label>
+                      </div>
+                    )}
+                  </div>
                 </div>
+
+                {/* Team Filter */}
+                {orgTeams.length > 0 && (
+                  <div className="flex items-start gap-3">
+                    <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Team</label>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {filterTeamIds.map(tid => {
+                          const team = orgTeams.find((t: Team) => t.id === tid);
+                          return team ? (
+                            <span key={tid} className="inline-flex items-center gap-1 px-2 py-1 bg-gray-800 text-white rounded-full text-xs">
+                              {team.name}
+                              <button onClick={() => toggleFilterTeam(tid)} className="hover:text-gray-300 ml-0.5">
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                              </button>
+                            </span>
+                          ) : null;
+                        })}
+                        <div className="relative" ref={teamDropdownRef}>
+                          <button
+                            onClick={() => setShowTeamDropdown(!showTeamDropdown)}
+                            className="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+                          >
+                            + Add
+                          </button>
+                          {showTeamDropdown && (
+                            <div className="absolute z-50 mt-1 bg-white border border-gray-300 rounded-md shadow-lg min-w-[180px] max-h-64 overflow-y-auto">
+                              {orgTeams.filter((t: Team) => !filterTeamIds.includes(t.id)).length === 0 ? (
+                                <div className="text-xs text-gray-400 px-3 py-2">All teams selected</div>
+                              ) : orgTeams.filter((t: Team) => !filterTeamIds.includes(t.id)).map((team: Team) => (
+                                <button
+                                  key={team.id}
+                                  onClick={() => { toggleFilterTeam(team.id); setShowTeamDropdown(false); }}
+                                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 truncate"
+                                >
+                                  {team.name}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {filterTeamIds.length > 0 && (
+                        <label className="inline-flex items-center gap-1 text-xs text-gray-500 cursor-pointer mt-1.5">
+                          <input
+                            type="checkbox"
+                            checked={includeChildTeams}
+                            onChange={(e) => setIncludeChildTeams(e.target.checked)}
+                            className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          Include child teams
+                        </label>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Owner Filter */}
+                {orgUsers.length > 0 && (
+                  <div className="flex items-start gap-3">
+                    <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Owner</label>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <select
+                          value={filterOwnerOperator}
+                          onChange={(e) => setFilterOwnerOperator(e.target.value as FilterOperator)}
+                          className="px-1.5 py-1 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        >
+                          <option value="equals">=</option>
+                          <option value="not_equals">!=</option>
+                        </select>
+                        {filterOwnerIds.map(uid => {
+                          const u = orgUsers.find((u: User) => u.id === uid);
+                          return u ? (
+                            <span key={uid} className="inline-flex items-center gap-1 px-2 py-1 bg-gray-800 text-white rounded-full text-xs">
+                              {u.name}
+                              <button onClick={() => setFilterOwners(filterOwnerIds.filter(id => id !== uid))} className="hover:text-gray-300 ml-0.5">
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                              </button>
+                            </span>
+                          ) : null;
+                        })}
+                        <div className="relative" ref={ownerDropdownRef}>
+                          <button
+                            onClick={() => setShowOwnerDropdown(!showOwnerDropdown)}
+                            className="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+                          >
+                            + Add
+                          </button>
+                          {showOwnerDropdown && (
+                            <div className="absolute z-50 mt-1 bg-white border border-gray-300 rounded-md shadow-lg min-w-[160px] max-h-64 overflow-y-auto">
+                              {orgUsers.filter((u: User) => !filterOwnerIds.includes(u.id)).length === 0 ? (
+                                <div className="text-xs text-gray-400 px-3 py-2">All users selected</div>
+                              ) : orgUsers.filter((u: User) => !filterOwnerIds.includes(u.id)).map((u: User) => (
+                                <button
+                                  key={u.id}
+                                  onClick={() => { setFilterOwners([...filterOwnerIds, u.id]); setShowOwnerDropdown(false); }}
+                                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 truncate"
+                                >
+                                  {u.name}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Assignee Filter */}
+                {orgUsers.length > 0 && (
+                  <div className="flex items-start gap-3">
+                    <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Assignee</label>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <select
+                          value={filterAssigneeOperator}
+                          onChange={(e) => setFilterAssigneeOperator(e.target.value as FilterOperator)}
+                          className="px-1.5 py-1 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        >
+                          <option value="equals">=</option>
+                          <option value="not_equals">!=</option>
+                        </select>
+                        {filterAssigneeIds.map(uid => {
+                          const u = orgUsers.find((u: User) => u.id === uid);
+                          return u ? (
+                            <span key={uid} className="inline-flex items-center gap-1 px-2 py-1 bg-gray-800 text-white rounded-full text-xs">
+                              {u.name}
+                              <button onClick={() => setFilterAssignees(filterAssigneeIds.filter(id => id !== uid))} className="hover:text-gray-300 ml-0.5">
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                              </button>
+                            </span>
+                          ) : null;
+                        })}
+                        {filterAssigneeNotSet && (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-800 text-white rounded-full text-xs">
+                            Not Set
+                            <button onClick={() => toggleFilterAssigneeNotSet()} className="hover:text-gray-300 ml-0.5">
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                          </span>
+                        )}
+                        <div className="relative" ref={assigneeDropdownRef}>
+                          <button
+                            onClick={() => setShowAssigneeDropdown(!showAssigneeDropdown)}
+                            className="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+                          >
+                            + Add
+                          </button>
+                          {showAssigneeDropdown && (
+                            <div className="absolute z-50 mt-1 bg-white border border-gray-300 rounded-md shadow-lg min-w-[160px] max-h-64 overflow-y-auto">
+                              {!filterAssigneeNotSet && (
+                                <button
+                                  onClick={() => { toggleFilterAssigneeNotSet(); setShowAssigneeDropdown(false); }}
+                                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 italic text-gray-500"
+                                >
+                                  Not Set
+                                </button>
+                              )}
+                              {orgUsers.filter((u: User) => !filterAssigneeIds.includes(u.id)).map((u: User) => (
+                                <button
+                                  key={u.id}
+                                  onClick={() => { setFilterAssignees([...filterAssigneeIds, u.id]); setShowAssigneeDropdown(false); }}
+                                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 truncate"
+                                >
+                                  {u.name}
+                                </button>
+                              ))}
+                              {orgUsers.filter((u: User) => !filterAssigneeIds.includes(u.id)).length === 0 && filterAssigneeNotSet && (
+                                <div className="text-xs text-gray-400 px-3 py-2">All options selected</div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {/* Team Filter */}
-              {orgTeams.length > 0 && (
-                <div className="flex items-start gap-3">
-                  <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Team</label>
-                  <div className="flex-1">
+              {/* Column 2 - 25%: Tags, Type, Level, Status */}
+              <div className="flex-1 space-y-3 min-w-0">
+                {/* Tag Filter */}
+                {orgTags.length > 0 && (
+                  <div className="flex items-start gap-3">
+                    <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Tags</label>
                     <div className="flex flex-wrap gap-1.5">
-                      {orgTeams.map((team: Team) => (
+                      {orgTags.map((tag: Tag) => (
                         <button
-                          key={team.id}
-                          onClick={() => toggleFilterTeam(team.id)}
-                          className={`px-2 py-1 rounded-full text-xs transition-colors ${
-                            filterTeamIds.includes(team.id)
+                          key={tag.id}
+                          onClick={() => toggleFilterTag(tag.id)}
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs transition-colors ${
+                            filterTagIds.includes(tag.id)
                               ? 'bg-gray-800 text-white'
                               : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                           }`}
                         >
-                          {team.name}
+                          <span className={`w-1.5 h-1.5 rounded-full ${tag.color}`}></span>
+                          {tag.name}
                         </button>
                       ))}
                     </div>
-                    {filterTeamIds.length > 0 && (
-                      <label className="inline-flex items-center gap-1 text-xs text-gray-500 cursor-pointer mt-1.5">
-                        <input
-                          type="checkbox"
-                          checked={includeChildTeams}
-                          onChange={(e) => setIncludeChildTeams(e.target.checked)}
-                          className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        />
-                        Include child teams
-                      </label>
-                    )}
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* Tag Filter */}
-              {orgTags.length > 0 && (
+                {/* Type Filter */}
                 <div className="flex items-start gap-3">
-                  <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Tags</label>
+                  <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Type</label>
                   <div className="flex flex-wrap gap-1.5">
-                    {orgTags.map((tag: Tag) => (
+                    {TYPE_OPTIONS.map((type) => (
                       <button
-                        key={tag.id}
-                        onClick={() => toggleFilterTag(tag.id)}
-                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs transition-colors ${
-                          filterTagIds.includes(tag.id)
-                            ? 'bg-gray-800 text-white'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        <span className={`w-1.5 h-1.5 rounded-full ${tag.color}`}></span>
-                        {tag.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Type Filter */}
-              <div className="flex items-start gap-3">
-                <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Type</label>
-                <div className="flex flex-wrap gap-1.5">
-                  {TYPE_OPTIONS.map((type) => (
-                    <button
-                      key={type.value}
-                      onClick={() => toggleFilterType(type.value)}
-                      className={`px-2 py-1 rounded-full text-xs transition-colors ${
-                        filterTypes.includes(type.value)
-                          ? 'bg-gray-800 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      {type.label}
-                    </button>
-                  ))}
-                  <button
-                    onClick={() => toggleFilterTypeNotSet()}
-                    className={`px-2 py-1 rounded-full text-xs transition-colors ${
-                      filterTypeNotSet
-                        ? 'bg-gray-800 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    Not Set
-                  </button>
-                </div>
-              </div>
-
-              {/* Level Filter */}
-              <div className="flex items-start gap-3">
-                <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Level</label>
-                <div className="flex flex-wrap gap-1.5">
-                  {LEVEL_OPTIONS.map((level) => (
-                    <button
-                      key={level.value}
-                      onClick={() => toggleFilterLevel(level.value)}
-                      className={`px-2 py-1 rounded-full text-xs transition-colors ${
-                        filterLevels.includes(level.value)
-                          ? 'bg-gray-800 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      {level.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Workflow Status Filter */}
-              <div className="flex items-start gap-3">
-                <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Status</label>
-                <div className="flex flex-wrap gap-1.5">
-                  {WORKFLOW_STATUS_OPTIONS.map((status) => (
-                    <button
-                      key={status.value}
-                      onClick={() => toggleFilterWorkflowStatus(status.value)}
-                      className={`px-2 py-1 rounded-full text-xs transition-colors ${
-                        filterWorkflowStatuses.includes(status.value)
-                          ? 'bg-gray-800 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      {status.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Key Results Only Filter */}
-              <div className="flex items-center gap-3">
-                <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0">Key Results</label>
-                <label className="inline-flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={filterKeyResultsOnly}
-                    onChange={() => toggleFilterKeyResultsOnly()}
-                    className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                  />
-                  Show only Key Results
-                </label>
-              </div>
-
-              {/* Next Step Date Filter */}
-              <div className="flex items-center gap-3">
-                <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0">Next Date</label>
-                <select
-                  value={filterNextStepDate || ''}
-                  onChange={(e) => setFilterNextStepDate(e.target.value as NextStepDateFilter || null)}
-                  className="px-2 py-1 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="">All</option>
-                  {NEXT_STEP_DATE_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Last Updated Filter */}
-              <div className="flex items-center gap-3">
-                <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0">Updated</label>
-                <select
-                  value={filterLastUpdated || ''}
-                  onChange={(e) => setFilterLastUpdated(e.target.value || null)}
-                  className="px-2 py-1 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="">All</option>
-                  {LAST_UPDATED_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Owner Filter */}
-              {orgUsers.length > 0 && (
-                <div className="flex items-start gap-3">
-                  <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Owner</label>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <select
-                      value={filterOwnerOperator}
-                      onChange={(e) => setFilterOwnerOperator(e.target.value as FilterOperator)}
-                      className="px-1.5 py-1 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      <option value="equals">=</option>
-                      <option value="not_equals">!=</option>
-                    </select>
-                    {orgUsers.map((u: User) => (
-                      <button
-                        key={u.id}
-                        onClick={() => {
-                          if (filterOwnerIds.includes(u.id)) {
-                            setFilterOwners(filterOwnerIds.filter(id => id !== u.id));
-                          } else {
-                            setFilterOwners([...filterOwnerIds, u.id]);
-                          }
-                        }}
+                        key={type.value}
+                        onClick={() => toggleFilterType(type.value)}
                         className={`px-2 py-1 rounded-full text-xs transition-colors ${
-                          filterOwnerIds.includes(u.id)
+                          filterTypes.includes(type.value)
                             ? 'bg-gray-800 text-white'
                             : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                         }`}
                       >
-                        {u.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Assignee Filter */}
-              {orgUsers.length > 0 && (
-                <div className="flex items-start gap-3">
-                  <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Assignee</label>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <select
-                      value={filterAssigneeOperator}
-                      onChange={(e) => setFilterAssigneeOperator(e.target.value as FilterOperator)}
-                      className="px-1.5 py-1 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      <option value="equals">=</option>
-                      <option value="not_equals">!=</option>
-                    </select>
-                    {orgUsers.map((u: User) => (
-                      <button
-                        key={u.id}
-                        onClick={() => {
-                          if (filterAssigneeIds.includes(u.id)) {
-                            setFilterAssignees(filterAssigneeIds.filter(id => id !== u.id));
-                          } else {
-                            setFilterAssignees([...filterAssigneeIds, u.id]);
-                          }
-                        }}
-                        className={`px-2 py-1 rounded-full text-xs transition-colors ${
-                          filterAssigneeIds.includes(u.id)
-                            ? 'bg-gray-800 text-white'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        {u.name}
+                        {type.label}
                       </button>
                     ))}
                     <button
-                      onClick={() => toggleFilterAssigneeNotSet()}
+                      onClick={() => toggleFilterTypeNotSet()}
                       className={`px-2 py-1 rounded-full text-xs transition-colors ${
-                        filterAssigneeNotSet
+                        filterTypeNotSet
                           ? 'bg-gray-800 text-white'
                           : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                       }`}
@@ -1428,172 +1434,259 @@ export function ObjectiveTree() {
                     </button>
                   </div>
                 </div>
-              )}
 
-              {/* Parent Objective Filter */}
-              <div className="flex items-start gap-3">
-                <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Parent</label>
-                <div className="relative flex-1" ref={objectiveDropdownRef}>
-                  {filterObjectiveId ? (
-                    <div className="flex items-center gap-1.5">
-                      <span className="px-2 py-1 bg-gray-800 text-white rounded-full text-xs truncate max-w-xs">
-                        {orgObjectives.find((o: Objective) => o.id === filterObjectiveId)?.title || 'Unknown'}
-                      </span>
+                {/* Level Filter */}
+                <div className="flex items-start gap-3">
+                  <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Level</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {LEVEL_OPTIONS.map((level) => (
                       <button
-                        onClick={() => setFilterObjective(null)}
-                        className="text-gray-400 hover:text-gray-600"
-                        title="Clear filter"
+                        key={level.value}
+                        onClick={() => toggleFilterLevel(level.value)}
+                        className={`px-2 py-1 rounded-full text-xs transition-colors ${
+                          filterLevels.includes(level.value)
+                            ? 'bg-gray-800 text-white'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
                       >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
+                        {level.label}
                       </button>
-                    </div>
-                  ) : (
-                    <>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Workflow Status Filter */}
+                <div className="flex items-start gap-3">
+                  <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Status</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {WORKFLOW_STATUS_OPTIONS.map((status) => (
                       <button
-                        onClick={() => {
-                          setShowObjectiveDropdown(!showObjectiveDropdown);
-                          setTimeout(() => objectiveSearchRef.current?.focus(), 0);
-                        }}
-                        className="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+                        key={status.value}
+                        onClick={() => toggleFilterWorkflowStatus(status.value)}
+                        className={`px-2 py-1 rounded-full text-xs transition-colors ${
+                          filterWorkflowStatuses.includes(status.value)
+                            ? 'bg-gray-800 text-white'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
                       >
-                        Select objective...
+                        {status.label}
                       </button>
-                      {showObjectiveDropdown && (
-                        <div className="absolute z-50 mt-1 w-72 bg-white border border-gray-300 rounded-lg shadow-lg">
-                          <div className="p-2 border-b border-gray-200">
-                            <input
-                              ref={objectiveSearchRef}
-                              type="text"
-                              value={objectiveSearch}
-                              onChange={(e) => setObjectiveSearch(e.target.value)}
-                              placeholder="Search objectives..."
-                              className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                              onKeyDown={(e) => {
-                                if (e.key === 'Escape') {
-                                  setShowObjectiveDropdown(false);
-                                  setObjectiveSearch('');
-                                }
-                              }}
-                            />
-                          </div>
-                          <div className="max-h-64 overflow-y-auto">
-                            {orgObjectives
-                              .filter((o: Objective) =>
-                                objectiveSearch.trim()
-                                  ? o.title.toLowerCase().includes(objectiveSearch.toLowerCase())
-                                  : true
-                              )
-                              .slice(0, 50)
-                              .map((o: Objective) => (
-                                <button
-                                  key={o.id}
-                                  onClick={() => {
-                                    setFilterObjective(o.id);
-                                    setShowObjectiveDropdown(false);
-                                    setObjectiveSearch('');
-                                  }}
-                                  className="w-full text-left text-xs px-3 py-2 hover:bg-gray-100 truncate"
-                                  title={o.title}
-                                >
-                                  {o.title}
-                                </button>
-                              ))}
-                            {orgObjectives.filter((o: Objective) =>
-                              objectiveSearch.trim()
-                                ? o.title.toLowerCase().includes(objectiveSearch.toLowerCase())
-                                : true
-                            ).length === 0 && (
-                              <div className="text-xs text-gray-400 px-3 py-2">No objectives found</div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  )}
+                    ))}
+                  </div>
                 </div>
               </div>
 
-              {/* List Filter */}
-              {lists.length > 0 && (
+              {/* Column 3 - 25%: Key Results, Next Date, Updated, Parent, List */}
+              <div className="flex-1 space-y-3 min-w-0">
+                {/* Key Results Only Filter */}
                 <div className="flex items-center gap-3">
-                  <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0">List</label>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <div className="relative" ref={listDropdownRef}>
-                      <button
-                        onClick={() => setShowListDropdown(!showListDropdown)}
-                        className="flex items-center gap-1.5 px-2 py-1 text-xs border border-gray-300 rounded-md bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      >
-                        {filterListIds.length > 0 ? (
-                          <>
-                            <div className="flex items-center gap-0.5">
-                              {filterListIds.slice(0, 3).map(listId => {
-                                const list = lists.find(l => l.id === listId);
-                                return list ? (
-                                  <span
-                                    key={listId}
-                                    className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
-                                    style={{ backgroundColor: list.color || '#6b7280' }}
-                                    title={list.name}
-                                  />
-                                ) : null;
-                              })}
-                              {filterListIds.length > 3 && (
-                                <span className="text-gray-400 text-xs">+{filterListIds.length - 3}</span>
+                  <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0">Key Results</label>
+                  <label className="inline-flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={filterKeyResultsOnly}
+                      onChange={() => toggleFilterKeyResultsOnly()}
+                      className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    Show only Key Results
+                  </label>
+                </div>
+
+                {/* Next Step Date Filter */}
+                <div className="flex items-center gap-3">
+                  <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0">Next Date</label>
+                  <select
+                    value={filterNextStepDate || ''}
+                    onChange={(e) => setFilterNextStepDate(e.target.value as NextStepDateFilter || null)}
+                    className="px-2 py-1 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="">All</option>
+                    {NEXT_STEP_DATE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Last Updated Filter */}
+                <div className="flex items-center gap-3">
+                  <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0">Updated</label>
+                  <select
+                    value={filterLastUpdated || ''}
+                    onChange={(e) => setFilterLastUpdated(e.target.value || null)}
+                    className="px-2 py-1 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="">All</option>
+                    {LAST_UPDATED_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Parent Objective Filter */}
+                <div className="flex items-start gap-3">
+                  <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Parent</label>
+                  <div className="relative flex-1 min-w-0" ref={objectiveDropdownRef}>
+                    {filterObjectiveId ? (
+                      <div className="flex items-center gap-1.5">
+                        <span className="px-2 py-1 bg-gray-800 text-white rounded-full text-xs truncate max-w-xs">
+                          {orgObjectives.find((o: Objective) => o.id === filterObjectiveId)?.title || 'Unknown'}
+                        </span>
+                        <button
+                          onClick={() => setFilterObjective(null)}
+                          className="text-gray-400 hover:text-gray-600"
+                          title="Clear filter"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => {
+                            setShowObjectiveDropdown(!showObjectiveDropdown);
+                            setTimeout(() => objectiveSearchRef.current?.focus(), 0);
+                          }}
+                          className="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+                        >
+                          Select objective...
+                        </button>
+                        {showObjectiveDropdown && (
+                          <div className="absolute z-50 mt-1 w-72 bg-white border border-gray-300 rounded-lg shadow-lg">
+                            <div className="p-2 border-b border-gray-200">
+                              <input
+                                ref={objectiveSearchRef}
+                                type="text"
+                                value={objectiveSearch}
+                                onChange={(e) => setObjectiveSearch(e.target.value)}
+                                placeholder="Search objectives..."
+                                className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Escape') {
+                                    setShowObjectiveDropdown(false);
+                                    setObjectiveSearch('');
+                                  }
+                                }}
+                              />
+                            </div>
+                            <div className="max-h-64 overflow-y-auto">
+                              {orgObjectives
+                                .filter((o: Objective) =>
+                                  objectiveSearch.trim()
+                                    ? o.title.toLowerCase().includes(objectiveSearch.toLowerCase())
+                                    : true
+                                )
+                                .slice(0, 50)
+                                .map((o: Objective) => (
+                                  <button
+                                    key={o.id}
+                                    onClick={() => {
+                                      setFilterObjective(o.id);
+                                      setShowObjectiveDropdown(false);
+                                      setObjectiveSearch('');
+                                    }}
+                                    className="w-full text-left text-xs px-3 py-2 hover:bg-gray-100 truncate"
+                                    title={o.title}
+                                  >
+                                    {o.title}
+                                  </button>
+                                ))}
+                              {orgObjectives.filter((o: Objective) =>
+                                objectiveSearch.trim()
+                                  ? o.title.toLowerCase().includes(objectiveSearch.toLowerCase())
+                                  : true
+                              ).length === 0 && (
+                                <div className="text-xs text-gray-400 px-3 py-2">No objectives found</div>
                               )}
                             </div>
-                            <span>{filterListIds.length} selected</span>
-                          </>
-                        ) : (
-                          <span>All</span>
+                          </div>
                         )}
-                        <svg className="w-3 h-3 text-gray-400 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </button>
-                      {showListDropdown && (
-                        <div className="absolute z-50 mt-1 bg-white border border-gray-300 rounded-md shadow-lg min-w-[180px]">
-                          {lists.map((list: List) => {
-                            const isSelected = filterListIds.includes(list.id);
-                            return (
-                              <button
-                                key={list.id}
-                                onClick={() => toggleFilterList(list.id)}
-                                className={`w-full text-left px-2 py-1.5 text-xs hover:bg-gray-100 flex items-center gap-1.5 ${isSelected ? 'bg-blue-50' : ''}`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={isSelected}
-                                  onChange={() => {}}
-                                  className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                />
-                                <span
-                                  className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
-                                  style={{ backgroundColor: list.color || '#6b7280' }}
-                                />
-                                <span className={isSelected ? 'text-blue-700' : ''}>{list.name}</span>
-                                <span className="text-gray-400">({list.items.length})</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                    {filterListIds.length > 0 && (
-                      <button
-                        onClick={() => clearFilterLists()}
-                        className="text-gray-400 hover:text-gray-600"
-                        title="Clear filter"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
+                      </>
                     )}
                   </div>
                 </div>
-              )}
+
+                {/* List Filter */}
+                {lists.length > 0 && (
+                  <div className="flex items-center gap-3">
+                    <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0">List</label>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <div className="relative" ref={listDropdownRef}>
+                        <button
+                          onClick={() => setShowListDropdown(!showListDropdown)}
+                          className="flex items-center gap-1.5 px-2 py-1 text-xs border border-gray-300 rounded-md bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        >
+                          {filterListIds.length > 0 ? (
+                            <>
+                              <div className="flex items-center gap-0.5">
+                                {filterListIds.slice(0, 3).map(listId => {
+                                  const list = lists.find(l => l.id === listId);
+                                  return list ? (
+                                    <span
+                                      key={listId}
+                                      className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
+                                      style={{ backgroundColor: list.color || '#6b7280' }}
+                                      title={list.name}
+                                    />
+                                  ) : null;
+                                })}
+                                {filterListIds.length > 3 && (
+                                  <span className="text-gray-400 text-xs">+{filterListIds.length - 3}</span>
+                                )}
+                              </div>
+                              <span>{filterListIds.length} selected</span>
+                            </>
+                          ) : (
+                            <span>All</span>
+                          )}
+                          <svg className="w-3 h-3 text-gray-400 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+                        {showListDropdown && (
+                          <div className="absolute z-50 mt-1 bg-white border border-gray-300 rounded-md shadow-lg min-w-[180px]">
+                            {lists.map((list: List) => {
+                              const isSelected = filterListIds.includes(list.id);
+                              return (
+                                <button
+                                  key={list.id}
+                                  onClick={() => toggleFilterList(list.id)}
+                                  className={`w-full text-left px-2 py-1.5 text-xs hover:bg-gray-100 flex items-center gap-1.5 ${isSelected ? 'bg-blue-50' : ''}`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() => {}}
+                                    className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                  />
+                                  <span
+                                    className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
+                                    style={{ backgroundColor: list.color || '#6b7280' }}
+                                  />
+                                  <span className={isSelected ? 'text-blue-700' : ''}>{list.name}</span>
+                                  <span className="text-gray-400">({list.items.length})</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                      {filterListIds.length > 0 && (
+                        <button
+                          onClick={() => clearFilterLists()}
+                          className="text-gray-400 hover:text-gray-600"
+                          title="Clear filter"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Display Options */}

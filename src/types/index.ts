@@ -120,7 +120,7 @@ export interface OKRState {
   periods: Period[];
   tags: Tag[];
   allowedDomains: string[];
-  activePeriodId: string | null;
+  filterPeriodIds: string[];
   filterTagIds: string[];
   filterTeamIds: string[];
   filterTypes: ObjectiveType[];
@@ -174,7 +174,7 @@ export interface User {
 
 // Saved View types
 export interface SavedViewFilters {
-  activePeriodId: string | null;
+  filterPeriodIds: string[];
   filterTagIds: string[];
   filterTeamIds: string[];
   filterTypes: ObjectiveType[];
