@@ -192,6 +192,7 @@ export interface SavedView {
   id: string;
   name: string;
   isDefault: boolean;
+  starred: boolean;
   createdAt: string;
   updatedAt: string;
   filters: SavedViewFilters;

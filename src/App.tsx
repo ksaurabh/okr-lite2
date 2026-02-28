@@ -8,6 +8,7 @@ import { ProgressPage } from './components/progress';
 import { PeriodsPage } from './components/periods';
 import { UpdatesPage } from './components/updates';
 import { ListsPage } from './components/lists';
+import { ViewsPage } from './components/views';
 import { LogWorkPage } from './components/logwork';
 import { LogsPage } from './components/logs';
 import { AdminPage } from './components/admin';
@@ -16,7 +17,7 @@ import { LoginPage, UnauthorizedPage, AuthCallback, AdminInviteAccept } from './
 import { Modal } from './components/common';
 import { useOKRStore } from './store/okrStore';
 
-type View = 'dashboard' | 'objectives' | 'checklist' | 'progress' | 'updates' | 'lists' | 'logwork' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin' | 'logs';
+type View = 'dashboard' | 'objectives' | 'views' | 'checklist' | 'progress' | 'updates' | 'lists' | 'logwork' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin' | 'logs';
 
 function AppContent() {
   const [currentView, setCurrentView] = useState<View>('dashboard');
@@ -85,6 +86,7 @@ function AppContent() {
     >
       {currentView === 'dashboard' && <DashboardPage onViewChange={setCurrentView} />}
       {currentView === 'objectives' && <ObjectiveTree highlightObjectiveId={highlightObjectiveId} onHighlightClear={() => setHighlightObjectiveId(null)} />}
+      {currentView === 'views' && <ViewsPage onViewChange={setCurrentView} />}
       {currentView === 'checklist' && <ChecklistPage />}
       {currentView === 'progress' && <ProgressPage />}
       {currentView === 'updates' && <UpdatesPage />}

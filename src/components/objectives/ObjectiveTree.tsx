@@ -219,6 +219,7 @@ export function ObjectiveTree({ highlightObjectiveId, onHighlightClear }: Object
   const setDefaultView = useOKRStore((state: OKRStore) => state.setDefaultView);
   const clearActiveView = useOKRStore((state: OKRStore) => state.clearActiveView);
   const renameView = useOKRStore((state: OKRStore) => state.renameView);
+  const toggleViewStarred = useOKRStore((state: OKRStore) => state.toggleViewStarred);
 
   // Column visibility dropdown state
   const [showColumnMenu, setShowColumnMenu] = useState(false);
@@ -829,8 +830,8 @@ export function ObjectiveTree({ highlightObjectiveId, onHighlightClear }: Object
                 >
                   No View (Default Settings)
                 </button>
-                {savedViews.length > 0 && <div className="border-t border-gray-100 my-1" />}
-                {savedViews.map((view: SavedView) => (
+                {savedViews.filter((v: SavedView) => v.starred || v.isDefault).length > 0 && <div className="border-t border-gray-100 my-1" />}
+                {savedViews.filter((v: SavedView) => v.starred || v.isDefault).map((view: SavedView) => (
                   <button
                     key={view.id}
                     onClick={() => {
@@ -875,21 +876,18 @@ export function ObjectiveTree({ highlightObjectiveId, onHighlightClear }: Object
                     Update Current View
                   </button>
                 )}
-                {savedViews.length > 0 && (
-                  <button
-                    onClick={() => {
-                      setShowManageViewsDialog(true);
-                      setShowViewDropdown(false);
-                    }}
-                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                    Manage Views
-                  </button>
-                )}
+                <button
+                  onClick={() => {
+                    setShowManageViewsDialog(true);
+                    setShowViewDropdown(false);
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                  </svg>
+                  All Views
+                </button>
               </div>
             </div>
           )}
@@ -1040,7 +1038,7 @@ export function ObjectiveTree({ highlightObjectiveId, onHighlightClear }: Object
       {showManageViewsDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-lg p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Manage Views</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">All Views</h3>
             {savedViews.length === 0 ? (
               <p className="text-sm text-gray-500 py-4">No saved views yet.</p>
             ) : (
@@ -1075,6 +1073,15 @@ export function ObjectiveTree({ highlightObjectiveId, onHighlightClear }: Object
                       </div>
                     )}
                     <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => toggleViewStarred(view.id)}
+                        className={`p-1.5 rounded ${view.starred ? 'text-yellow-500 hover:text-yellow-600' : 'text-gray-400 hover:text-yellow-500'} hover:bg-gray-200`}
+                        title={view.starred ? 'Unstar' : 'Star'}
+                      >
+                        <svg className="w-4 h-4" fill={view.starred ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                        </svg>
+                      </button>
                       <button
                         onClick={() => startEditingView(view)}
                         className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded"

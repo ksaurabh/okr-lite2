@@ -840,6 +840,7 @@ app.post('/api/users/me/views', requireAuth, (req, res) => {
     id: generateViewId(),
     name: name.trim(),
     isDefault: isDefault || false,
+    starred: false,
     createdAt: now,
     updatedAt: now,
     filters: filters || {},
@@ -910,6 +911,23 @@ app.put('/api/users/me/views/:viewId/default', requireAuth, (req, res) => {
   // Clear default from all views, then set the selected one
   views.forEach(v => v.isDefault = false);
   views[viewIndex].isDefault = true;
+  views[viewIndex].updatedAt = new Date().toISOString();
+
+  const savedViews = saveUserViews(req.user.email, views);
+  res.json({ view: views[viewIndex], views: savedViews });
+});
+
+app.put('/api/users/me/views/:viewId/starred', requireAuth, (req, res) => {
+  const { viewId } = req.params;
+
+  const views = getUserViews(req.user.email);
+  const viewIndex = views.findIndex(v => v.id === viewId);
+
+  if (viewIndex === -1) {
+    return res.status(404).json({ error: 'View not found' });
+  }
+
+  views[viewIndex].starred = !views[viewIndex].starred;
   views[viewIndex].updatedAt = new Date().toISOString();
 
   const savedViews = saveUserViews(req.user.email, views);

@@ -169,6 +169,7 @@ interface OKRActions {
   setDefaultView: (viewId: string) => Promise<void>;
   clearActiveView: () => void;
   renameView: (viewId: string, newName: string) => Promise<void>;
+  toggleViewStarred: (viewId: string) => Promise<void>;
 
   // Lists
   lists: List[];
@@ -1368,6 +1369,22 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       }
     } catch (err) {
       console.error('Failed to rename view:', err);
+    }
+  },
+
+  toggleViewStarred: async (viewId: string) => {
+    try {
+      const response = await fetch(`${API_URL}/api/users/me/views/${viewId}/starred`, {
+        method: 'PUT',
+        credentials: 'include',
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        set({ savedViews: data.views });
+      }
+    } catch (err) {
+      console.error('Failed to toggle view starred:', err);
     }
   },
 
