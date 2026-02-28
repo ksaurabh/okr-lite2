@@ -497,7 +497,7 @@ function WorkLogPanel({ workLogs, onWorkLogsChange }: WorkLogPanelProps) {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold text-gray-900">Log Work</h2>
+      <h2 className="text-lg font-semibold text-gray-900">Work Items</h2>
 
       <form onSubmit={handleSubmit} className="flex gap-2">
         <input
