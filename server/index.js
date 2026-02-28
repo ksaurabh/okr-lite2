@@ -840,7 +840,7 @@ app.post('/api/users/me/views', requireAuth, (req, res) => {
     id: generateViewId(),
     name: name.trim(),
     isDefault: isDefault || false,
-    starred: false,
+    starred: true,
     createdAt: now,
     updatedAt: now,
     filters: filters || {},

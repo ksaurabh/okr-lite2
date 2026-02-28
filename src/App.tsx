@@ -85,7 +85,7 @@ function AppContent() {
       onAddObjective={() => setShowAddObjective(true)}
     >
       {currentView === 'dashboard' && <DashboardPage onViewChange={setCurrentView} />}
-      {currentView === 'objectives' && <ObjectiveTree highlightObjectiveId={highlightObjectiveId} onHighlightClear={() => setHighlightObjectiveId(null)} />}
+      {currentView === 'objectives' && <ObjectiveTree highlightObjectiveId={highlightObjectiveId} onHighlightClear={() => setHighlightObjectiveId(null)} onViewChange={setCurrentView} />}
       {currentView === 'views' && <ViewsPage onViewChange={setCurrentView} />}
       {currentView === 'checklist' && <ChecklistPage />}
       {currentView === 'progress' && <ProgressPage />}

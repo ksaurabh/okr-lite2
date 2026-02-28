@@ -126,9 +126,10 @@ function PeriodFilterButton({ period, periods, activePeriodId, onSelect, depth }
 interface ObjectiveTreeProps {
   highlightObjectiveId?: string | null;
   onHighlightClear?: () => void;
+  onViewChange?: (view: string) => void;
 }
 
-export function ObjectiveTree({ highlightObjectiveId, onHighlightClear }: ObjectiveTreeProps = {}) {
+export function ObjectiveTree({ highlightObjectiveId, onHighlightClear, onViewChange }: ObjectiveTreeProps = {}) {
   const [isFilterExpanded, setIsFilterExpanded] = useState(true);
   const [filterColumns, setFilterColumnsState] = useState<1 | 2>(loadFilterLayout);
   const [includeAncestorPeriods, setIncludeAncestorPeriods] = useState(false);
@@ -878,8 +879,8 @@ export function ObjectiveTree({ highlightObjectiveId, onHighlightClear }: Object
                 )}
                 <button
                   onClick={() => {
-                    setShowManageViewsDialog(true);
                     setShowViewDropdown(false);
+                    onViewChange?.('views');
                   }}
                   className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
                 >
