@@ -137,7 +137,8 @@ export function ObjectiveTree({ highlightObjectiveId, onHighlightClear, onViewCh
   const [includeChildTeams, setIncludeChildTeams] = useState(true);
   const [showChildren, setShowChildren] = useState(false);
   const [directChildrenOnly, setDirectChildrenOnly] = useState(false);
-  const [openChildrenOnly, setOpenChildrenOnly] = useState(false);
+  const openChildrenOnly = useOKRStore((state: OKRStore) => state.openChildrenOnly);
+  const setOpenChildrenOnly = useOKRStore((state: OKRStore) => state.setOpenChildrenOnly);
   const [filterLastUpdated, setFilterLastUpdated] = useState<string | null>(null);
   const [orgUsers, setOrgUsers] = useState<User[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -742,9 +743,10 @@ export function ObjectiveTree({ highlightObjectiveId, onHighlightClear, onViewCh
       (f.filterAssigneeOperator ?? 'equals') !== filterAssigneeOperator ||
       (f.filterNextStepDate ?? null) !== filterNextStepDate ||
       !sortedEq(f.filterLevels ?? [], filterLevels) ||
-      (f.filterObjectiveId ?? null) !== filterObjectiveId
+      (f.filterObjectiveId ?? null) !== filterObjectiveId ||
+      (f.openChildrenOnly ?? false) !== openChildrenOnly
     );
-  }, [activeView, filterPeriodIds, filterTagIds, filterTeamIds, filterTypes, filterTypeNotSet, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterNextStepDate, filterLevels, filterObjectiveId]);
+  }, [activeView, filterPeriodIds, filterTagIds, filterTeamIds, filterTypes, filterTypeNotSet, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterNextStepDate, filterLevels, filterObjectiveId, openChildrenOnly]);
 
   // View handlers
   const handleCreateView = async () => {

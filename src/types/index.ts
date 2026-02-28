@@ -186,6 +186,7 @@ export interface SavedViewFilters {
   filterNextStepDate: NextStepDateFilter | null;
   filterLevels: ObjectiveLevel[];
   filterObjectiveId: string | null;
+  openChildrenOnly: boolean;
 }
 
 export interface SavedView {

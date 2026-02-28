@@ -135,6 +135,8 @@ interface OKRActions {
   toggleFilterList: (listId: string) => void;
   clearFilterLists: () => void;
   toggleFilterListShowChildren: () => void;
+  openChildrenOnly: boolean;
+  setOpenChildrenOnly: (value: boolean) => void;
   clearAllFilters: () => void;
 
   // Allowed Domains (legacy - kept for compatibility)
@@ -335,6 +337,7 @@ const defaultState: OKRState = {
   filterKeyResultsOnly: false,
   filterListIds: [],
   filterListShowChildren: false,
+  openChildrenOnly: false,
 };
 
 export const useOKRStore = create<OKRStore>((set, get) => ({
@@ -942,6 +945,10 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     });
   },
 
+  setOpenChildrenOnly: (value: boolean) => {
+    set({ openChildrenOnly: value });
+  },
+
   clearAllFilters: () => {
     set((state: OKRStore) => {
       saveFilterState({ filterPeriodIds: [], filterTagIds: [], filterTeamIds: [], filterTypes: [], filterTypeNotSet: false, filterOwnerIds: [], filterOwnerOperator: 'equals', filterAssigneeIds: [], filterAssigneeOperator: 'equals', filterAssigneeNotSet: false, filterNextStepDate: null, filterLevels: [], filterObjectiveId: null, filterWorkflowStatuses: [], filterKeyResultsOnly: false, filterListIds: [], filterListShowChildren: false });
@@ -964,6 +971,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
         filterKeyResultsOnly: false,
         filterListIds: [],
         filterListShowChildren: false,
+        openChildrenOnly: false,
       };
     });
   },
@@ -1189,6 +1197,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       filterNextStepDate: state.filterNextStepDate,
       filterLevels: state.filterLevels,
       filterObjectiveId: state.filterObjectiveId,
+      openChildrenOnly: state.openChildrenOnly,
     };
 
     try {
@@ -1244,6 +1253,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       filterNextStepDate: state.filterNextStepDate,
       filterLevels: state.filterLevels,
       filterObjectiveId: state.filterObjectiveId,
+      openChildrenOnly: state.openChildrenOnly,
     };
 
     try {
@@ -1309,6 +1319,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       filterNextStepDate: filters.filterNextStepDate || null,
       filterLevels: (filters.filterLevels || []) as ObjectiveLevel[],
       filterObjectiveId: filters.filterObjectiveId || null,
+      openChildrenOnly: filters.openChildrenOnly || false,
       visibleColumns: view.visibleColumns?.length ? view.visibleColumns as ColumnKey[] : DEFAULT_VISIBLE_COLUMNS,
       columnWidths: view.columnWidths ? { ...DEFAULT_COLUMN_WIDTHS, ...view.columnWidths } : DEFAULT_COLUMN_WIDTHS,
       activeViewId: viewId,
