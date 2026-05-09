@@ -402,8 +402,10 @@ export function ChecklistPage() {
       );
     }
 
-    // Finally, filter for items without next step date
-    result = result.filter((obj: Objective) => !obj.nextStepDate);
+    // Finally, filter for items without next step date (excluding done/archived)
+    result = result.filter((obj: Objective) =>
+      !obj.nextStepDate && obj.workflowStatus !== 'done' && obj.workflowStatus !== 'archived'
+    );
 
     return result;
   }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterTypeNotSet, filterLevels, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterWorkflowStatuses, includeAncestorPeriods, includeChildPeriods, includeChildTeams, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds]);
