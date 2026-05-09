@@ -1202,6 +1202,7 @@ app.post('/api/users/me/todos', requireAuth, (req, res) => {
   const newTodo = {
     id: generateTodoId(),
     text: text.trim(),
+    objectiveId: req.body.objectiveId || null,
     order: maxOrder + 1,
     createdAt: now,
   };
@@ -1243,7 +1244,9 @@ app.put('/api/users/me/todos/:todoId', requireAuth, (req, res) => {
     return res.status(404).json({ error: 'Todo not found' });
   }
 
+  const { objectiveId } = req.body;
   if (text !== undefined) todos[todoIndex].text = text.trim();
+  if (objectiveId !== undefined) todos[todoIndex].objectiveId = objectiveId;
 
   const savedTodos = saveUserTodos(req.user.email, todos);
   res.json({ todo: todos[todoIndex], todos: savedTodos });

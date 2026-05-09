@@ -1,4 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useOKRStore, type OKRStore } from '../../store/okrStore';
+import type { Objective } from '../../types';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -14,6 +16,7 @@ interface WorkLogEntry {
 interface Todo {
   id: string;
   text: string;
+  objectiveId: string | null;
   order: number;
   createdAt: string;
 }
@@ -32,10 +35,160 @@ function formatDuration(totalMinutes: number): string {
   return `${h}h ${m}m`;
 }
 
+// ── Objective Picker Panel ──
+
+interface ObjectivePickerProps {
+  todoId: string;
+  currentObjectiveId: string | null;
+  onSelect: (todoId: string, objectiveId: string | null) => void;
+  onClose: () => void;
+}
+
+function ObjectivePicker({ todoId, currentObjectiveId, onSelect, onClose }: ObjectivePickerProps) {
+  const [search, setSearch] = useState('');
+  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
+  const objectives = useOKRStore((state: OKRStore) => state.objectives);
+
+  const toggleCollapse = (id: string) => {
+    setCollapsedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const objectiveTree = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const matchingIds = new Set<string>();
+
+    if (q) {
+      const matched = objectives.filter((o: Objective) => o.title.toLowerCase().includes(q));
+      matched.forEach((o: Objective) => {
+        matchingIds.add(o.id);
+        let current = o;
+        while (current.parentId) {
+          matchingIds.add(current.parentId);
+          const parent = objectives.find((p: Objective) => p.id === current.parentId);
+          if (!parent) break;
+          current = parent;
+        }
+      });
+    }
+
+    const visible = q ? objectives.filter((o: Objective) => matchingIds.has(o.id)) : objectives;
+    const roots = visible.filter((o: Objective) => !o.parentId || !visible.find((p: Objective) => p.id === o.parentId));
+    const childrenMap = new Map<string, Objective[]>();
+    visible.forEach((o: Objective) => {
+      if (o.parentId && visible.find((p: Objective) => p.id === o.parentId)) {
+        const siblings = childrenMap.get(o.parentId) || [];
+        siblings.push(o);
+        childrenMap.set(o.parentId, siblings);
+      }
+    });
+
+    const result: { objective: Objective; depth: number; hasChildren: boolean }[] = [];
+    const walk = (nodes: Objective[], depth: number) => {
+      nodes.forEach((node) => {
+        const children = childrenMap.get(node.id);
+        const hasChildren = !!children && children.length > 0;
+        result.push({ objective: node, depth, hasChildren });
+        if (hasChildren && !collapsedIds.has(node.id)) {
+          walk(children, depth + 1);
+        }
+      });
+    };
+    walk(roots, 0);
+    return result;
+  }, [objectives, search, collapsedIds]);
+
+  return (
+    <div className="space-y-4 h-full flex flex-col">
+      <div className="flex items-center justify-between flex-shrink-0">
+        <h2 className="text-lg font-semibold text-gray-900">Link to Objective</h2>
+        <button
+          onClick={onClose}
+          className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
+          title="Close"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <div className="flex-shrink-0">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search objectives..."
+          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          autoFocus
+        />
+      </div>
+
+      {currentObjectiveId && (
+        <button
+          onClick={() => onSelect(todoId, null)}
+          className="flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg border border-red-200 flex-shrink-0"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+          Remove link
+        </button>
+      )}
+
+      <div className="flex-1 overflow-y-auto min-h-0 border border-gray-200 rounded-lg bg-white">
+        {objectiveTree.length === 0 ? (
+          <p className="px-3 py-4 text-sm text-gray-400 text-center">No objectives found</p>
+        ) : (
+          <div className="py-1">
+            {objectiveTree.map(({ objective: obj, depth, hasChildren }) => (
+              <div
+                key={obj.id}
+                className={`flex items-center hover:bg-gray-50 ${currentObjectiveId === obj.id ? 'bg-blue-50' : ''}`}
+                style={{ paddingLeft: `${8 + depth * 16}px` }}
+              >
+                {hasChildren ? (
+                  <button
+                    onClick={() => toggleCollapse(obj.id)}
+                    className="w-5 h-5 flex items-center justify-center flex-shrink-0 text-gray-400 hover:text-gray-600"
+                  >
+                    <svg className={`w-3 h-3 transition-transform ${collapsedIds.has(obj.id) ? '' : 'rotate-90'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                ) : (
+                  <span className="w-5 flex-shrink-0" />
+                )}
+                <button
+                  onClick={() => onSelect(todoId, obj.id)}
+                  className={`flex-1 text-left py-2 pr-3 pl-1 text-sm truncate ${currentObjectiveId === obj.id ? 'text-blue-700 font-medium' : 'text-gray-700'}`}
+                >
+                  {obj.title}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Todos Panel ──
 
-function TodosPanel({ onStartTodo }: { onStartTodo: (todoText: string) => void }) {
-  const [todos, setTodos] = useState<Todo[]>([]);
+interface TodosPanelProps {
+  onStartTodo: (todoText: string) => void;
+  linkingTodoId: string | null;
+  onLinkTodo: (todoId: string | null) => void;
+  onTodosChange: (todos: Todo[]) => void;
+  todos: Todo[];
+}
+
+function TodosPanel({ onStartTodo, linkingTodoId, onLinkTodo, onTodosChange, todos }: TodosPanelProps) {
   const [newTodoText, setNewTodoText] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
@@ -44,6 +197,14 @@ function TodosPanel({ onStartTodo }: { onStartTodo: (todoText: string) => void }
   const dragOverItemRef = useRef<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
 
+  const objectives = useOKRStore((state: OKRStore) => state.objectives);
+
+  const getObjectiveTitle = useCallback((objectiveId: string | null) => {
+    if (!objectiveId) return null;
+    const obj = objectives.find((o: Objective) => o.id === objectiveId);
+    return obj?.title || null;
+  }, [objectives]);
+
   const fetchTodos = useCallback(async () => {
     try {
       const response = await fetch(`${API_URL}/api/users/me/todos`, {
@@ -51,14 +212,14 @@ function TodosPanel({ onStartTodo }: { onStartTodo: (todoText: string) => void }
       });
       if (response.ok) {
         const data = await response.json();
-        setTodos((data.todos || []).sort((a: Todo, b: Todo) => a.order - b.order));
+        onTodosChange((data.todos || []).sort((a: Todo, b: Todo) => a.order - b.order));
       }
     } catch {
       // ignore
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [onTodosChange]);
 
   useEffect(() => {
     fetchTodos();
@@ -78,7 +239,7 @@ function TodosPanel({ onStartTodo }: { onStartTodo: (todoText: string) => void }
       });
       if (response.ok) {
         const data = await response.json();
-        setTodos((data.todos || []).sort((a: Todo, b: Todo) => a.order - b.order));
+        onTodosChange((data.todos || []).sort((a: Todo, b: Todo) => a.order - b.order));
         setNewTodoText('');
       }
     } catch {
@@ -99,7 +260,7 @@ function TodosPanel({ onStartTodo }: { onStartTodo: (todoText: string) => void }
       });
       if (response.ok) {
         const data = await response.json();
-        setTodos((data.todos || []).sort((a: Todo, b: Todo) => a.order - b.order));
+        onTodosChange((data.todos || []).sort((a: Todo, b: Todo) => a.order - b.order));
         setEditingTodoId(null);
         setEditTodoText('');
       }
@@ -116,7 +277,7 @@ function TodosPanel({ onStartTodo }: { onStartTodo: (todoText: string) => void }
       });
       if (response.ok) {
         const data = await response.json();
-        setTodos((data.todos || []).sort((a: Todo, b: Todo) => a.order - b.order));
+        onTodosChange((data.todos || []).sort((a: Todo, b: Todo) => a.order - b.order));
       }
     } catch {
       // ignore
@@ -152,7 +313,7 @@ function TodosPanel({ onStartTodo }: { onStartTodo: (todoText: string) => void }
 
     const [dragged] = newTodos.splice(dragIndex, 1);
     newTodos.splice(dropIndex, 0, dragged);
-    setTodos(newTodos);
+    onTodosChange(newTodos);
 
     const orderedIds = newTodos.map(t => t.id);
     try {
@@ -164,7 +325,7 @@ function TodosPanel({ onStartTodo }: { onStartTodo: (todoText: string) => void }
       });
       if (response.ok) {
         const data = await response.json();
-        setTodos((data.todos || []).sort((a: Todo, b: Todo) => a.order - b.order));
+        onTodosChange((data.todos || []).sort((a: Todo, b: Todo) => a.order - b.order));
       }
     } catch {
       // ignore
@@ -238,6 +399,8 @@ function TodosPanel({ onStartTodo }: { onStartTodo: (todoText: string) => void }
               );
             }
 
+            const linkedTitle = getObjectiveTitle(todo.objectiveId);
+
             return (
               <li
                 key={todo.id}
@@ -247,43 +410,63 @@ function TodosPanel({ onStartTodo }: { onStartTodo: (todoText: string) => void }
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
                 onDragEnd={handleDragEnd}
-                className={`flex items-center gap-2 p-3 bg-white border rounded-lg cursor-grab active:cursor-grabbing transition-colors ${
+                className={`p-3 bg-white border rounded-lg cursor-grab active:cursor-grabbing transition-colors ${
+                  linkingTodoId === todo.id ? 'border-blue-400 bg-blue-50' :
                   dragOverId === todo.id ? 'border-blue-400 bg-blue-50' : 'border-gray-200'
                 }`}
               >
-                <svg className="w-4 h-4 text-gray-300 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M8 6a2 2 0 112 0 2 2 0 01-2 0zm0 6a2 2 0 112 0 2 2 0 01-2 0zm0 6a2 2 0 112 0 2 2 0 01-2 0zm6-12a2 2 0 112 0 2 2 0 01-2 0zm0 6a2 2 0 112 0 2 2 0 01-2 0zm0 6a2 2 0 112 0 2 2 0 01-2 0z" />
-                </svg>
-                <span className="flex-1 text-sm text-gray-900 min-w-0 truncate">{todo.text}</span>
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  <button
-                    onClick={() => onStartTodo(todo.text)}
-                    className="text-green-500 hover:text-green-700 transition-colors"
-                    title="Start working"
-                  >
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M8 5v14l11-7z" />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={() => { setEditingTodoId(todo.id); setEditTodoText(todo.text); }}
-                    className="text-gray-300 hover:text-blue-500 transition-colors"
-                    title="Edit"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={() => handleDeleteTodo(todo.id)}
-                    className="text-gray-300 hover:text-red-500 transition-colors"
-                    title="Delete"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </button>
+                <div className="flex items-center gap-2">
+                  <svg className="w-4 h-4 text-gray-300 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M8 6a2 2 0 112 0 2 2 0 01-2 0zm0 6a2 2 0 112 0 2 2 0 01-2 0zm0 6a2 2 0 112 0 2 2 0 01-2 0zm6-12a2 2 0 112 0 2 2 0 01-2 0zm0 6a2 2 0 112 0 2 2 0 01-2 0zm0 6a2 2 0 112 0 2 2 0 01-2 0z" />
+                  </svg>
+                  <span className="flex-1 text-sm text-gray-900 min-w-0 truncate">{todo.text}</span>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button
+                      onClick={() => onLinkTodo(linkingTodoId === todo.id ? null : todo.id)}
+                      className={`transition-colors ${todo.objectiveId ? 'text-blue-500 hover:text-blue-700' : 'text-gray-300 hover:text-blue-500'}`}
+                      title={todo.objectiveId ? 'Change linked objective' : 'Link to objective'}
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => onStartTodo(todo.text)}
+                      className="text-green-500 hover:text-green-700 transition-colors"
+                      title="Start working"
+                    >
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => { setEditingTodoId(todo.id); setEditTodoText(todo.text); }}
+                      className="text-gray-300 hover:text-blue-500 transition-colors"
+                      title="Edit"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => handleDeleteTodo(todo.id)}
+                      className="text-gray-300 hover:text-red-500 transition-colors"
+                      title="Delete"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
+                {linkedTitle && (
+                  <div className="mt-1.5 ml-6 flex items-center gap-1">
+                    <svg className="w-3 h-3 text-blue-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                    </svg>
+                    <span className="text-xs text-blue-600 truncate">{linkedTitle}</span>
+                  </div>
+                )}
               </li>
             );
           })}
@@ -497,7 +680,7 @@ function WorkLogPanel({ workLogs, onWorkLogsChange }: WorkLogPanelProps) {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold text-gray-900">Work Items</h2>
+      <h2 className="text-lg font-semibold text-gray-900">Log Work</h2>
 
       <form onSubmit={handleSubmit} className="flex gap-2">
         <input
@@ -671,6 +854,8 @@ function WorkLogPanel({ workLogs, onWorkLogsChange }: WorkLogPanelProps) {
 
 export function LogWorkPage() {
   const [workLogs, setWorkLogs] = useState<WorkLogEntry[]>([]);
+  const [linkingTodoId, setLinkingTodoId] = useState<string | null>(null);
+  const [todos, setTodos] = useState<Todo[]>([]);
 
   const handleStartTodo = async (todoText: string) => {
     const now = new Date().toISOString();
@@ -693,10 +878,45 @@ export function LogWorkPage() {
     }
   };
 
+  const handleLinkObjective = async (todoId: string, objectiveId: string | null) => {
+    try {
+      const response = await fetch(`${API_URL}/api/users/me/todos/${todoId}`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ objectiveId }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setTodos((data.todos || []).sort((a: Todo, b: Todo) => a.order - b.order));
+      }
+    } catch {
+      // ignore
+    }
+    setLinkingTodoId(null);
+  };
+
+  const linkingTodo = linkingTodoId ? todos.find(t => t.id === linkingTodoId) : null;
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-      <TodosPanel onStartTodo={handleStartTodo} />
-      <WorkLogPanel workLogs={workLogs} onWorkLogsChange={setWorkLogs} />
+      <TodosPanel
+        onStartTodo={handleStartTodo}
+        linkingTodoId={linkingTodoId}
+        onLinkTodo={setLinkingTodoId}
+        onTodosChange={setTodos}
+        todos={todos}
+      />
+      {linkingTodo ? (
+        <ObjectivePicker
+          todoId={linkingTodo.id}
+          currentObjectiveId={linkingTodo.objectiveId}
+          onSelect={handleLinkObjective}
+          onClose={() => setLinkingTodoId(null)}
+        />
+      ) : (
+        <WorkLogPanel workLogs={workLogs} onWorkLogsChange={setWorkLogs} />
+      )}
     </div>
   );
 }

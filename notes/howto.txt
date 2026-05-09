@@ -1,3 +1,7 @@
+On local mac - just run:
+npm run dev:all
+
+==========================
 - Start the backend server
   node server/index.js
 
