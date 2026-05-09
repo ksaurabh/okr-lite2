@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import type { Objective, ObjectiveLevel, ObjectiveType, WorkflowStatus, Period, User, Team, Tag, List } from '../../types';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
@@ -107,6 +108,8 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   const assigneeSelectRef = useRef<HTMLSelectElement>(null);
   const periodSelectRef = useRef<HTMLSelectElement>(null);
   const nextStepDateInputRef = useRef<HTMLInputElement>(null);
+  const nextStepDateCellRef = useRef<HTMLDivElement>(null);
+  const [nextStepDatePopoverPos, setNextStepDatePopoverPos] = useState<{ top: number; left: number } | null>(null);
   const resolvedInputRef = useRef<HTMLInputElement>(null);
   const nextStepInputRef = useRef<HTMLInputElement>(null);
   const storyPointsInputRef = useRef<HTMLInputElement>(null);
@@ -137,6 +140,8 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   const lists = useOKRStore((state: OKRStore) => state.lists);
   const addItemToList = useOKRStore((state: OKRStore) => state.addItemToList);
   const removeItemFromList = useOKRStore((state: OKRStore) => state.removeItemFromList);
+  const showListMembership = useOKRStore((state: OKRStore) => state.showListMembership);
+  const listMembershipListId = useOKRStore((state: OKRStore) => state.listMembershipListId);
   const createList = useOKRStore((state: OKRStore) => state.createList);
 
   const { user, isSuperAdmin, isOrgAdmin, organization } = useAuth();
@@ -432,9 +437,24 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   }, [editingPeriod]);
 
   useEffect(() => {
-    if (editingNextStepDate && nextStepDateInputRef.current) {
-      nextStepDateInputRef.current.focus();
+    if (editingNextStepDate && nextStepDateCellRef.current) {
+      const rect = nextStepDateCellRef.current.getBoundingClientRect();
+      setNextStepDatePopoverPos({ top: rect.bottom + 4, left: rect.left });
+    } else {
+      setNextStepDatePopoverPos(null);
     }
+  }, [editingNextStepDate]);
+
+  useEffect(() => {
+    if (!editingNextStepDate) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (nextStepDateCellRef.current?.contains(target)) return;
+      if (target.closest('[data-next-date-panel]')) return;
+      setEditingNextStepDate(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [editingNextStepDate]);
 
   useEffect(() => {
@@ -651,6 +671,15 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
     }
   };
 
+  const setNextStepDatePreset = async (preset: 'week' | 'month' | 'quarter') => {
+    const d = new Date();
+    if (preset === 'week') d.setDate(d.getDate() + 7);
+    else if (preset === 'month') d.setMonth(d.getMonth() + 1);
+    else d.setMonth(d.getMonth() + 3);
+    const newDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    await handleNextStepDateChange(newDate);
+  };
+
   const handleResolvedChange = async (newDate: string) => {
     setEditingResolved(false);
     if (newDate !== (objective.resolvedAt || '')) {
@@ -747,10 +776,17 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
     return list?.items.some(item => item.objectiveId === objective.id) || false;
   };
 
-  // Get lists that contain this objective
+  // Get lists that contain this objective (gated by the "show list membership" view option)
   const objectiveLists = useMemo(
-    () => lists.filter(list => list.items.some(item => item.objectiveId === objective.id)),
-    [lists, objective.id]
+    () => {
+      if (!showListMembership) return [];
+      const memberLists = lists.filter(list => list.items.some(item => item.objectiveId === objective.id));
+      if (listMembershipListId) {
+        return memberLists.filter(list => list.id === listMembershipListId);
+      }
+      return memberLists;
+    },
+    [lists, objective.id, showListMembership, listMembershipListId]
   );
 
   const handleToggleList = async (listId: string) => {
@@ -1392,17 +1428,67 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
 
         {/* Next Step Date column - editable with date picker */}
         {visibleColumns.includes('nextStepDate') && (
-        <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.nextStepDate }}>
+        <div ref={nextStepDateCellRef} className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.nextStepDate }}>
           {editingNextStepDate ? (
-            <input
-              ref={nextStepDateInputRef}
-              type="date"
-              value={objective.nextStepDate || ''}
-              onChange={(e) => handleNextStepDateChange(e.target.value)}
-              onBlur={() => setEditingNextStepDate(false)}
-              className="w-full text-xs px-1 py-0.5 border border-blue-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
-          ) : (
+            <>
+              <button
+                type="button"
+                className="w-full text-left text-xs px-1 py-0.5 rounded border border-blue-300 bg-white text-gray-700"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {objective.nextStepDate ? (() => {
+                  const [y, m, d] = objective.nextStepDate.split('-').map(Number);
+                  return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                })() : 'Pick date'}
+              </button>
+              {nextStepDatePopoverPos && createPortal(
+                <div
+                  data-next-date-panel
+                  style={{ position: 'fixed', top: nextStepDatePopoverPos.top, left: nextStepDatePopoverPos.left, zIndex: 1000 }}
+                  className="bg-white border border-gray-200 rounded-md shadow-lg p-2 flex flex-col gap-2 min-w-[200px]"
+                >
+                  <input
+                    ref={nextStepDateInputRef}
+                    type="date"
+                    value={objective.nextStepDate || ''}
+                    onChange={(e) => handleNextStepDateChange(e.target.value)}
+                    className="text-xs px-2 py-1 border border-gray-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      const v = e.target.value as 'week' | 'month' | 'quarter' | '';
+                      if (v) setNextStepDatePreset(v);
+                    }}
+                    className="text-xs px-2 py-1 border border-gray-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  >
+                    <option value="">Shortcuts…</option>
+                    <option value="week">Next Week (+7 days)</option>
+                    <option value="month">Next Month (+1 month)</option>
+                    <option value="quarter">Next Quarter (+3 months)</option>
+                  </select>
+                  <div className="flex justify-between items-center pt-1 border-t border-gray-100">
+                    <button
+                      type="button"
+                      onClick={() => handleNextStepDateChange('')}
+                      className="text-xs text-red-600 hover:text-red-700"
+                    >
+                      Clear
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingNextStepDate(false)}
+                      className="text-xs text-gray-600 hover:text-gray-800"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>,
+                document.body
+              )}
+            </>
+          ) : null}
+          {!editingNextStepDate && (
             <button
               onClick={() => canModify && setEditingNextStepDate(true)}
               className={`w-full text-left text-xs px-1 py-0.5 rounded truncate ${canModify ? 'hover:bg-gray-100 cursor-pointer' : 'cursor-default'} ${objective.nextStepDate ? 'text-gray-600' : 'text-gray-300'}`}

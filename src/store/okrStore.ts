@@ -126,6 +126,11 @@ interface OKRActions {
   setFilterNextStepDate: (filter: NextStepDateFilter | null) => void;
   toggleFilterLevel: (level: ObjectiveLevel) => void;
   setFilterObjective: (objectiveId: string | null) => void;
+  setFilterRootObjective: (objectiveId: string | null) => void;
+  showListMembership: boolean;
+  setShowListMembership: (v: boolean) => void;
+  listMembershipListId: string | null;
+  setListMembershipListId: (id: string | null) => void;
   filterWorkflowStatuses: WorkflowStatus[];
   toggleFilterWorkflowStatus: (status: WorkflowStatus) => void;
   filterKeyResultsOnly: boolean;
@@ -333,6 +338,9 @@ const defaultState: OKRState = {
   filterNextStepDate: null,
   filterLevels: [] as ObjectiveLevel[],
   filterObjectiveId: null,
+  filterRootObjectiveId: null,
+  showListMembership: false,
+  listMembershipListId: null,
   filterWorkflowStatuses: [] as WorkflowStatus[],
   filterKeyResultsOnly: false,
   filterListIds: [],
@@ -428,43 +436,65 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     const normalizeArray = (val: unknown[] | undefined) => !val || val.length === 0 ? undefined : val;
     const changes: FieldChange[] = [];
 
+    const getUserDisplay = (id: string | undefined) => id;
+
     if ('title' in updates && normalize(updates.title) !== normalize(existingObj.title)) {
-      changes.push({ field: 'title', oldValue: existingObj.title, newValue: updates.title });
+      changes.push({ field: 'title', oldValue: existingObj.title, newValue: updates.title, oldRaw: existingObj.title, newRaw: updates.title });
     }
     if ('description' in updates && normalize(updates.description) !== normalize(existingObj.description)) {
-      changes.push({ field: 'description', oldValue: existingObj.description || '(empty)', newValue: updates.description || '(empty)' });
+      changes.push({ field: 'description', oldValue: existingObj.description || '(empty)', newValue: updates.description || '(empty)', oldRaw: existingObj.description, newRaw: updates.description });
     }
     if ('level' in updates && normalize(updates.level) !== normalize(existingObj.level)) {
-      changes.push({ field: 'level', oldValue: existingObj.level, newValue: updates.level });
+      changes.push({ field: 'level', oldValue: existingObj.level, newValue: updates.level, oldRaw: existingObj.level, newRaw: updates.level });
+    }
+    if ('type' in updates && normalize(updates.type) !== normalize(existingObj.type)) {
+      changes.push({ field: 'type', oldValue: existingObj.type || '(none)', newValue: updates.type || '(none)', oldRaw: existingObj.type, newRaw: updates.type });
     }
     if ('periodId' in updates && normalize(updates.periodId) !== normalize(existingObj.periodId)) {
-      changes.push({ field: 'period', oldValue: getPeriodName(existingObj.periodId), newValue: getPeriodName(updates.periodId) });
+      changes.push({ field: 'period', oldValue: getPeriodName(existingObj.periodId), newValue: getPeriodName(updates.periodId), oldRaw: existingObj.periodId, newRaw: updates.periodId });
     }
     if ('teamId' in updates && normalize(updates.teamId) !== normalize(existingObj.teamId)) {
-      changes.push({ field: 'team', oldValue: getTeamName(existingObj.teamId) || '(none)', newValue: getTeamName(updates.teamId) || '(none)' });
+      changes.push({ field: 'team', oldValue: getTeamName(existingObj.teamId) || '(none)', newValue: getTeamName(updates.teamId) || '(none)', oldRaw: existingObj.teamId, newRaw: updates.teamId });
     }
     if ('tagIds' in updates && JSON.stringify(normalizeArray(updates.tagIds)) !== JSON.stringify(normalizeArray(existingObj.tagIds))) {
-      changes.push({ field: 'tags', oldValue: getTagNames(existingObj.tagIds) || '(none)', newValue: getTagNames(updates.tagIds) || '(none)' });
+      changes.push({ field: 'tags', oldValue: getTagNames(existingObj.tagIds) || '(none)', newValue: getTagNames(updates.tagIds) || '(none)', oldRaw: existingObj.tagIds, newRaw: updates.tagIds });
     }
     if ('parentId' in updates && normalize(updates.parentId) !== normalize(existingObj.parentId)) {
-      changes.push({ field: 'parent', oldValue: getObjectiveTitle(existingObj.parentId) || '(none)', newValue: getObjectiveTitle(updates.parentId) || '(none)' });
+      changes.push({ field: 'parent', oldValue: getObjectiveTitle(existingObj.parentId) || '(none)', newValue: getObjectiveTitle(updates.parentId) || '(none)', oldRaw: existingObj.parentId, newRaw: updates.parentId });
     }
     if ('shared' in updates && updates.shared !== existingObj.shared) {
-      changes.push({ field: 'visibility', oldValue: existingObj.shared ? 'Shared' : 'Private', newValue: updates.shared ? 'Shared' : 'Private' });
+      changes.push({ field: 'visibility', oldValue: existingObj.shared ? 'Shared' : 'Private', newValue: updates.shared ? 'Shared' : 'Private', oldRaw: existingObj.shared, newRaw: updates.shared });
     }
     if ('ownerId' in updates && normalize(updates.ownerId) !== normalize(existingObj.ownerId)) {
-      const getOwnerName = (id: string | undefined) => id ? state.objectives.find(o => o.id === id)?.title || id : undefined;
-      changes.push({ field: 'owner', oldValue: getOwnerName(existingObj.ownerId) || '(none)', newValue: getOwnerName(updates.ownerId) || '(none)' });
+      changes.push({ field: 'owner', oldValue: getUserDisplay(existingObj.ownerId) || '(none)', newValue: getUserDisplay(updates.ownerId) || '(none)', oldRaw: existingObj.ownerId, newRaw: updates.ownerId });
     }
     if ('assigneeId' in updates && normalize(updates.assigneeId) !== normalize(existingObj.assigneeId)) {
-      const getAssigneeName = (id: string | undefined) => id ? state.objectives.find(o => o.id === id)?.title || id : undefined;
-      changes.push({ field: 'assignee', oldValue: getAssigneeName(existingObj.assigneeId) || '(none)', newValue: getAssigneeName(updates.assigneeId) || '(none)' });
+      changes.push({ field: 'assignee', oldValue: getUserDisplay(existingObj.assigneeId) || '(none)', newValue: getUserDisplay(updates.assigneeId) || '(none)', oldRaw: existingObj.assigneeId, newRaw: updates.assigneeId });
     }
     if ('resolvedAt' in updates && normalize(updates.resolvedAt) !== normalize(existingObj.resolvedAt)) {
-      changes.push({ field: 'resolved', oldValue: existingObj.resolvedAt || '(none)', newValue: updates.resolvedAt || '(none)' });
+      changes.push({ field: 'resolved', oldValue: existingObj.resolvedAt || '(none)', newValue: updates.resolvedAt || '(none)', oldRaw: existingObj.resolvedAt, newRaw: updates.resolvedAt });
     }
     if ('workflowStatus' in updates && normalize(updates.workflowStatus) !== normalize(existingObj.workflowStatus)) {
-      changes.push({ field: 'status', oldValue: existingObj.workflowStatus || '(none)', newValue: updates.workflowStatus || '(none)' });
+      changes.push({ field: 'status', oldValue: existingObj.workflowStatus || '(none)', newValue: updates.workflowStatus || '(none)', oldRaw: existingObj.workflowStatus, newRaw: updates.workflowStatus });
+    }
+    if ('nextStepDate' in updates && normalize(updates.nextStepDate) !== normalize(existingObj.nextStepDate)) {
+      changes.push({ field: 'nextStepDate', oldValue: existingObj.nextStepDate || '(none)', newValue: updates.nextStepDate || '(none)', oldRaw: existingObj.nextStepDate, newRaw: updates.nextStepDate });
+    }
+    if ('nextStep' in updates && normalize(updates.nextStep) !== normalize(existingObj.nextStep)) {
+      changes.push({ field: 'nextStep', oldValue: existingObj.nextStep || '(empty)', newValue: updates.nextStep || '(empty)', oldRaw: existingObj.nextStep, newRaw: updates.nextStep });
+    }
+    if ('storyPoints' in updates && normalize(updates.storyPoints) !== normalize(existingObj.storyPoints)) {
+      changes.push({ field: 'storyPoints', oldValue: existingObj.storyPoints, newValue: updates.storyPoints, oldRaw: existingObj.storyPoints, newRaw: updates.storyPoints });
+    }
+    if ('valuePoints' in updates && normalize(updates.valuePoints) !== normalize(existingObj.valuePoints)) {
+      changes.push({ field: 'valuePoints', oldValue: existingObj.valuePoints, newValue: updates.valuePoints, oldRaw: existingObj.valuePoints, newRaw: updates.valuePoints });
+    }
+    if ('isKeyResult' in updates && !!updates.isKeyResult !== !!existingObj.isKeyResult) {
+      changes.push({ field: 'isKeyResult', oldValue: existingObj.isKeyResult ? 'Yes' : 'No', newValue: updates.isKeyResult ? 'Yes' : 'No', oldRaw: !!existingObj.isKeyResult, newRaw: !!updates.isKeyResult });
+    }
+    if ('link' in updates && JSON.stringify(updates.link || null) !== JSON.stringify(existingObj.link || null)) {
+      const fmtLink = (l: typeof existingObj.link) => l ? (l.description ? `${l.description} (${l.url})` : l.url) : '(none)';
+      changes.push({ field: 'link', oldValue: fmtLink(existingObj.link), newValue: fmtLink(updates.link), oldRaw: existingObj.link, newRaw: updates.link });
     }
 
     // Add history entry if there are changes
@@ -902,6 +932,18 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     });
   },
 
+  setFilterRootObjective: (objectiveId: string | null) => {
+    set((state: OKRStore) => ({ ...state, filterRootObjectiveId: objectiveId }));
+  },
+
+  setShowListMembership: (v: boolean) => {
+    set((state: OKRStore) => ({ ...state, showListMembership: v }));
+  },
+
+  setListMembershipListId: (id: string | null) => {
+    set((state: OKRStore) => ({ ...state, listMembershipListId: id }));
+  },
+
   toggleFilterWorkflowStatus: (status: WorkflowStatus) => {
     set((state: OKRStore) => {
       const filterWorkflowStatuses = state.filterWorkflowStatuses.includes(status)
@@ -967,6 +1009,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
         filterNextStepDate: null,
         filterLevels: [],
         filterObjectiveId: null,
+        filterRootObjectiveId: null,
         filterWorkflowStatuses: [],
         filterKeyResultsOnly: false,
         filterListIds: [],

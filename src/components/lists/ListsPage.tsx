@@ -1,6 +1,15 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
-import type { Objective, User, WorkflowStatus } from '../../types';
+import { useAuth } from '../../context/AuthContext';
+import { ObjectiveFilterPanel } from '../filters/ObjectiveFilterPanel';
+import {
+  buildPeriodAncestorLookup,
+  buildPeriodDescendantLookup,
+  buildTeamDescendantLookup,
+  buildObjectiveDescendantLookup,
+  filterObjectives,
+} from '../../utils/objectiveFilters';
+import type { Objective, Period, Team, Tag, User, WorkflowStatus } from '../../types';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -18,6 +27,15 @@ const WORKFLOW_STATUS_LABELS: Record<WorkflowStatus, string> = {
   done: 'Done',
   archived: 'Archived',
 };
+
+const WORKFLOW_STATUS_OPTIONS: { value: WorkflowStatus; label: string }[] = [
+  { value: 'todo', label: 'To Do' },
+  { value: 'planning', label: 'In Planning' },
+  { value: 'in_progress', label: 'In Progress' },
+  { value: 'acceptance', label: 'In Acceptance' },
+  { value: 'done', label: 'Done' },
+  { value: 'archived', label: 'Archived' },
+];
 
 const LIST_COLORS = [
   '#6b7280', // gray
@@ -87,15 +105,142 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
 
   const lists = useOKRStore((state: OKRStore) => state.lists);
   const objectives = useOKRStore((state: OKRStore) => state.objectives);
+  const periods = useOKRStore((state: OKRStore) => state.periods);
+  const teams = useOKRStore((state: OKRStore) => state.teams);
+  const tags = useOKRStore((state: OKRStore) => state.tags);
+  const filterPeriodIds = useOKRStore((state: OKRStore) => state.filterPeriodIds);
+  const filterTagIds = useOKRStore((state: OKRStore) => state.filterTagIds);
+  const filterTeamIds = useOKRStore((state: OKRStore) => state.filterTeamIds);
+  const filterTypes = useOKRStore((state: OKRStore) => state.filterTypes);
+  const filterTypeNotSet = useOKRStore((state: OKRStore) => state.filterTypeNotSet);
+  const filterOwnerIds = useOKRStore((state: OKRStore) => state.filterOwnerIds);
+  const filterOwnerOperator = useOKRStore((state: OKRStore) => state.filterOwnerOperator);
+  const filterAssigneeIds = useOKRStore((state: OKRStore) => state.filterAssigneeIds);
+  const filterAssigneeOperator = useOKRStore((state: OKRStore) => state.filterAssigneeOperator);
+  const filterAssigneeNotSet = useOKRStore((state: OKRStore) => state.filterAssigneeNotSet);
+  const filterNextStepDate = useOKRStore((state: OKRStore) => state.filterNextStepDate);
+  const filterLevels = useOKRStore((state: OKRStore) => state.filterLevels);
+  const filterWorkflowStatuses = useOKRStore((state: OKRStore) => state.filterWorkflowStatuses);
+  const filterKeyResultsOnly = useOKRStore((state: OKRStore) => state.filterKeyResultsOnly);
+  const filterObjectiveId = useOKRStore((state: OKRStore) => state.filterObjectiveId);
+  const filterRootObjectiveId = useOKRStore((state: OKRStore) => state.filterRootObjectiveId);
+  const filterListIds = useOKRStore((state: OKRStore) => state.filterListIds);
+  const openChildrenOnly = useOKRStore((state: OKRStore) => state.openChildrenOnly);
   const fetchLists = useOKRStore((state: OKRStore) => state.fetchLists);
   const createList = useOKRStore((state: OKRStore) => state.createList);
   const deleteList = useOKRStore((state: OKRStore) => state.deleteList);
   const renameList = useOKRStore((state: OKRStore) => state.renameList);
   const updateListColor = useOKRStore((state: OKRStore) => state.updateListColor);
   const removeItemFromList = useOKRStore((state: OKRStore) => state.removeItemFromList);
+  const addItemToList = useOKRStore((state: OKRStore) => state.addItemToList);
   const reorderListItems = useOKRStore((state: OKRStore) => state.reorderListItems);
-  const setFilterObjective = useOKRStore((state: OKRStore) => state.setFilterObjective);
+  const setFilterRootObjective = useOKRStore((state: OKRStore) => state.setFilterRootObjective);
   const clearAllFilters = useOKRStore((state: OKRStore) => state.clearAllFilters);
+  const updateObjective = useOKRStore((state: OKRStore) => state.updateObjective);
+
+  const { user, organization, isSuperAdmin, isOrgAdmin } = useAuth();
+  const userEmail = user?.email || '';
+  const orgId = organization?.id || '';
+  const isAdmin = isSuperAdmin || isOrgAdmin;
+
+  // Filter panel local state (mirrors ObjectiveTree defaults)
+  const [filterSearchQuery, setFilterSearchQuery] = useState('');
+  const [includeAncestorPeriods, setIncludeAncestorPeriods] = useState(false);
+  const [includeChildPeriods, setIncludeChildPeriods] = useState(true);
+  const [includeChildTeams, setIncludeChildTeams] = useState(true);
+  const [showChildren, setShowChildren] = useState(false);
+  const [directChildrenOnly, setDirectChildrenOnly] = useState(false);
+  const [filterLastUpdated, setFilterLastUpdated] = useState<string | null>(null);
+
+  const orgObjectives = useMemo(
+    () => objectives.filter((o: Objective) =>
+      (!o.orgId || o.orgId === orgId) && (isAdmin || o.shared !== false || o.createdBy === userEmail)
+    ),
+    [objectives, orgId, userEmail, isAdmin]
+  );
+  const orgPeriods = useMemo(
+    () => periods.filter((p: Period) =>
+      (!p.orgId || p.orgId === orgId) && (isAdmin || p.shared !== false || p.createdBy === userEmail) && !p.archived
+    ),
+    [periods, orgId, userEmail, isAdmin]
+  );
+  const orgTeams = useMemo(
+    () => teams.filter((t: Team) =>
+      (!t.orgId || t.orgId === orgId) && (isAdmin || t.shared !== false || t.createdBy === userEmail)
+    ),
+    [teams, orgId, userEmail, isAdmin]
+  );
+  const orgTags = useMemo(
+    () => tags.filter((t: Tag) =>
+      (!t.orgId || t.orgId === orgId) && (isAdmin || t.shared !== false || t.createdBy === userEmail)
+    ),
+    [tags, orgId, userEmail, isAdmin]
+  );
+
+  const ancestorPeriodLookup = useMemo(() => buildPeriodAncestorLookup(orgPeriods), [orgPeriods]);
+  const descendantPeriodLookup = useMemo(() => buildPeriodDescendantLookup(orgPeriods), [orgPeriods]);
+  const descendantTeamLookup = useMemo(() => buildTeamDescendantLookup(orgTeams), [orgTeams]);
+  const descendantObjectiveLookup = useMemo(() => buildObjectiveDescendantLookup(orgObjectives), [orgObjectives]);
+
+  const filteredObjectiveIdSet = useMemo(() => {
+    const { filtered } = filterObjectives({
+      orgObjectives,
+      lists,
+      filterPeriodIds,
+      filterTagIds,
+      filterTeamIds,
+      filterTypes,
+      filterTypeNotSet,
+      filterOwnerIds,
+      filterOwnerOperator,
+      filterAssigneeIds,
+      filterAssigneeOperator,
+      filterAssigneeNotSet,
+      filterNextStepDate,
+      filterLevels,
+      filterWorkflowStatuses,
+      filterKeyResultsOnly,
+      filterObjectiveId,
+      filterRootObjectiveId,
+      filterListIds,
+      filterLastUpdated,
+      searchQuery: filterSearchQuery,
+      includeAncestorPeriods,
+      includeChildPeriods,
+      includeChildTeams,
+      showChildren,
+      directChildrenOnly,
+      openChildrenOnly,
+      ancestorPeriodLookup,
+      descendantPeriodLookup,
+      descendantTeamLookup,
+      descendantObjectiveLookup,
+    });
+    return new Set(filtered.map(o => o.id));
+  }, [orgObjectives, lists, filterPeriodIds, filterTagIds, filterTeamIds, filterTypes, filterTypeNotSet, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterAssigneeNotSet, filterNextStepDate, filterLevels, filterWorkflowStatuses, filterKeyResultsOnly, filterObjectiveId, filterRootObjectiveId, filterListIds, filterLastUpdated, filterSearchQuery, includeAncestorPeriods, includeChildPeriods, includeChildTeams, showChildren, directChildrenOnly, openChildrenOnly, ancestorPeriodLookup, descendantPeriodLookup, descendantTeamLookup, descendantObjectiveLookup]);
+
+  const [editingStatusObjId, setEditingStatusObjId] = useState<string | null>(null);
+  const [expandedRowIds, setExpandedRowIds] = useState<Set<string>>(new Set());
+
+  const toggleExpandRow = (objectiveId: string) => {
+    setExpandedRowIds(prev => {
+      const next = new Set(prev);
+      if (next.has(objectiveId)) next.delete(objectiveId);
+      else next.add(objectiveId);
+      return next;
+    });
+  };
+
+  const getDirectChildren = useCallback((objectiveId: string): Objective[] => {
+    return objectives.filter(o => o.parentId === objectiveId);
+  }, [objectives]);
+
+  const handleStatusChange = async (objectiveId: string, newStatus: WorkflowStatus, currentStatus: WorkflowStatus | undefined) => {
+    setEditingStatusObjId(null);
+    if (newStatus !== currentStatus) {
+      await updateObjective(objectiveId, { workflowStatus: newStatus }, userEmail);
+    }
+  };
 
   useEffect(() => {
     fetchLists();
@@ -247,9 +392,9 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
 
   const handleNavigateToObjective = useCallback((objectiveId: string) => {
     clearAllFilters();
-    setFilterObjective(objectiveId);
+    setFilterRootObjective(objectiveId);
     onViewChange('objectives');
-  }, [clearAllFilters, setFilterObjective, onViewChange]);
+  }, [clearAllFilters, setFilterRootObjective, onViewChange]);
 
   // Sort items by order
   const sortedItems = selectedList?.items
@@ -457,6 +602,30 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
           <div className="p-4">
             <h2 className="text-xl font-semibold text-gray-900 mb-4">{selectedList.name}</h2>
 
+            <div className="mb-4">
+              <ObjectiveFilterPanel
+                orgObjectives={orgObjectives}
+                orgPeriods={orgPeriods}
+                orgTeams={orgTeams}
+                orgTags={orgTags}
+                orgUsers={orgUsers}
+                searchQuery={filterSearchQuery}
+                setSearchQuery={setFilterSearchQuery}
+                includeAncestorPeriods={includeAncestorPeriods}
+                setIncludeAncestorPeriods={setIncludeAncestorPeriods}
+                includeChildPeriods={includeChildPeriods}
+                setIncludeChildPeriods={setIncludeChildPeriods}
+                includeChildTeams={includeChildTeams}
+                setIncludeChildTeams={setIncludeChildTeams}
+                showChildren={showChildren}
+                setShowChildren={setShowChildren}
+                directChildrenOnly={directChildrenOnly}
+                setDirectChildrenOnly={setDirectChildrenOnly}
+                filterLastUpdated={filterLastUpdated}
+                setFilterLastUpdated={setFilterLastUpdated}
+              />
+            </div>
+
             {sortedItems.length === 0 ? (
               <div className="text-center py-12 text-gray-500">
                 <svg className="w-12 h-12 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -523,11 +692,15 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                   {sortedItems.map((item, index) => {
                     const objective = getObjective(item.objectiveId);
                     if (!objective) return null;
+                    if (!filteredObjectiveIdSet.has(objective.id)) return null;
                     const parentObjective = objective.parentId ? getObjective(objective.parentId) : null;
+                    const directChildren = getDirectChildren(objective.id);
+                    const hasChildren = directChildren.length > 0;
+                    const isExpanded = expandedRowIds.has(objective.id);
 
                     return (
+                      <Fragment key={item.objectiveId}>
                       <tr
-                        key={item.objectiveId}
                         draggable
                         onDragStart={(e) => handleDragStart(e, item.objectiveId)}
                         onDragOver={handleDragOver}
@@ -546,23 +719,51 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                         </td>
                         <td className="py-2 text-xs text-gray-400">{index + 1}</td>
                         <td className="py-2 pl-2 pr-4 overflow-hidden" style={{ width: columnWidths.name }}>
-                          <button
-                            onClick={() => handleNavigateToObjective(objective.id)}
-                            className="text-sm text-blue-600 hover:text-blue-800 hover:underline truncate block text-left w-full"
-                            title={`Go to ${objective.title}`}
-                          >
-                            {objective.title}
-                          </button>
+                          <div className="flex items-center gap-1">
+                            {hasChildren ? (
+                              <button
+                                onClick={() => toggleExpandRow(objective.id)}
+                                className="p-0.5 text-gray-400 hover:text-gray-700 flex-shrink-0"
+                                title={isExpanded ? 'Collapse' : 'Expand children'}
+                              >
+                                <svg className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                </svg>
+                              </button>
+                            ) : (
+                              <span className="w-4 flex-shrink-0" />
+                            )}
+                            <button
+                              onClick={() => handleNavigateToObjective(objective.id)}
+                              className="text-sm text-blue-600 hover:text-blue-800 hover:underline truncate text-left flex-1 min-w-0"
+                              title={`Go to ${objective.title}`}
+                            >
+                              {objective.title}
+                            </button>
+                          </div>
                         </td>
                         <td className="py-2 pl-3 pr-4 overflow-hidden" style={{ width: columnWidths.parent }}>
                           {parentObjective ? (
-                            <button
-                              onClick={() => handleNavigateToObjective(parentObjective.id)}
-                              className="text-sm text-blue-600 hover:text-blue-800 hover:underline truncate block text-left w-full"
-                              title={`Go to ${parentObjective.title}`}
-                            >
-                              {parentObjective.title}
-                            </button>
+                            <div className="flex items-center gap-1 min-w-0">
+                              <button
+                                onClick={() => handleNavigateToObjective(parentObjective.id)}
+                                className="text-sm text-blue-600 hover:text-blue-800 hover:underline truncate text-left flex-1 min-w-0"
+                                title={`Go to ${parentObjective.title}`}
+                              >
+                                {parentObjective.title}
+                              </button>
+                              {selectedListId && !selectedList?.items.some(i => i.objectiveId === parentObjective.id) && (
+                                <button
+                                  onClick={() => addItemToList(selectedListId, parentObjective.id)}
+                                  className="p-0.5 text-gray-400 hover:text-blue-600 flex-shrink-0"
+                                  title={`Add "${parentObjective.title}" to this list`}
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                  </svg>
+                                </button>
+                              )}
+                            </div>
                           ) : (
                             <span className="text-sm text-gray-500 truncate block">-</span>
                           )}
@@ -574,7 +775,27 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                           <span className="text-sm text-gray-500 truncate block">{getUserName(objective.assigneeId)}</span>
                         </td>
                         <td className="py-2 pl-3 pr-4 overflow-hidden" style={{ width: columnWidths.status }}>
-                          <span className="text-sm text-gray-500 truncate block">{WORKFLOW_STATUS_LABELS[objective.workflowStatus || 'todo']}</span>
+                          {editingStatusObjId === objective.id ? (
+                            <select
+                              autoFocus
+                              value={objective.workflowStatus || 'todo'}
+                              onChange={(e) => handleStatusChange(objective.id, e.target.value as WorkflowStatus, objective.workflowStatus)}
+                              onBlur={() => setEditingStatusObjId(null)}
+                              className="w-full text-sm px-1 py-0.5 border border-blue-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            >
+                              {WORKFLOW_STATUS_OPTIONS.map((opt) => (
+                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <button
+                              onClick={() => setEditingStatusObjId(objective.id)}
+                              className="w-full text-left text-sm text-gray-500 truncate block hover:bg-gray-100 px-1 py-0.5 rounded"
+                              title="Click to edit status"
+                            >
+                              {WORKFLOW_STATUS_LABELS[objective.workflowStatus || 'todo']}
+                            </button>
+                          )}
                         </td>
                         <td className="py-2 px-1">
                           <button
@@ -588,6 +809,60 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                           </button>
                         </td>
                       </tr>
+                      {isExpanded && directChildren.map(child => (
+                        <tr key={`${item.objectiveId}-child-${child.id}`} className="border-b border-gray-100 bg-gray-50/50">
+                          <td className="py-1.5 px-1"></td>
+                          <td className="py-1.5"></td>
+                          <td className="py-1.5 pl-2 pr-4 overflow-hidden" style={{ width: columnWidths.name }}>
+                            <div className="flex items-center gap-1 pl-5">
+                              <svg className="w-3 h-3 text-gray-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                              </svg>
+                              <button
+                                onClick={() => handleNavigateToObjective(child.id)}
+                                className="text-sm text-blue-600 hover:text-blue-800 hover:underline truncate text-left flex-1 min-w-0"
+                                title={`Go to ${child.title}`}
+                              >
+                                {child.title}
+                              </button>
+                            </div>
+                          </td>
+                          <td className="py-1.5 pl-3 pr-4 overflow-hidden" style={{ width: columnWidths.parent }}>
+                            <span className="text-sm text-gray-400 truncate block">{objective.title}</span>
+                          </td>
+                          <td className="py-1.5 pl-3 pr-4 overflow-hidden" style={{ width: columnWidths.owner }}>
+                            <span className="text-sm text-gray-500 truncate block">{getUserName(child.ownerId)}</span>
+                          </td>
+                          <td className="py-1.5 pl-3 pr-4 overflow-hidden" style={{ width: columnWidths.assignee }}>
+                            <span className="text-sm text-gray-500 truncate block">{getUserName(child.assigneeId)}</span>
+                          </td>
+                          <td className="py-1.5 pl-3 pr-4 overflow-hidden" style={{ width: columnWidths.status }}>
+                            {editingStatusObjId === child.id ? (
+                              <select
+                                autoFocus
+                                value={child.workflowStatus || 'todo'}
+                                onChange={(e) => handleStatusChange(child.id, e.target.value as WorkflowStatus, child.workflowStatus)}
+                                onBlur={() => setEditingStatusObjId(null)}
+                                className="w-full text-sm px-1 py-0.5 border border-blue-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              >
+                                {WORKFLOW_STATUS_OPTIONS.map((opt) => (
+                                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <button
+                                onClick={() => setEditingStatusObjId(child.id)}
+                                className="w-full text-left text-sm text-gray-500 truncate block hover:bg-gray-100 px-1 py-0.5 rounded"
+                                title="Click to edit status"
+                              >
+                                {WORKFLOW_STATUS_LABELS[child.workflowStatus || 'todo']}
+                              </button>
+                            )}
+                          </td>
+                          <td className="py-1.5 px-1"></td>
+                        </tr>
+                      ))}
+                      </Fragment>
                     );
                   })}
                 </tbody>

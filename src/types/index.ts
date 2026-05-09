@@ -8,6 +8,8 @@ export interface FieldChange {
   field: string;
   oldValue: string | number | boolean | undefined;
   newValue: string | number | boolean | undefined;
+  oldRaw?: unknown;
+  newRaw?: unknown;
 }
 
 export interface ObjectiveHistoryEntry {
@@ -133,10 +135,13 @@ export interface OKRState {
   filterNextStepDate: NextStepDateFilter | null;
   filterLevels: ObjectiveLevel[];
   filterObjectiveId: string | null;
+  filterRootObjectiveId: string | null;
   filterWorkflowStatuses: WorkflowStatus[];
   filterKeyResultsOnly: boolean;
   filterListIds: string[];
   filterListShowChildren: boolean;
+  showListMembership: boolean;
+  listMembershipListId: string | null;
 }
 
 // Organization types

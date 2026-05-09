@@ -1,9 +1,37 @@
 import { useMemo } from 'react';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
+import { useAuth } from '../../context/AuthContext';
 import type { Objective, ObjectiveHistoryEntry, FieldChange } from '../../types';
 
 interface LogsPageProps {
   onNavigateToObjective: (objectiveId: string) => void;
+}
+
+const FIELD_TO_KEY: Record<string, keyof Objective> = {
+  title: 'title',
+  description: 'description',
+  level: 'level',
+  type: 'type',
+  period: 'periodId',
+  team: 'teamId',
+  tags: 'tagIds',
+  parent: 'parentId',
+  visibility: 'shared',
+  owner: 'ownerId',
+  assignee: 'assigneeId',
+  resolved: 'resolvedAt',
+  status: 'workflowStatus',
+  nextStepDate: 'nextStepDate',
+  nextStep: 'nextStep',
+  storyPoints: 'storyPoints',
+  valuePoints: 'valuePoints',
+  isKeyResult: 'isKeyResult',
+  link: 'link',
+};
+
+function isUndoableEntry(entry: { changes: FieldChange[] }): boolean {
+  if (entry.changes.length === 0) return false;
+  return entry.changes.every(c => FIELD_TO_KEY[c.field] !== undefined && 'oldRaw' in c);
 }
 
 interface LogEntry {
@@ -71,6 +99,20 @@ function formatTimestamp(timestamp: string): string {
 
 export function LogsPage({ onNavigateToObjective }: LogsPageProps) {
   const objectives = useOKRStore((state: OKRStore) => state.objectives);
+  const updateObjective = useOKRStore((state: OKRStore) => state.updateObjective);
+  const { user } = useAuth();
+  const userEmail = user?.email || '';
+
+  const handleUndo = async (objectiveId: string, changes: FieldChange[]) => {
+    const patch: Partial<Objective> = {};
+    for (const c of changes) {
+      const key = FIELD_TO_KEY[c.field];
+      if (!key) return;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (patch as any)[key] = c.oldRaw;
+    }
+    await updateObjective(objectiveId, patch, userEmail);
+  };
 
   const logEntries = useMemo<LogEntry[]>(() => {
     const entries: LogEntry[] = [];
@@ -155,7 +197,17 @@ export function LogsPage({ onNavigateToObjective }: LogsPageProps) {
                 </div>
               )}
 
-              <div className="mt-0.5 text-xs text-gray-400">{entry.userEmail}</div>
+              <div className="mt-0.5 text-xs text-gray-400 flex items-center gap-3">
+                <span>{entry.userEmail}</span>
+                {entry.action === 'updated' && isUndoableEntry(entry) && (
+                  <button
+                    onClick={() => handleUndo(entry.objectiveId, entry.changes)}
+                    className="text-blue-600 hover:text-blue-700 hover:underline"
+                  >
+                    Undo
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         ))}
