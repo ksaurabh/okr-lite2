@@ -105,7 +105,9 @@ function ItemsByNextStepWidget({ orgObjectives, orgUsers, onCellClick }: ItemsBy
       counts.total++;
 
       if (!obj.nextStepDate) {
-        counts.notSet++;
+        if (obj.workflowStatus !== 'done' && obj.workflowStatus !== 'archived') {
+          counts.notSet++;
+        }
       } else {
         const [year, month, day] = obj.nextStepDate.split('-').map(Number);
         const stepDate = new Date(year, month - 1, day);
@@ -384,7 +386,9 @@ function ItemsByNextStepAndAssigneeWidget({ orgObjectives, orgUsers, onCellClick
       counts.total++;
 
       if (!obj.nextStepDate) {
-        counts.notSet++;
+        if (obj.workflowStatus !== 'done' && obj.workflowStatus !== 'archived') {
+          counts.notSet++;
+        }
       } else {
         const [year, month, day] = obj.nextStepDate.split('-').map(Number);
         const stepDate = new Date(year, month - 1, day);
@@ -807,7 +811,9 @@ function ItemsByTypeAndNextStepWidget({ orgObjectives, orgUsers, onCellClick }: 
       stat.total++;
 
       if (!obj.nextStepDate) {
-        stat.notSet++;
+        if (obj.workflowStatus !== 'done' && obj.workflowStatus !== 'archived') {
+          stat.notSet++;
+        }
       } else {
         const [year, month, day] = obj.nextStepDate.split('-').map(Number);
         const stepDate = new Date(year, month - 1, day);

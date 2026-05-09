@@ -266,7 +266,9 @@ export function filterObjectives(args: FilterObjectivesArgs): FilterObjectivesRe
 
   if (filterNextStepDate) {
     if (filterNextStepDate === 'not_set') {
-      result = result.filter((obj: Objective) => !obj.nextStepDate);
+      result = result.filter((obj: Objective) =>
+        !obj.nextStepDate && obj.workflowStatus !== 'done' && obj.workflowStatus !== 'archived'
+      );
     } else {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
