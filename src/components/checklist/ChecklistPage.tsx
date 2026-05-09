@@ -879,7 +879,7 @@ export function ChecklistPage() {
               <div className={`overflow-hidden ${resizingColumn ? 'select-none' : ''}`}>
                 {/* Table header */}
                 <div className="flex items-center bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  <div className="flex-1 px-2 py-2">Objective</div>
+                  <div className="px-2 py-2 flex-shrink-0" style={{ width: columnWidths.title, minWidth: 150 }}>Objective</div>
                   {visibleColumns.includes('level') && (
                     <div className="relative flex items-center" style={{ width: columnWidths.level }}>
                       <div className="px-1 py-2 flex-1">Level</div>
@@ -1076,7 +1076,7 @@ export function ChecklistPage() {
               <div className={`overflow-hidden ${resizingColumn ? 'select-none' : ''}`}>
                 {/* Table header */}
                 <div className="flex items-center bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  <div className="flex-1 px-2 py-2">Objective</div>
+                  <div className="px-2 py-2 flex-shrink-0" style={{ width: columnWidths.title, minWidth: 150 }}>Objective</div>
                   {visibleColumns.includes('level') && (
                     <div className="relative flex items-center" style={{ width: columnWidths.level }}>
                       <div className="px-1 py-2 flex-1">Level</div>
