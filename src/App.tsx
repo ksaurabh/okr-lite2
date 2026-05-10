@@ -6,6 +6,7 @@ import { ObjectiveTree, ObjectiveForm } from './components/objectives';
 import { ChecklistPage } from './components/checklist';
 import { ProgressPage } from './components/progress';
 import { PeriodsPage } from './components/periods';
+import { TeamsPage } from './components/teams/TeamsPage';
 import { UpdatesPage } from './components/updates';
 import { ListsPage } from './components/lists';
 import { ViewsPage } from './components/views';
@@ -122,11 +123,7 @@ function AppContent() {
       {currentView === 'updates' && <UpdatesPage />}
       {currentView === 'lists' && <ListsPage onViewChange={setCurrentView} />}
       {currentView === 'logwork' && <LogWorkPage />}
-      {currentView === 'teams' && (
-        <div className="text-center py-12 text-gray-500">
-          <p>Manage teams from the sidebar</p>
-        </div>
-      )}
+      {currentView === 'teams' && <TeamsPage />}
       {currentView === 'periods' && <PeriodsPage />}
       {currentView === 'tags' && (
         <div className="text-center py-12 text-gray-500">

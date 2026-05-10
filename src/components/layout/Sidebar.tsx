@@ -429,36 +429,6 @@ export function Sidebar({ currentView, onViewChange, collapsed = false, onToggle
           ))}
         </ul>
 
-        {!collapsed && currentView === 'teams' && (
-          <div className="mt-6">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium text-gray-500 uppercase">Teams</h3>
-              {isAdmin && (
-                <button
-                  onClick={() => openAddTeamModal()}
-                  className="text-blue-600 hover:text-blue-700 text-sm"
-                >
-                  + Add
-                </button>
-              )}
-            </div>
-            <div className="space-y-0.5">
-              {rootTeams.map((team: Team) => (
-                <TeamItem
-                  key={team.id}
-                  team={team}
-                  teams={orgTeams}
-                  onAddChild={openAddTeamModal}
-                  onDelete={deleteTeam}
-                  isAdmin={isAdmin}
-                />
-              ))}
-              {rootTeams.length === 0 && (
-                <p className="text-xs text-gray-400 px-3 py-2">No teams yet. Add a team to get started.</p>
-              )}
-            </div>
-          </div>
-        )}
 
         {!collapsed && currentView === 'periods' && (
           <div className="mt-6">
