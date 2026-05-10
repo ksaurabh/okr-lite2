@@ -104,10 +104,24 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
   }, [orgPeriods]);
 
   const reorderPlanItems = useOKRStore((s: OKRStore) => s.reorderPlanItems);
+  const togglePlanReplacement = useOKRStore((s: OKRStore) => s.togglePlanReplacement);
   const setHighlightObjectiveId = useOKRStore((s: OKRStore) => s.setHighlightObjectiveId);
   const setForcedExpandedIds = useOKRStore((s: OKRStore) => s.setForcedExpandedIds);
+  const [menuObjectiveId, setMenuObjectiveId] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
-  const filtered = useMemo(() => {
+  useEffect(() => {
+    if (!menuObjectiveId) return;
+    const onClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuObjectiveId(null);
+      }
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [menuObjectiveId]);
+
+  const filtered = useMemo<{ objective: Objective; replacedBy: Objective | null }[]>(() => {
     const matched = orgObjectives.filter((o: Objective) => {
       if (ownerId && o.ownerId !== ownerId) return false;
       if (periodId && o.periodId !== periodId) return false;
@@ -115,12 +129,29 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
       if (statuses.length > 0 && !statuses.includes(o.workflowStatus)) return false;
       return true;
     });
+    const replacements = new Set(activePlan?.replacements || []);
+    const matchedById = new Map(matched.map(o => [o.id, o]));
+    const seen = new Map<string, Objective | null>(); // id -> replacedBy parent (or null)
+    matched.forEach((o: Objective) => {
+      if (replacements.has(o.id)) {
+        const children = orgObjectives.filter(c => c.parentId === o.id);
+        children.forEach(c => {
+          if (!seen.has(c.id)) seen.set(c.id, matchedById.has(c.id) ? null : o);
+        });
+      } else {
+        if (!seen.has(o.id)) seen.set(o.id, null);
+      }
+    });
     const ranks = activePlan?.ranks || {};
-    return [...matched].sort((a, b) => {
-      const ra = ranks[a.id] ?? Number.MAX_SAFE_INTEGER;
-      const rb = ranks[b.id] ?? Number.MAX_SAFE_INTEGER;
+    const all = Array.from(seen.entries()).map(([id, replacedBy]) => {
+      const objective = orgObjectives.find(o => o.id === id);
+      return objective ? { objective, replacedBy } : null;
+    }).filter((x): x is { objective: Objective; replacedBy: Objective | null } => x !== null);
+    return all.sort((a, b) => {
+      const ra = ranks[a.objective.id] ?? Number.MAX_SAFE_INTEGER;
+      const rb = ranks[b.objective.id] ?? Number.MAX_SAFE_INTEGER;
       if (ra !== rb) return ra - rb;
-      return a.title.localeCompare(b.title);
+      return a.objective.title.localeCompare(b.objective.title);
     });
   }, [orgObjectives, ownerId, periodId, level, statuses, activePlan]);
 
@@ -367,7 +398,9 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
             <div className="p-6 text-center text-sm text-gray-400">No matching objectives.</div>
           ) : (
             <div>
-              {filtered.map((o: Objective) => (
+              {filtered.map(({ objective: o, replacedBy }) => {
+                const isReplaced = activePlan?.replacements?.includes(o.id) ?? false;
+                return (
                 <div
                   key={o.id}
                   onDragOver={(e) => { if (activePlan) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; } }}
@@ -376,7 +409,7 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
                     e.preventDefault();
                     const draggedId = e.dataTransfer.getData('text/plain');
                     if (!draggedId || draggedId === o.id) return;
-                    const ids = filtered.map(x => x.id).filter(id => id !== draggedId);
+                    const ids = filtered.map(x => x.objective.id).filter(id => id !== draggedId);
                     const targetIdx = ids.indexOf(o.id);
                     ids.splice(targetIdx, 0, draggedId);
                     reorderPlanItems(activePlan.id, ids);
@@ -398,6 +431,42 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
                         <circle cx="15" cy="12" r="1.5" />
                         <circle cx="15" cy="18" r="1.5" />
                       </svg>
+                    </div>
+                  )}
+                  {replacedBy && (
+                    <span
+                      className="flex-shrink-0 flex items-center justify-center w-4 text-blue-500 text-sm font-bold"
+                      title={`Shown because "${replacedBy.title}" was replaced with its children`}
+                    >
+                      *
+                    </span>
+                  )}
+                  {activePlan && (
+                    <div className="flex-shrink-0 flex items-center pl-1 pr-1 relative">
+                      <button
+                        onClick={() => setMenuObjectiveId(menuObjectiveId === o.id ? null : o.id)}
+                        className="p-1 text-gray-400 hover:text-gray-700 rounded-full hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Row actions"
+                      >
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                          <circle cx="5" cy="12" r="2" />
+                          <circle cx="12" cy="12" r="2" />
+                          <circle cx="19" cy="12" r="2" />
+                        </svg>
+                      </button>
+                      {menuObjectiveId === o.id && (
+                        <div ref={menuRef} className="absolute left-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-md shadow-lg py-1 min-w-[200px]">
+                          <button
+                            onClick={() => {
+                              if (activePlan) togglePlanReplacement(activePlan.id, o.id);
+                              setMenuObjectiveId(null);
+                            }}
+                            className="w-full text-left text-xs px-3 py-1.5 hover:bg-gray-50 text-gray-700"
+                          >
+                            {isReplaced ? 'Stop replacing with children' : 'Replace with children'}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
@@ -423,7 +492,7 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
                     />
                   </div>
                 </div>
-              ))}
+              );})}
             </div>
           )}
         </div>

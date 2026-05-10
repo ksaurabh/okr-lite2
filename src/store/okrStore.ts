@@ -186,6 +186,7 @@ interface OKRActions {
   deletePlan: (id: string) => Promise<void>;
   applyPlan: (id: string) => void;
   reorderPlanItems: (id: string, orderedIds: string[]) => Promise<void>;
+  togglePlanReplacement: (planId: string, objectiveId: string) => Promise<void>;
   highlightObjectiveId: string | null;
   setHighlightObjectiveId: (id: string | null) => void;
   forcedExpandedIds: string[] | null;
@@ -1456,6 +1457,29 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
 
   setForcedExpandedIds: (ids) => {
     set({ forcedExpandedIds: ids });
+  },
+
+  togglePlanReplacement: async (planId, objectiveId) => {
+    const state = get();
+    const plans = state.plans.map(p => {
+      if (p.id !== planId) return p;
+      const current = p.replacements || [];
+      const replacements = current.includes(objectiveId)
+        ? current.filter(x => x !== objectiveId)
+        : [...current, objectiveId];
+      return { ...p, replacements };
+    });
+    set({ plans });
+    try {
+      await fetch(`${API_URL}/api/users/me/preferences`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferences: { plans } }),
+      });
+    } catch (err) {
+      console.error('Failed to save plan replacement:', err);
+    }
   },
 
   reorderPlanItems: async (id, orderedIds) => {

@@ -191,6 +191,7 @@ export interface PlanDef {
   name: string;
   filters: PlanFilters;
   ranks?: Record<string, number>;
+  replacements?: string[];
 }
 
 // Saved View types
