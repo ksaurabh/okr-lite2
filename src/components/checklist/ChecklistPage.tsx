@@ -36,12 +36,16 @@ interface ChecklistSectionsState {
   isFilterExpanded: boolean;
   isNoTypeExpanded: boolean;
   isNoNextStepExpanded: boolean;
+  isNoPeriodExpanded: boolean;
+  isOverdueEvergreenExpanded: boolean;
 }
 
 const defaultSectionsState: ChecklistSectionsState = {
   isFilterExpanded: false,
   isNoTypeExpanded: false,
   isNoNextStepExpanded: false,
+  isNoPeriodExpanded: false,
+  isOverdueEvergreenExpanded: false,
 };
 
 function loadSectionsState(): ChecklistSectionsState {
@@ -121,6 +125,8 @@ export function ChecklistPage() {
   const [isFilterExpanded, setIsFilterExpandedState] = useState(initialSections.isFilterExpanded);
   const [isNoTypeExpanded, setIsNoTypeExpandedState] = useState(initialSections.isNoTypeExpanded);
   const [isNoNextStepExpanded, setIsNoNextStepExpandedState] = useState(initialSections.isNoNextStepExpanded);
+  const [isNoPeriodExpanded, setIsNoPeriodExpandedState] = useState(initialSections.isNoPeriodExpanded);
+  const [isOverdueEvergreenExpanded, setIsOverdueEvergreenExpandedState] = useState(initialSections.isOverdueEvergreenExpanded);
 
   // Wrapper functions that persist state changes
   const setIsFilterExpanded = useCallback((expanded: boolean) => {
@@ -136,6 +142,16 @@ export function ChecklistPage() {
   const setIsNoNextStepExpanded = useCallback((expanded: boolean) => {
     setIsNoNextStepExpandedState(expanded);
     saveSectionsState({ isNoNextStepExpanded: expanded });
+  }, []);
+
+  const setIsNoPeriodExpanded = useCallback((expanded: boolean) => {
+    setIsNoPeriodExpandedState(expanded);
+    saveSectionsState({ isNoPeriodExpanded: expanded });
+  }, []);
+
+  const setIsOverdueEvergreenExpanded = useCallback((expanded: boolean) => {
+    setIsOverdueEvergreenExpandedState(expanded);
+    saveSectionsState({ isOverdueEvergreenExpanded: expanded });
   }, []);
 
   const [includeAncestorPeriods, setIncludeAncestorPeriods] = useState(false);
@@ -328,8 +344,8 @@ export function ChecklistPage() {
     return orgPeriods.filter((p: Period) => !p.parentId);
   }, [orgPeriods]);
 
-  // Apply all filters, then filter for items without next step
-  const filteredObjectivesWithoutNextStep = useMemo(() => {
+  // Apply all panel filters; downstream sections layer their own predicates on this set.
+  const filteredObjectives = useMemo(() => {
     let result = orgObjectives;
 
     // Filter by period
@@ -403,88 +419,52 @@ export function ChecklistPage() {
       );
     }
 
-    // Finally, filter for items without next step date (excluding done/archived/backlog)
-    result = result.filter((obj: Objective) =>
+    return result;
+  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterTypeNotSet, filterLevels, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterWorkflowStatuses, includeAncestorPeriods, includeChildPeriods, includeChildTeams, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds]);
+
+  const filteredObjectivesWithoutNextStep = useMemo(() =>
+    filteredObjectives.filter((obj: Objective) =>
       !obj.nextStepDate &&
       obj.workflowStatus !== 'done' &&
       obj.workflowStatus !== 'archived' &&
       obj.workflowStatus !== 'backlog'
+    ),
+    [filteredObjectives]
+  );
+
+  const filteredObjectivesWithoutType = useMemo(() =>
+    filteredObjectives.filter((obj: Objective) => !obj.type),
+    [filteredObjectives]
+  );
+
+  const filteredObjectivesWithoutPeriod = useMemo(() => {
+    const validPeriodIds = new Set(orgPeriods.map((p: Period) => p.id));
+    return filteredObjectives.filter((obj: Objective) =>
+      !obj.periodId || !validPeriodIds.has(obj.periodId)
     );
+  }, [filteredObjectives, orgPeriods]);
 
-    return result;
-  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterTypeNotSet, filterLevels, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterWorkflowStatuses, includeAncestorPeriods, includeChildPeriods, includeChildTeams, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds]);
+  const filteredObjectiveIdsNoPeriod = useMemo(
+    () => new Set(filteredObjectivesWithoutPeriod.map((obj: Objective) => obj.id)),
+    [filteredObjectivesWithoutPeriod]
+  );
 
-  // Apply all filters, then filter for items without type
-  const filteredObjectivesWithoutType = useMemo(() => {
-    let result = orgObjectives;
+  const overdueEvergreenObjectives = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayMs = today.getTime();
+    return filteredObjectives.filter((obj: Objective) => {
+      if (!obj.nextStepDate) return false;
+      if (obj.workflowStatus === 'done' || obj.workflowStatus === 'archived' || obj.workflowStatus === 'backlog') return false;
+      const [y, m, d] = obj.nextStepDate.split('-').map(Number);
+      return new Date(y, m - 1, d).getTime() < todayMs;
+    });
+  }, [filteredObjectives]);
 
-    // Filter by period
-    if (activePeriodId) {
-      let validPeriodIds: string[] = [activePeriodId];
-      if (includeAncestorPeriods) {
-        validPeriodIds = [...new Set([...validPeriodIds, ...getAncestorPeriodIds(activePeriodId)])];
-      }
-      if (includeChildPeriods) {
-        validPeriodIds = [...new Set([...validPeriodIds, ...getDescendantPeriodIds(activePeriodId)])];
-      }
-      result = result.filter((obj: Objective) => validPeriodIds.includes(obj.periodId));
-    }
-
-    // Filter by teams
-    if (filterTeamIds.length > 0) {
-      let validTeamIds = [...filterTeamIds];
-      if (includeChildTeams) {
-        filterTeamIds.forEach(teamId => {
-          validTeamIds = [...new Set([...validTeamIds, ...getDescendantTeamIds(teamId)])];
-        });
-      }
-      result = result.filter((obj: Objective) => obj.teamId && validTeamIds.includes(obj.teamId));
-    }
-
-    // Filter by tags
-    if (filterTagIds.length > 0) {
-      result = result.filter((obj: Objective) =>
-        obj.tagIds?.some((tagId: string) => filterTagIds.includes(tagId))
-      );
-    }
-
-    // Filter by level
-    if (filterLevels.length > 0) {
-      result = result.filter((obj: Objective) =>
-        filterLevels.includes(obj.level)
-      );
-    }
-
-    // Filter by owners
-    if (filterOwnerIds.length > 0) {
-      if (filterOwnerOperator === 'equals') {
-        result = result.filter((obj: Objective) => obj.ownerId && filterOwnerIds.includes(obj.ownerId));
-      } else {
-        result = result.filter((obj: Objective) => !obj.ownerId || !filterOwnerIds.includes(obj.ownerId));
-      }
-    }
-
-    // Filter by assignees
-    if (filterAssigneeIds.length > 0) {
-      if (filterAssigneeOperator === 'equals') {
-        result = result.filter((obj: Objective) => obj.assigneeId && filterAssigneeIds.includes(obj.assigneeId));
-      } else {
-        result = result.filter((obj: Objective) => !obj.assigneeId || !filterAssigneeIds.includes(obj.assigneeId));
-      }
-    }
-
-    // Filter by workflow status
-    if (filterWorkflowStatuses.length > 0) {
-      result = result.filter((obj: Objective) =>
-        filterWorkflowStatuses.includes(obj.workflowStatus)
-      );
-    }
-
-    // Finally, filter for items without type
-    result = result.filter((obj: Objective) => !obj.type);
-
-    return result;
-  }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterLevels, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterWorkflowStatuses, includeAncestorPeriods, includeChildPeriods, includeChildTeams, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds]);
+  const overdueEvergreenIds = useMemo(
+    () => new Set(overdueEvergreenObjectives.map((obj: Objective) => obj.id)),
+    [overdueEvergreenObjectives]
+  );
 
   // Get IDs for quick lookup
   const filteredObjectiveIdsNoType = useMemo(
@@ -1227,6 +1207,172 @@ export function ChecklistPage() {
                       objective={obj}
                       depth={0}
                       filteredObjectiveIds={filteredObjectiveIds}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Items without Period Section */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+        <button
+          onClick={() => setIsNoPeriodExpanded(!isNoPeriodExpanded)}
+          className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50"
+        >
+          <div className="flex items-center gap-3">
+            <svg
+              className={`w-5 h-5 text-gray-400 transition-transform ${isNoPeriodExpanded ? 'rotate-90' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+            <div>
+              <h3 className="text-sm font-medium text-gray-900">
+                Items without Period
+              </h3>
+              <p className="text-xs text-gray-500">
+                {filteredObjectivesWithoutPeriod.length} {filteredObjectivesWithoutPeriod.length === 1 ? 'item' : 'items'} need attention
+              </p>
+            </div>
+          </div>
+          <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${
+            filteredObjectivesWithoutPeriod.length > 0
+              ? 'bg-amber-100 text-amber-700'
+              : 'bg-green-100 text-green-700'
+          }`}>
+            {filteredObjectivesWithoutPeriod.length}
+          </span>
+        </button>
+
+        {isNoPeriodExpanded && (
+          <div className="border-t border-gray-200">
+            <div className="px-4 py-3 bg-amber-50 border-b border-amber-100 text-xs text-amber-800">
+              An item appears here if it has no period set, or if its period no longer exists.
+              To remove it from this list, set a valid <span className="font-medium">Period</span> on the objective.
+            </div>
+            {filteredObjectivesWithoutPeriod.length === 0 ? (
+              <div className="p-6 text-center text-gray-500">
+                <svg className="mx-auto h-10 w-10 text-green-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p className="text-sm">All objectives have a valid period assigned!</p>
+              </div>
+            ) : (
+              <div className={`overflow-hidden ${resizingColumn ? 'select-none' : ''}`}>
+                <div className="flex items-center bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <div className="px-2 py-2 flex-shrink-0" style={{ width: columnWidths.title, minWidth: 150 }}>Objective</div>
+                  {visibleColumns.includes('level') && <div className="px-1 py-2 flex items-center" style={{ width: columnWidths.level }}>Level</div>}
+                  {visibleColumns.includes('type') && <div className="px-1 py-2 flex items-center" style={{ width: columnWidths.type }}>Type</div>}
+                  {visibleColumns.includes('workflowStatus') && <div className="px-1 py-2 flex items-center" style={{ width: columnWidths.workflowStatus }}>Status</div>}
+                  {visibleColumns.includes('parent') && <div className="px-1 py-2 flex items-center" style={{ width: columnWidths.parent }}>Parent</div>}
+                  {visibleColumns.includes('team') && <div className="px-1 py-2 flex items-center" style={{ width: columnWidths.team }}>Team</div>}
+                  {visibleColumns.includes('owner') && <div className="px-1 py-2 flex items-center" style={{ width: columnWidths.owner }}>Owner</div>}
+                  {visibleColumns.includes('assignee') && <div className="px-1 py-2 flex items-center" style={{ width: columnWidths.assignee }}>Assignee</div>}
+                  {visibleColumns.includes('period') && <div className="px-1 py-2 flex items-center" style={{ width: columnWidths.period }}>Period</div>}
+                  {visibleColumns.includes('nextStepDate') && <div className="px-1 py-2 flex items-center" style={{ width: columnWidths.nextStepDate }}>Next Date</div>}
+                  {visibleColumns.includes('nextStep') && <div className="px-1 py-2 flex items-center" style={{ width: columnWidths.nextStep }}>Next Step</div>}
+                  {visibleColumns.includes('storyPoints') && <div className="px-1 py-2 flex items-center text-right" style={{ width: columnWidths.storyPoints }}>SP</div>}
+                  {visibleColumns.includes('valuePoints') && <div className="px-1 py-2 flex items-center text-right" style={{ width: columnWidths.valuePoints }}>VP</div>}
+                  {visibleColumns.includes('tags') && <div className="px-1 py-2 flex items-center" style={{ width: columnWidths.tags }}>Tags</div>}
+                  {visibleColumns.includes('progress') && <div className="px-2 py-2 flex items-center text-right" style={{ width: columnWidths.progress }}>Progress</div>}
+                  <div className="w-16 px-2 py-2"></div>
+                </div>
+                <div>
+                  {filteredObjectivesWithoutPeriod.map((obj: Objective) => (
+                    <CompactObjectiveCard
+                      key={obj.id}
+                      objective={obj}
+                      depth={0}
+                      filteredObjectiveIds={filteredObjectiveIdsNoPeriod}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Evergreen items with next date in the past */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+        <button
+          onClick={() => setIsOverdueEvergreenExpanded(!isOverdueEvergreenExpanded)}
+          className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50"
+        >
+          <div className="flex items-center gap-3">
+            <svg
+              className={`w-5 h-5 text-gray-400 transition-transform ${isOverdueEvergreenExpanded ? 'rotate-90' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+            <div>
+              <h3 className="text-sm font-medium text-gray-900">
+                Evergreen items with next date in the past
+              </h3>
+              <p className="text-xs text-gray-500">
+                {overdueEvergreenObjectives.length} {overdueEvergreenObjectives.length === 1 ? 'item' : 'items'} overdue
+              </p>
+            </div>
+          </div>
+          <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${
+            overdueEvergreenObjectives.length > 0
+              ? 'bg-amber-100 text-amber-700'
+              : 'bg-green-100 text-green-700'
+          }`}>
+            {overdueEvergreenObjectives.length}
+          </span>
+        </button>
+
+        {isOverdueEvergreenExpanded && (
+          <div className="border-t border-gray-200">
+            <div className="px-4 py-3 bg-amber-50 border-b border-amber-100 text-xs text-amber-800">
+              These open items have a Next Date that's already passed. To clear an item from this list,
+              update its <span className="font-medium">Next Date</span>, mark it as
+              <span className="font-medium"> Done</span>, <span className="font-medium">Archived</span>,
+              or move it to <span className="font-medium">In Backlog</span>.
+            </div>
+            {overdueEvergreenObjectives.length === 0 ? (
+              <div className="p-6 text-center text-gray-500">
+                <svg className="mx-auto h-10 w-10 text-green-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p className="text-sm">No open items have a past Next Date — nice!</p>
+              </div>
+            ) : (
+              <div className={`overflow-hidden ${resizingColumn ? 'select-none' : ''}`}>
+                <div className="flex items-center bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <div className="px-2 py-2 flex-shrink-0" style={{ width: columnWidths.title, minWidth: 150 }}>Objective</div>
+                  {visibleColumns.includes('level') && <div className="px-1 py-2 flex items-center" style={{ width: columnWidths.level }}>Level</div>}
+                  {visibleColumns.includes('type') && <div className="px-1 py-2 flex items-center" style={{ width: columnWidths.type }}>Type</div>}
+                  {visibleColumns.includes('workflowStatus') && <div className="px-1 py-2 flex items-center" style={{ width: columnWidths.workflowStatus }}>Status</div>}
+                  {visibleColumns.includes('parent') && <div className="px-1 py-2 flex items-center" style={{ width: columnWidths.parent }}>Parent</div>}
+                  {visibleColumns.includes('team') && <div className="px-1 py-2 flex items-center" style={{ width: columnWidths.team }}>Team</div>}
+                  {visibleColumns.includes('owner') && <div className="px-1 py-2 flex items-center" style={{ width: columnWidths.owner }}>Owner</div>}
+                  {visibleColumns.includes('assignee') && <div className="px-1 py-2 flex items-center" style={{ width: columnWidths.assignee }}>Assignee</div>}
+                  {visibleColumns.includes('period') && <div className="px-1 py-2 flex items-center" style={{ width: columnWidths.period }}>Period</div>}
+                  {visibleColumns.includes('nextStepDate') && <div className="px-1 py-2 flex items-center" style={{ width: columnWidths.nextStepDate }}>Next Date</div>}
+                  {visibleColumns.includes('nextStep') && <div className="px-1 py-2 flex items-center" style={{ width: columnWidths.nextStep }}>Next Step</div>}
+                  {visibleColumns.includes('storyPoints') && <div className="px-1 py-2 flex items-center text-right" style={{ width: columnWidths.storyPoints }}>SP</div>}
+                  {visibleColumns.includes('valuePoints') && <div className="px-1 py-2 flex items-center text-right" style={{ width: columnWidths.valuePoints }}>VP</div>}
+                  {visibleColumns.includes('tags') && <div className="px-1 py-2 flex items-center" style={{ width: columnWidths.tags }}>Tags</div>}
+                  {visibleColumns.includes('progress') && <div className="px-2 py-2 flex items-center text-right" style={{ width: columnWidths.progress }}>Progress</div>}
+                  <div className="w-16 px-2 py-2"></div>
+                </div>
+                <div>
+                  {overdueEvergreenObjectives.map((obj: Objective) => (
+                    <CompactObjectiveCard
+                      key={obj.id}
+                      objective={obj}
+                      depth={0}
+                      filteredObjectiveIds={overdueEvergreenIds}
                     />
                   ))}
                 </div>
