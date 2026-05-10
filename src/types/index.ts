@@ -190,6 +190,7 @@ export interface PlanDef {
   id: string;
   name: string;
   filters: PlanFilters;
+  ranks?: Record<string, number>;
 }
 
 // Saved View types

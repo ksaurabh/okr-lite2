@@ -16,6 +16,7 @@ interface CompactObjectiveCardProps {
   defaultCollapsed?: boolean;
   visibleColumnsOverride?: import('../../store/okrStore').ColumnKey[];
   onRowClick?: (objective: Objective) => void;
+  onTitleClick?: (objective: Objective) => void;
   groupPeriodsByDate?: boolean;
   hideRowActions?: boolean;
 }
@@ -65,9 +66,13 @@ function getNextStepDateIndicator(nextStepDate?: string): { color: string; toolt
   }
 }
 
-export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filteredObjectiveIds, directlyMatchingIds, defaultCollapsed = false, visibleColumnsOverride, onRowClick, groupPeriodsByDate = false, hideRowActions = false }: CompactObjectiveCardProps) {
+export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filteredObjectiveIds, directlyMatchingIds, defaultCollapsed = false, visibleColumnsOverride, onRowClick, onTitleClick, groupPeriodsByDate = false, hideRowActions = false }: CompactObjectiveCardProps) {
   // Only root-level items (depth 0) are expanded by default, unless caller opts into collapsed
   const [isExpanded, setIsExpanded] = useState(depth === 0 && !defaultCollapsed);
+  const forcedExpandedIds = useOKRStore((s: OKRStore) => s.forcedExpandedIds);
+  const setForcedExpandedIds = useOKRStore((s: OKRStore) => s.setForcedExpandedIds);
+  const forcedExpanded = forcedExpandedIds ? forcedExpandedIds.includes(objectiveProp.id) : null;
+  const effectiveIsExpanded = forcedExpanded !== null ? forcedExpanded : isExpanded;
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [quickAddTitle, setQuickAddTitle] = useState('');
   const [isAdding, setIsAdding] = useState(false);
@@ -955,11 +960,14 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
 
           {/* Expand/collapse chevron */}
           <button
-            onClick={() => setIsExpanded(!isExpanded)}
+            onClick={() => {
+              if (forcedExpandedIds) setForcedExpandedIds(null);
+              setIsExpanded(!effectiveIsExpanded);
+            }}
             className={`w-4 h-4 flex items-center justify-center text-gray-400 hover:text-gray-600 flex-shrink-0 ${!hasChildren ? 'invisible' : ''}`}
           >
             <svg
-              className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+              className={`w-3 h-3 transition-transform ${effectiveIsExpanded ? 'rotate-90' : ''}`}
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -981,12 +989,15 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
             />
           ) : (
             <span
-              onClick={() => !nameOnly && canModify && setEditingTitle(true)}
+              onClick={() => {
+                if (onTitleClick) { onTitleClick(objective); return; }
+                if (!minimalActions && canModify) setEditingTitle(true);
+              }}
               className={`text-sm truncate flex-1 min-w-0 ${
                 directlyMatchingIds && directlyMatchingIds.size > 0 && !directlyMatchingIds.has(objective.id)
                   ? 'text-gray-400'
                   : 'text-gray-900'
-              } ${!nameOnly && canModify ? 'cursor-pointer hover:bg-gray-100 px-1 py-0.5 rounded -mx-1' : ''}`}
+              } ${onTitleClick || (!minimalActions && canModify) ? 'cursor-pointer hover:bg-gray-100 px-1 py-0.5 rounded -mx-1' : ''}`}
             >
               {objective.title}
             </span>
@@ -1884,7 +1895,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
       )}
 
       {/* Child objectives */}
-      {isExpanded && hasChildren && (
+      {effectiveIsExpanded && hasChildren && (
         <>
           {childObjectives.map((child: Objective) => (
             <CompactObjectiveCard
@@ -1895,6 +1906,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
               directlyMatchingIds={directlyMatchingIds}
               visibleColumnsOverride={visibleColumnsOverride}
               onRowClick={onRowClick}
+              onTitleClick={onTitleClick}
               groupPeriodsByDate={groupPeriodsByDate}
               hideRowActions={hideRowActions}
             />

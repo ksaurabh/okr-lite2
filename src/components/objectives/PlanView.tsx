@@ -103,15 +103,26 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
     return { activePeriods: active.sort(sortByName), inactivePeriods: inactive.sort(sortByName) };
   }, [orgPeriods]);
 
+  const reorderPlanItems = useOKRStore((s: OKRStore) => s.reorderPlanItems);
+  const setHighlightObjectiveId = useOKRStore((s: OKRStore) => s.setHighlightObjectiveId);
+  const setForcedExpandedIds = useOKRStore((s: OKRStore) => s.setForcedExpandedIds);
+
   const filtered = useMemo(() => {
-    return orgObjectives.filter((o: Objective) => {
+    const matched = orgObjectives.filter((o: Objective) => {
       if (ownerId && o.ownerId !== ownerId) return false;
       if (periodId && o.periodId !== periodId) return false;
       if (level && o.level !== level) return false;
       if (statuses.length > 0 && !statuses.includes(o.workflowStatus)) return false;
       return true;
     });
-  }, [orgObjectives, ownerId, periodId, level, statuses]);
+    const ranks = activePlan?.ranks || {};
+    return [...matched].sort((a, b) => {
+      const ra = ranks[a.id] ?? Number.MAX_SAFE_INTEGER;
+      const rb = ranks[b.id] ?? Number.MAX_SAFE_INTEGER;
+      if (ra !== rb) return ra - rb;
+      return a.title.localeCompare(b.title);
+    });
+  }, [orgObjectives, ownerId, periodId, level, statuses, activePlan]);
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 h-full flex flex-col min-w-0 relative">
@@ -357,16 +368,61 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
           ) : (
             <div>
               {filtered.map((o: Objective) => (
-                <CompactObjectiveCard
+                <div
                   key={o.id}
-                  objective={o}
-                  depth={0}
-                  visibleColumnsOverride={planViewColumns}
-                  defaultCollapsed
-                  groupPeriodsByDate
-                  hideRowActions
-                  filteredObjectiveIds={NO_CHILDREN}
-                />
+                  onDragOver={(e) => { if (activePlan) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; } }}
+                  onDrop={(e) => {
+                    if (!activePlan) return;
+                    e.preventDefault();
+                    const draggedId = e.dataTransfer.getData('text/plain');
+                    if (!draggedId || draggedId === o.id) return;
+                    const ids = filtered.map(x => x.id).filter(id => id !== draggedId);
+                    const targetIdx = ids.indexOf(o.id);
+                    ids.splice(targetIdx, 0, draggedId);
+                    reorderPlanItems(activePlan.id, ids);
+                  }}
+                  className="group relative flex items-stretch hover:bg-gray-50/40"
+                >
+                  {activePlan && (
+                    <div
+                      draggable
+                      onDragStart={(e) => { e.dataTransfer.setData('text/plain', o.id); e.dataTransfer.effectAllowed = 'move'; }}
+                      className="flex-shrink-0 flex items-center justify-center w-4 cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-600 border-r border-gray-100"
+                      title="Drag to reorder"
+                    >
+                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                        <circle cx="9" cy="6" r="1.5" />
+                        <circle cx="9" cy="12" r="1.5" />
+                        <circle cx="9" cy="18" r="1.5" />
+                        <circle cx="15" cy="6" r="1.5" />
+                        <circle cx="15" cy="12" r="1.5" />
+                        <circle cx="15" cy="18" r="1.5" />
+                      </svg>
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <CompactObjectiveCard
+                      objective={o}
+                      depth={0}
+                      visibleColumnsOverride={planViewColumns}
+                      defaultCollapsed
+                      groupPeriodsByDate
+                      hideRowActions
+                      onTitleClick={(obj) => {
+                        const byId = new Map(orgObjectives.map(x => [x.id, x]));
+                        const ancestors: string[] = [];
+                        let cur = byId.get(obj.parentId || '');
+                        while (cur) {
+                          ancestors.push(cur.id);
+                          cur = byId.get(cur.parentId || '');
+                        }
+                        setForcedExpandedIds(ancestors);
+                        setHighlightObjectiveId(obj.id);
+                      }}
+                      filteredObjectiveIds={NO_CHILDREN}
+                    />
+                  </div>
+                </div>
               ))}
             </div>
           )}

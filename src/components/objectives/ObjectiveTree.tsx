@@ -218,12 +218,20 @@ export function ObjectiveTree({ highlightObjectiveId, onHighlightClear, onViewCh
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const storeHighlightId = useOKRStore((s: OKRStore) => s.highlightObjectiveId);
+  const setStoreHighlightId = useOKRStore((s: OKRStore) => s.setHighlightObjectiveId);
+  const effectiveHighlightId = highlightObjectiveId || storeHighlightId;
+
   // Scroll to and flash a highlighted objective
   useEffect(() => {
-    if (!highlightObjectiveId) return;
+    if (!effectiveHighlightId) return;
+    const clear = () => {
+      onHighlightClear?.();
+      setStoreHighlightId(null);
+    };
     // Give the tree a moment to render
     const timer = setTimeout(() => {
-      const el = document.querySelector(`[data-objective-id="${highlightObjectiveId}"]`) as HTMLElement | null;
+      const el = document.querySelector(`[data-objective-id="${effectiveHighlightId}"]`) as HTMLElement | null;
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
         el.style.transition = 'background-color 0.3s';
@@ -232,15 +240,15 @@ export function ObjectiveTree({ highlightObjectiveId, onHighlightClear, onViewCh
           el.style.backgroundColor = '';
           setTimeout(() => {
             el.style.transition = '';
-            onHighlightClear?.();
+            clear();
           }, 600);
         }, 1200);
       } else {
-        onHighlightClear?.();
+        clear();
       }
     }, 150);
     return () => clearTimeout(timer);
-  }, [highlightObjectiveId, onHighlightClear]);
+  }, [effectiveHighlightId, onHighlightClear, setStoreHighlightId]);
 
   // Column resize state
   const [resizingColumn, setResizingColumn] = useState<keyof ColumnWidths | null>(null);

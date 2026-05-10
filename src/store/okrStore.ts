@@ -181,9 +181,15 @@ interface OKRActions {
   setPlanFilters: (filters: import('../types').PlanFilters) => void;
   plans: import('../types').PlanDef[];
   activePlanId: string | null;
+  lastSelectedPlanId: string | null;
   addPlan: (name: string) => Promise<void>;
   deletePlan: (id: string) => Promise<void>;
   applyPlan: (id: string) => void;
+  reorderPlanItems: (id: string, orderedIds: string[]) => Promise<void>;
+  highlightObjectiveId: string | null;
+  setHighlightObjectiveId: (id: string | null) => void;
+  forcedExpandedIds: string[] | null;
+  setForcedExpandedIds: (ids: string[] | null) => void;
   fetchUserPreferences: () => Promise<void>;
 
   // Saved Views
@@ -386,6 +392,9 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
   planFilters: { ownerId: '', periodId: '', level: '', statuses: [] as WorkflowStatus[] } as import('../types').PlanFilters,
   plans: [] as import('../types').PlanDef[],
   activePlanId: null as string | null,
+  lastSelectedPlanId: null as string | null,
+  highlightObjectiveId: null as string | null,
+  forcedExpandedIds: null as string[] | null,
   savedViews: [],
   activeViewId: null,
   lists: [],
@@ -1156,8 +1165,19 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
         if (data.preferences?.plans && Array.isArray(data.preferences.plans)) {
           updates.plans = data.preferences.plans;
         }
+        if (typeof data.preferences?.lastSelectedPlanId === 'string' || data.preferences?.lastSelectedPlanId === null) {
+          updates.lastSelectedPlanId = data.preferences.lastSelectedPlanId;
+        }
         if (Object.keys(updates).length > 0) {
           set(updates);
+        }
+        // Auto-apply the last selected plan so its filters are restored.
+        const after = get();
+        if (after.lastSelectedPlanId && !after.activePlanId) {
+          const plan = after.plans.find(p => p.id === after.lastSelectedPlanId);
+          if (plan) {
+            set({ planFilters: { ...plan.filters }, activePlanId: plan.id });
+          }
         }
       }
     } catch (err) {
@@ -1383,13 +1403,13 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       filters: { ...state.planFilters },
     };
     const plans = [...state.plans, newPlan];
-    set({ plans, activePlanId: newPlan.id });
+    set({ plans, activePlanId: newPlan.id, lastSelectedPlanId: newPlan.id });
     try {
       await fetch(`${API_URL}/api/users/me/preferences`, {
         method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ preferences: { plans } }),
+        body: JSON.stringify({ preferences: { plans, lastSelectedPlanId: newPlan.id } }),
       });
     } catch (err) {
       console.error('Failed to save plan:', err);
@@ -1399,13 +1419,18 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
   deletePlan: async (id) => {
     const state = get();
     const plans = state.plans.filter(p => p.id !== id);
-    set({ plans, activePlanId: state.activePlanId === id ? null : state.activePlanId });
+    const newLast = state.lastSelectedPlanId === id ? null : state.lastSelectedPlanId;
+    set({
+      plans,
+      activePlanId: state.activePlanId === id ? null : state.activePlanId,
+      lastSelectedPlanId: newLast,
+    });
     try {
       await fetch(`${API_URL}/api/users/me/preferences`, {
         method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ preferences: { plans } }),
+        body: JSON.stringify({ preferences: { plans, lastSelectedPlanId: newLast } }),
       });
     } catch (err) {
       console.error('Failed to delete plan:', err);
@@ -1416,7 +1441,39 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     const state = get();
     const plan = state.plans.find(p => p.id === id);
     if (!plan) return;
-    set({ planFilters: { ...plan.filters }, activePlanId: id });
+    set({ planFilters: { ...plan.filters }, activePlanId: id, lastSelectedPlanId: id });
+    fetch(`${API_URL}/api/users/me/preferences`, {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ preferences: { lastSelectedPlanId: id } }),
+    }).catch(err => console.error('Failed to save last selected plan:', err));
+  },
+
+  setHighlightObjectiveId: (id) => {
+    set({ highlightObjectiveId: id });
+  },
+
+  setForcedExpandedIds: (ids) => {
+    set({ forcedExpandedIds: ids });
+  },
+
+  reorderPlanItems: async (id, orderedIds) => {
+    const state = get();
+    const ranks: Record<string, number> = {};
+    orderedIds.forEach((oid, i) => { ranks[oid] = i + 1; });
+    const plans = state.plans.map(p => p.id === id ? { ...p, ranks } : p);
+    set({ plans });
+    try {
+      await fetch(`${API_URL}/api/users/me/preferences`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferences: { plans } }),
+      });
+    } catch (err) {
+      console.error('Failed to save plan ranks:', err);
+    }
   },
 
   // Saved Views
