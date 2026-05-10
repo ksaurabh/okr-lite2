@@ -16,6 +16,7 @@ interface CompactObjectiveCardProps {
   defaultCollapsed?: boolean;
   visibleColumnsOverride?: import('../../store/okrStore').ColumnKey[];
   onRowClick?: (objective: Objective) => void;
+  groupPeriodsByDate?: boolean;
 }
 
 const getChildLevel = (parentLevel: ObjectiveLevel): ObjectiveLevel => {
@@ -63,7 +64,7 @@ function getNextStepDateIndicator(nextStepDate?: string): { color: string; toolt
   }
 }
 
-export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filteredObjectiveIds, directlyMatchingIds, defaultCollapsed = false, visibleColumnsOverride, onRowClick }: CompactObjectiveCardProps) {
+export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filteredObjectiveIds, directlyMatchingIds, defaultCollapsed = false, visibleColumnsOverride, onRowClick, groupPeriodsByDate = false }: CompactObjectiveCardProps) {
   // Only root-level items (depth 0) are expanded by default, unless caller opts into collapsed
   const [isExpanded, setIsExpanded] = useState(depth === 0 && !defaultCollapsed);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
@@ -1454,9 +1455,44 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
               onBlur={() => setEditingPeriod(false)}
               className="w-full text-xs px-1 py-0.5 border border-blue-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
             >
-              {periods.map((p: Period) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
+              {(() => {
+                if (!groupPeriodsByDate) {
+                  return periods.map((p: Period) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ));
+                }
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const todayMs = today.getTime();
+                const parseEnd = (ymd: string) => {
+                  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(ymd);
+                  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime() : NaN;
+                };
+                const past: Period[] = [];
+                const current: Period[] = [];
+                periods.forEach((p: Period) => {
+                  const end = parseEnd(p.endDate);
+                  if (Number.isFinite(end) && end < todayMs) past.push(p);
+                  else current.push(p);
+                });
+                const sortByStart = (a: Period, b: Period) => a.startDate.localeCompare(b.startDate);
+                current.sort(sortByStart);
+                past.sort(sortByStart);
+                return (
+                  <>
+                    {current.length > 0 && (
+                      <optgroup label="Current">
+                        {current.map((p: Period) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </optgroup>
+                    )}
+                    {past.length > 0 && (
+                      <optgroup label="In the Past">
+                        {past.map((p: Period) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </optgroup>
+                    )}
+                  </>
+                );
+              })()}
             </select>
           ) : (
             <button
@@ -1811,6 +1847,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
               directlyMatchingIds={directlyMatchingIds}
               visibleColumnsOverride={visibleColumnsOverride}
               onRowClick={onRowClick}
+              groupPeriodsByDate={groupPeriodsByDate}
             />
           ))}
         </>

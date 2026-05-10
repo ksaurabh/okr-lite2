@@ -1737,6 +1737,7 @@ export function ChecklistPage() {
                         objective={evergreenSelectedObjective}
                         depth={0}
                         visibleColumnsOverride={evergreenOverdueColumns}
+                        groupPeriodsByDate
                         filteredObjectiveIds={evergreenRightStatuses.length > 0
                           ? new Set(orgObjectives
                               .filter((o: Objective) => evergreenRightStatuses.includes(o.workflowStatus))
