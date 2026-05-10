@@ -113,7 +113,7 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
   }, [orgObjectives, ownerId, periodId, level, statuses]);
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 h-full flex flex-col min-w-0">
+    <div className="bg-white rounded-lg shadow-sm border border-gray-200 h-full flex flex-col min-w-0 relative">
       <div className="flex flex-wrap items-center gap-2 p-2 border-b border-gray-200">
         <select
           value={ownerId}
@@ -359,10 +359,25 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
           )}
         </div>
       </div>
-      {showSavePlan && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-3">Save as Plan</h3>
+      {showSavePlan && (() => {
+        const ownerName = ownerId ? (orgUsers.find(u => u.id === ownerId)?.name || orgUsers.find(u => u.id === ownerId)?.email || ownerId) : 'Any owner';
+        const periodName = periodId ? (orgPeriods.find(p => p.id === periodId)?.name || periodId) : 'Any period';
+        const levelLabel = level ? (LEVEL_OPTIONS.find(l => l.value === level)?.label || level) : 'Any level';
+        const statusLabels = statuses.length === 0
+          ? 'Any status'
+          : statuses.map(s => WORKFLOW_STATUS_OPTIONS.find(o => o.value === s)?.label || s).join(', ');
+        return (
+          <div
+            className="absolute right-2 top-12 z-40 bg-white border border-gray-200 rounded-lg shadow-xl w-80 p-4"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-sm font-semibold text-gray-900 mb-2">Save as Plan</h3>
+            <div className="text-xs text-gray-600 mb-3 space-y-0.5 bg-gray-50 rounded p-2 border border-gray-100">
+              <div><span className="text-gray-400">Owner:</span> <span className="text-gray-700">{ownerName}</span></div>
+              <div><span className="text-gray-400">Period:</span> <span className="text-gray-700">{periodName}</span></div>
+              <div><span className="text-gray-400">Level:</span> <span className="text-gray-700">{levelLabel}</span></div>
+              <div><span className="text-gray-400">Status:</span> <span className="text-gray-700">{statusLabels}</span></div>
+            </div>
             <input
               type="text"
               value={newPlanName}
@@ -394,8 +409,8 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
               </button>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
