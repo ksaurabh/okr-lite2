@@ -288,6 +288,13 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
           )}
         </div>
         <div className="flex-1" />
+        {activePlan && (() => {
+          const dirty = JSON.stringify({ ...activePlan.filters, types: activePlan.filters.types || [] })
+            !== JSON.stringify({ ...planFilters, types: planFilters.types || [] });
+          return dirty ? (
+            <span className="text-xs text-amber-600 italic" title="Filters differ from this plan">unsaved changes</span>
+          ) : null;
+        })()}
         {plans.length > 0 && (
           <select
             value={activePlanId || ''}

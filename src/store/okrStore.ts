@@ -1450,7 +1450,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
   },
 
   setPlanFilters: (filters) => {
-    set({ planFilters: filters, activePlanId: null });
+    set({ planFilters: filters });
   },
 
   addPlan: async (name) => {
