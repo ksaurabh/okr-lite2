@@ -177,6 +177,13 @@ interface OKRActions {
   planViewColumns: ColumnKey[];
   setPlanViewColumns: (columns: ColumnKey[]) => Promise<void>;
   togglePlanViewColumn: (column: ColumnKey) => Promise<void>;
+  planFilters: import('../types').PlanFilters;
+  setPlanFilters: (filters: import('../types').PlanFilters) => void;
+  plans: import('../types').PlanDef[];
+  activePlanId: string | null;
+  addPlan: (name: string) => Promise<void>;
+  deletePlan: (id: string) => Promise<void>;
+  applyPlan: (id: string) => void;
   fetchUserPreferences: () => Promise<void>;
 
   // Saved Views
@@ -376,6 +383,9 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
   evergreenOverdueViewMode: 'tree' as 'tree' | 'table',
   objectiveViewMode: 'explore' as 'explore' | 'plan',
   planViewColumns: ['workflowStatus', 'owner', 'period', 'nextStepDate'] as ColumnKey[],
+  planFilters: { ownerId: '', periodId: '', level: '', statuses: [] as WorkflowStatus[] } as import('../types').PlanFilters,
+  plans: [] as import('../types').PlanDef[],
+  activePlanId: null as string | null,
   savedViews: [],
   activeViewId: null,
   lists: [],
@@ -1143,6 +1153,9 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
         if (data.preferences?.planViewColumns && Array.isArray(data.preferences.planViewColumns)) {
           updates.planViewColumns = data.preferences.planViewColumns;
         }
+        if (data.preferences?.plans && Array.isArray(data.preferences.plans)) {
+          updates.plans = data.preferences.plans;
+        }
         if (Object.keys(updates).length > 0) {
           set(updates);
         }
@@ -1354,6 +1367,56 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     } catch (err) {
       console.error('Failed to save plan view columns preference:', err);
     }
+  },
+
+  setPlanFilters: (filters) => {
+    set({ planFilters: filters, activePlanId: null });
+  },
+
+  addPlan: async (name) => {
+    const state = get();
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const newPlan = {
+      id: `plan-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      name: trimmed,
+      filters: { ...state.planFilters },
+    };
+    const plans = [...state.plans, newPlan];
+    set({ plans, activePlanId: newPlan.id });
+    try {
+      await fetch(`${API_URL}/api/users/me/preferences`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferences: { plans } }),
+      });
+    } catch (err) {
+      console.error('Failed to save plan:', err);
+    }
+  },
+
+  deletePlan: async (id) => {
+    const state = get();
+    const plans = state.plans.filter(p => p.id !== id);
+    set({ plans, activePlanId: state.activePlanId === id ? null : state.activePlanId });
+    try {
+      await fetch(`${API_URL}/api/users/me/preferences`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferences: { plans } }),
+      });
+    } catch (err) {
+      console.error('Failed to delete plan:', err);
+    }
+  },
+
+  applyPlan: (id) => {
+    const state = get();
+    const plan = state.plans.find(p => p.id === id);
+    if (!plan) return;
+    set({ planFilters: { ...plan.filters }, activePlanId: id });
   },
 
   // Saved Views

@@ -72,6 +72,7 @@ interface ObjectiveTreeProps {
   onViewChange?: (view: string) => void;
 }
 
+
 export function ObjectiveTree({ highlightObjectiveId, onHighlightClear, onViewChange }: ObjectiveTreeProps = {}) {
   const [includeAncestorPeriods, setIncludeAncestorPeriods] = useState(false);
   const [includeChildPeriods, setIncludeChildPeriods] = useState(true);

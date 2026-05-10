@@ -178,6 +178,20 @@ export interface User {
   lastLoginAt: string;
 }
 
+// Plan view saved filter
+export interface PlanFilters {
+  ownerId: string;
+  periodId: string;
+  level: ObjectiveLevel | '';
+  statuses: WorkflowStatus[];
+}
+
+export interface PlanDef {
+  id: string;
+  name: string;
+  filters: PlanFilters;
+}
+
 // Saved View types
 export interface SavedViewFilters {
   filterPeriodIds: string[];

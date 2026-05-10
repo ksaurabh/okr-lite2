@@ -17,13 +17,27 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
   const togglePlanViewColumn = useOKRStore((s: OKRStore) => s.togglePlanViewColumn);
   const columnWidths = useOKRStore((s: OKRStore) => s.columnWidths);
   const setColumnWidths = useOKRStore((s: OKRStore) => s.setColumnWidths);
+  const planFilters = useOKRStore((s: OKRStore) => s.planFilters);
+  const setPlanFilters = useOKRStore((s: OKRStore) => s.setPlanFilters);
+  const addPlan = useOKRStore((s: OKRStore) => s.addPlan);
+  const activePlanId = useOKRStore((s: OKRStore) => s.activePlanId);
+  const plans = useOKRStore((s: OKRStore) => s.plans);
 
-  const [ownerId, setOwnerId] = useState<string>('');
-  const [periodId, setPeriodId] = useState<string>('');
-  const [level, setLevel] = useState<ObjectiveLevel | ''>('');
-  const [statuses, setStatuses] = useState<WorkflowStatus[]>([]);
+  const ownerId = planFilters.ownerId;
+  const periodId = planFilters.periodId;
+  const level = planFilters.level;
+  const statuses = planFilters.statuses;
+  const setOwnerId = (v: string) => setPlanFilters({ ...planFilters, ownerId: v });
+  const setPeriodId = (v: string) => setPlanFilters({ ...planFilters, periodId: v });
+  const setLevel = (v: ObjectiveLevel | '') => setPlanFilters({ ...planFilters, level: v });
+  const setStatuses = (v: WorkflowStatus[]) => setPlanFilters({ ...planFilters, statuses: v });
+
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const statusMenuRef = useRef<HTMLDivElement>(null);
+  const [showSavePlan, setShowSavePlan] = useState(false);
+  const [newPlanName, setNewPlanName] = useState('');
+
+  const activePlan = plans.find(p => p.id === activePlanId) || null;
 
   useEffect(() => {
     if (!showStatusMenu) return;
@@ -178,6 +192,19 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
           )}
         </div>
         <div className="flex-1" />
+        {activePlan && (
+          <span className="text-xs text-gray-500 italic mr-1">Plan: {activePlan.name}</span>
+        )}
+        <button
+          onClick={() => { setNewPlanName(activePlan?.name || ''); setShowSavePlan(true); }}
+          className="flex items-center gap-1 px-2 py-1 text-xs text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded"
+          title="Save current filters as a Plan"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+          </svg>
+          Save as Plan
+        </button>
         <div ref={columnMenuRef} className="relative">
           <button
             onClick={() => setShowColumnMenu(!showColumnMenu)}
@@ -332,6 +359,43 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
           )}
         </div>
       </div>
+      {showSavePlan && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-3">Save as Plan</h3>
+            <input
+              type="text"
+              value={newPlanName}
+              onChange={(e) => setNewPlanName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && newPlanName.trim()) {
+                  addPlan(newPlanName);
+                  setShowSavePlan(false);
+                }
+                if (e.key === 'Escape') setShowSavePlan(false);
+              }}
+              placeholder="Plan name"
+              autoFocus
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowSavePlan(false)}
+                className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { if (newPlanName.trim()) { addPlan(newPlanName); setShowSavePlan(false); } }}
+                disabled={!newPlanName.trim()}
+                className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

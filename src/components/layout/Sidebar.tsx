@@ -246,6 +246,11 @@ export function Sidebar({ currentView, onViewChange, collapsed = false, onToggle
   const deleteTeam = useOKRStore((state: OKRStore) => state.deleteTeam);
   const deletePeriod = useOKRStore((state: OKRStore) => state.deletePeriod);
   const deleteTag = useOKRStore((state: OKRStore) => state.deleteTag);
+  const plans = useOKRStore((state: OKRStore) => state.plans);
+  const activePlanId = useOKRStore((state: OKRStore) => state.activePlanId);
+  const applyPlan = useOKRStore((state: OKRStore) => state.applyPlan);
+  const deletePlan = useOKRStore((state: OKRStore) => state.deletePlan);
+  const setObjectiveViewMode = useOKRStore((state: OKRStore) => state.setObjectiveViewMode);
 
   // Filter items by organization and visibility (admins see all, others see shared or owned)
   const orgTeams = useMemo(
@@ -429,6 +434,44 @@ export function Sidebar({ currentView, onViewChange, collapsed = false, onToggle
           ))}
         </ul>
 
+
+        {!collapsed && plans.length > 0 && (
+          <div className="mt-6">
+            <h3 className="text-sm font-medium text-gray-500 uppercase mb-2 px-3">Plans</h3>
+            <ul className="space-y-0.5">
+              {plans.map(plan => (
+                <li key={plan.id}>
+                  <div
+                    className={`group flex items-center justify-between px-3 py-1.5 rounded-md text-sm cursor-pointer ${
+                      activePlanId === plan.id && currentView === 'objectives'
+                        ? 'bg-blue-100 text-blue-700'
+                        : 'text-gray-700 hover:bg-gray-200'
+                    }`}
+                    onClick={() => {
+                      setObjectiveViewMode('plan');
+                      applyPlan(plan.id);
+                      onViewChange('objectives');
+                    }}
+                  >
+                    <span className="truncate">{plan.name}</span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (window.confirm(`Delete plan "${plan.name}"?`)) deletePlan(plan.id);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-600 ml-1 flex-shrink-0"
+                      title="Delete plan"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {!collapsed && currentView === 'periods' && (
           <div className="mt-6">
