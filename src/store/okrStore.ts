@@ -191,6 +191,7 @@ interface OKRActions {
   reorderPlanItems: (id: string, orderedIds: string[]) => Promise<void>;
   togglePlanReplacement: (planId: string, objectiveId: string) => Promise<void>;
   updatePlanFilters: (planId: string) => Promise<void>;
+  savePlanVersion: (planId: string, itemIds: string[]) => Promise<void>;
   highlightObjectiveId: string | null;
   setHighlightObjectiveId: (id: string | null) => void;
   forcedExpandedIds: string[] | null;
@@ -1516,6 +1517,29 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
 
   setForcedExpandedIds: (ids) => {
     set({ forcedExpandedIds: ids });
+  },
+
+  savePlanVersion: async (planId, itemIds) => {
+    const state = get();
+    const newVersion = {
+      id: `v-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      timestamp: new Date().toISOString(),
+      itemIds,
+    };
+    const plans = state.plans.map(p =>
+      p.id === planId ? { ...p, versions: [...(p.versions || []), newVersion] } : p
+    );
+    set({ plans });
+    try {
+      await fetch(`${API_URL}/api/users/me/preferences`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferences: { plans } }),
+      });
+    } catch (err) {
+      console.error('Failed to save plan version:', err);
+    }
   },
 
   updatePlanFilters: async (planId) => {

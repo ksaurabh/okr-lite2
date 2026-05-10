@@ -187,12 +187,19 @@ export interface PlanFilters {
   types?: ObjectiveType[];
 }
 
+export interface PlanVersion {
+  id: string;
+  timestamp: string;
+  itemIds: string[];
+}
+
 export interface PlanDef {
   id: string;
   name: string;
   filters: PlanFilters;
   ranks?: Record<string, number>;
   replacements?: string[];
+  versions?: PlanVersion[];
 }
 
 // Saved View types

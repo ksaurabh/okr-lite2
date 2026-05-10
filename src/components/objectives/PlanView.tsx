@@ -121,7 +121,14 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
   const reorderPlanItems = useOKRStore((s: OKRStore) => s.reorderPlanItems);
   const togglePlanReplacement = useOKRStore((s: OKRStore) => s.togglePlanReplacement);
   const updatePlanFilters = useOKRStore((s: OKRStore) => s.updatePlanFilters);
+  const savePlanVersion = useOKRStore((s: OKRStore) => s.savePlanVersion);
   const lastSelectedPlanId = useOKRStore((s: OKRStore) => s.lastSelectedPlanId);
+  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
+
+  // Reset version selection when switching plans
+  useEffect(() => {
+    setSelectedVersionId(null);
+  }, [activePlanId]);
   const setHighlightObjectiveId = useOKRStore((s: OKRStore) => s.setHighlightObjectiveId);
   const setForcedExpandedIds = useOKRStore((s: OKRStore) => s.setForcedExpandedIds);
   const [menuObjectiveId, setMenuObjectiveId] = useState<string | null>(null);
@@ -139,6 +146,15 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
   }, [menuObjectiveId]);
 
   const filtered = useMemo<{ objective: Objective; replacedBy: Objective | null }[]>(() => {
+    if (selectedVersionId && activePlan) {
+      const version = activePlan.versions?.find(v => v.id === selectedVersionId);
+      if (version) {
+        return version.itemIds
+          .map(id => orgObjectives.find(o => o.id === id))
+          .filter((o): o is Objective => !!o)
+          .map(o => ({ objective: o, replacedBy: null }));
+      }
+    }
     const matched = orgObjectives.filter((o: Objective) => {
       if (ownerId && o.ownerId !== ownerId) return false;
       if (periodId && o.periodId !== periodId) return false;
@@ -171,7 +187,7 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
       if (ra !== rb) return ra - rb;
       return a.objective.title.localeCompare(b.objective.title);
     });
-  }, [orgObjectives, ownerId, periodId, level, statuses, types, activePlan]);
+  }, [orgObjectives, ownerId, periodId, level, statuses, types, activePlan, selectedVersionId]);
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 h-full flex flex-col min-w-0 relative">
@@ -310,6 +326,49 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
             ))}
           </select>
         )}
+        {activePlan && (() => {
+          const versions = [...(activePlan.versions || [])].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+          const currentItemIds = selectedVersionId ? [] : filtered.map(f => f.objective.id);
+          const lastVersion = versions[0];
+          const lastItemIds = lastVersion?.itemIds || [];
+          const isDifferent = !lastVersion || JSON.stringify(currentItemIds) !== JSON.stringify(lastItemIds);
+          const fmt = (iso: string) => {
+            const d = new Date(iso);
+            const pad = (n: number) => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+          };
+          return (
+            <>
+              <select
+                value={selectedVersionId || 'current'}
+                onChange={(e) => setSelectedVersionId(e.target.value === 'current' ? null : e.target.value)}
+                className="px-2 py-1 text-xs border border-gray-200 rounded bg-white"
+                title="View a saved version"
+              >
+                <option value="current">Current</option>
+                {versions.length > 0 && (
+                  <optgroup label="Show version history">
+                    {versions.map(v => (
+                      <option key={v.id} value={v.id}>{fmt(v.timestamp)} ({v.itemIds.length})</option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+              {!selectedVersionId && isDifferent && (
+                <button
+                  onClick={() => savePlanVersion(activePlan.id, currentItemIds)}
+                  className="flex items-center gap-1 px-2 py-1 text-xs text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded"
+                  title="Capture the current items as a new version"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Save version
+                </button>
+              )}
+            </>
+          );
+        })()}
         <button
           onClick={() => { setNewPlanName(activePlan?.name || ''); setShowSavePlan(true); }}
           className="flex items-center gap-1 px-2 py-1 text-xs text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded"
