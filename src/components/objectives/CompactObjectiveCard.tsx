@@ -112,6 +112,10 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   const ownerSelectRef = useRef<HTMLSelectElement>(null);
   const assigneeSelectRef = useRef<HTMLSelectElement>(null);
   const periodSelectRef = useRef<HTMLSelectElement>(null);
+  const periodCellRef = useRef<HTMLDivElement>(null);
+  const [periodPopoverPos, setPeriodPopoverPos] = useState<{ top: number; left: number } | null>(null);
+  const [periodActiveCollapsed, setPeriodActiveCollapsed] = useState(false);
+  const [periodInactiveCollapsed, setPeriodInactiveCollapsed] = useState(true);
   const nextStepDateInputRef = useRef<HTMLInputElement>(null);
   const nextStepDateCellRef = useRef<HTMLDivElement>(null);
   const [nextStepDatePopoverPos, setNextStepDatePopoverPos] = useState<{ top: number; left: number } | null>(null);
@@ -438,9 +442,24 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   }, [editingAssignee]);
 
   useEffect(() => {
-    if (editingPeriod && periodSelectRef.current) {
-      periodSelectRef.current.focus();
+    if (editingPeriod && periodCellRef.current) {
+      const rect = periodCellRef.current.getBoundingClientRect();
+      setPeriodPopoverPos({ top: rect.bottom + 4, left: rect.left });
+    } else {
+      setPeriodPopoverPos(null);
     }
+  }, [editingPeriod]);
+
+  useEffect(() => {
+    if (!editingPeriod) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (periodCellRef.current?.contains(target)) return;
+      if (target.closest('[data-period-popover]')) return;
+      setEditingPeriod(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [editingPeriod]);
 
   useEffect(() => {
@@ -1446,62 +1465,89 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
 
         {/* Period column - editable */}
         {visibleColumns.includes('period') && (
-        <div className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.period }}>
-          {editingPeriod ? (
-            <select
-              ref={periodSelectRef}
-              value={objective.periodId}
-              onChange={(e) => handlePeriodChange(e.target.value)}
-              onBlur={() => setEditingPeriod(false)}
-              className="w-full text-xs px-1 py-0.5 border border-blue-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-            >
-              {(() => {
-                if (!groupPeriodsByDate) {
-                  return periods.map((p: Period) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ));
-                }
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
-                const todayMs = today.getTime();
-                const parseEnd = (ymd: string) => {
-                  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(ymd);
-                  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime() : NaN;
-                };
-                const past: Period[] = [];
-                const current: Period[] = [];
-                periods.forEach((p: Period) => {
-                  const end = parseEnd(p.endDate);
-                  if (Number.isFinite(end) && end < todayMs) past.push(p);
-                  else current.push(p);
-                });
-                const sortByStart = (a: Period, b: Period) => a.startDate.localeCompare(b.startDate);
-                current.sort(sortByStart);
-                past.sort(sortByStart);
-                return (
-                  <>
-                    {current.length > 0 && (
-                      <optgroup label="Current">
-                        {current.map((p: Period) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                      </optgroup>
-                    )}
-                    {past.length > 0 && (
-                      <optgroup label="In the Past">
-                        {past.map((p: Period) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                      </optgroup>
-                    )}
-                  </>
-                );
-              })()}
-            </select>
-          ) : (
-            <button
-              onClick={() => canModify && setEditingPeriod(true)}
-              className={`w-full text-left text-xs px-1 py-0.5 rounded truncate ${canModify ? 'hover:bg-gray-100 cursor-pointer' : 'cursor-default'} ${period ? 'text-gray-600' : 'text-gray-300'}`}
-              disabled={!canModify}
-            >
-              {period?.name || '—'}
-            </button>
+        <div ref={periodCellRef} className="px-1 py-1 flex-shrink-0" style={{ width: columnWidths.period }}>
+          <button
+            onClick={() => canModify && setEditingPeriod(!editingPeriod)}
+            className={`w-full text-left text-xs px-1 py-0.5 rounded truncate ${canModify ? 'hover:bg-gray-100 cursor-pointer' : 'cursor-default'} ${period ? 'text-gray-600' : 'text-gray-300'} ${editingPeriod ? 'border border-blue-300 bg-white' : ''}`}
+            disabled={!canModify}
+          >
+            {period?.name || '—'}
+          </button>
+          {editingPeriod && periodPopoverPos && createPortal(
+            (() => {
+              const today = new Date();
+              today.setHours(0, 0, 0, 0);
+              const todayMs = today.getTime();
+              const parseYmd = (ymd: string) => {
+                const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(ymd);
+                return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime() : NaN;
+              };
+              const duration = (p: Period) => {
+                const s = parseYmd(p.startDate);
+                const e = parseYmd(p.endDate);
+                if (!Number.isFinite(s) || !Number.isFinite(e)) return Number.MAX_SAFE_INTEGER;
+                return e - s;
+              };
+              const sortByEndThenDuration = (a: Period, b: Period) => {
+                const cmp = a.endDate.localeCompare(b.endDate);
+                if (cmp !== 0) return cmp;
+                return duration(a) - duration(b);
+              };
+              const active: Period[] = [];
+              const inactive: Period[] = [];
+              periods.forEach((p: Period) => {
+                const end = parseYmd(p.endDate);
+                if (Number.isFinite(end) && end < todayMs) inactive.push(p);
+                else active.push(p);
+              });
+              active.sort(sortByEndThenDuration);
+              inactive.sort(sortByEndThenDuration);
+              const renderItem = (p: Period) => (
+                <button
+                  key={p.id}
+                  onClick={() => handlePeriodChange(p.id)}
+                  className={`w-full text-left text-xs px-3 py-1.5 hover:bg-gray-100 flex items-center justify-between gap-2 ${objective.periodId === p.id ? 'bg-blue-50 text-blue-700' : 'text-gray-700'}`}
+                >
+                  <span className="truncate">{p.name}</span>
+                  <span className="text-[10px] text-gray-400 flex-shrink-0">{p.endDate}</span>
+                </button>
+              );
+              return (
+                <div
+                  data-period-popover
+                  style={{ position: 'fixed', top: periodPopoverPos.top, left: periodPopoverPos.left, zIndex: 1000 }}
+                  className="bg-white border border-gray-200 rounded-md shadow-lg min-w-[240px] max-h-96 overflow-y-auto"
+                >
+                  <button
+                    onClick={() => setPeriodActiveCollapsed(!periodActiveCollapsed)}
+                    className="w-full flex items-center gap-1 px-3 py-1.5 text-[10px] uppercase tracking-wider text-gray-500 bg-gray-50 hover:bg-gray-100 border-b border-gray-100"
+                  >
+                    <svg className={`w-3 h-3 transition-transform ${periodActiveCollapsed ? '' : 'rotate-90'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                    Active ({active.length})
+                  </button>
+                  {!periodActiveCollapsed && (active.length > 0
+                    ? active.map(renderItem)
+                    : <div className="px-3 py-1.5 text-xs text-gray-400 italic">None</div>
+                  )}
+                  <button
+                    onClick={() => setPeriodInactiveCollapsed(!periodInactiveCollapsed)}
+                    className="w-full flex items-center gap-1 px-3 py-1.5 text-[10px] uppercase tracking-wider text-gray-500 bg-gray-50 hover:bg-gray-100 border-y border-gray-100"
+                  >
+                    <svg className={`w-3 h-3 transition-transform ${periodInactiveCollapsed ? '' : 'rotate-90'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                    Inactive ({inactive.length})
+                  </button>
+                  {!periodInactiveCollapsed && (inactive.length > 0
+                    ? inactive.map(renderItem)
+                    : <div className="px-3 py-1.5 text-xs text-gray-400 italic">None</div>
+                  )}
+                </div>
+              );
+            })(),
+            document.body
           )}
         </div>
         )}
