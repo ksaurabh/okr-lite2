@@ -7,6 +7,7 @@ import { ChecklistPage } from './components/checklist';
 import { ProgressPage } from './components/progress';
 import { PeriodsPage } from './components/periods';
 import { TeamsPage } from './components/teams/TeamsPage';
+import { PlansPage } from './components/plans/PlansPage';
 import { UpdatesPage } from './components/updates';
 import { ListsPage } from './components/lists';
 import { ViewsPage } from './components/views';
@@ -18,9 +19,9 @@ import { LoginPage, UnauthorizedPage, AuthCallback, AdminInviteAccept } from './
 import { Modal } from './components/common';
 import { useOKRStore } from './store/okrStore';
 
-type View = 'dashboard' | 'objectives' | 'views' | 'checklist' | 'progress' | 'updates' | 'lists' | 'logwork' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin' | 'logs';
+type View = 'dashboard' | 'objectives' | 'plans' | 'views' | 'checklist' | 'progress' | 'updates' | 'lists' | 'logwork' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin' | 'logs';
 
-const ALL_VIEWS: View[] = ['dashboard', 'objectives', 'views', 'checklist', 'progress', 'updates', 'lists', 'logwork', 'teams', 'periods', 'tags', 'settings', 'admin', 'logs'];
+const ALL_VIEWS: View[] = ['dashboard', 'objectives', 'plans', 'views', 'checklist', 'progress', 'updates', 'lists', 'logwork', 'teams', 'periods', 'tags', 'settings', 'admin', 'logs'];
 const RESERVED_PATHS = new Set(['/auth/callback', '/invite/accept']);
 
 function viewFromPath(pathname: string): View {
@@ -117,6 +118,7 @@ function AppContent() {
     >
       {currentView === 'dashboard' && <DashboardPage onViewChange={setCurrentView} />}
       {currentView === 'objectives' && <ObjectiveTree highlightObjectiveId={highlightObjectiveId} onHighlightClear={() => setHighlightObjectiveId(null)} onViewChange={setCurrentView} />}
+      {currentView === 'plans' && <PlansPage onViewChange={setCurrentView} />}
       {currentView === 'views' && <ViewsPage onViewChange={setCurrentView} />}
       {currentView === 'checklist' && <ChecklistPage />}
       {currentView === 'progress' && <ProgressPage />}
