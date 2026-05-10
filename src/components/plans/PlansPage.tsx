@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
-import { LEVEL_OPTIONS, WORKFLOW_STATUS_OPTIONS } from '../../utils/objectiveFilters';
+import { LEVEL_OPTIONS, WORKFLOW_STATUS_OPTIONS, TYPE_OPTIONS } from '../../utils/objectiveFilters';
 import type { Period, User } from '../../types';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
@@ -38,6 +38,7 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
   const periodName = (id: string) => id ? (periods.find((p: Period) => p.id === id)?.name || id) : 'Any';
   const levelLabel = (v: string) => v ? (LEVEL_OPTIONS.find(l => l.value === v)?.label || v) : 'Any';
   const statusLabels = (vs: string[]) => vs.length === 0 ? 'Any' : vs.map(s => WORKFLOW_STATUS_OPTIONS.find(o => o.value === s)?.label || s).join(', ');
+  const typeLabels = (vs: string[] | undefined) => !vs || vs.length === 0 ? 'Any' : vs.map(t => TYPE_OPTIONS.find(o => o.value === t)?.label || t).join(', ');
 
   const handleOpen = (id: string) => {
     setObjectiveViewMode('plan');
@@ -68,6 +69,7 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Period</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Level</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
@@ -89,6 +91,7 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
                   <td className="px-4 py-3 text-sm text-gray-600">{periodName(plan.filters.periodId)}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">{levelLabel(plan.filters.level)}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">{statusLabels(plan.filters.statuses)}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{typeLabels(plan.filters.types)}</td>
                   <td className="px-4 py-3 text-right text-sm">
                     <button
                       onClick={() => {

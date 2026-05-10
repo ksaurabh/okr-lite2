@@ -184,6 +184,7 @@ export interface PlanFilters {
   periodId: string;
   level: ObjectiveLevel | '';
   statuses: WorkflowStatus[];
+  types?: ObjectiveType[];
 }
 
 export interface PlanDef {

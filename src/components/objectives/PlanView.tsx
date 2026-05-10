@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useOKRStore, type OKRStore, type ColumnKey, type ColumnWidths, COLUMN_LABELS } from '../../store/okrStore';
 import { CompactObjectiveCard } from './CompactObjectiveCard';
-import { LEVEL_OPTIONS, WORKFLOW_STATUS_OPTIONS } from '../../utils/objectiveFilters';
-import type { Objective, ObjectiveLevel, Period, User, WorkflowStatus } from '../../types';
+import { LEVEL_OPTIONS, WORKFLOW_STATUS_OPTIONS, TYPE_OPTIONS } from '../../utils/objectiveFilters';
+import type { Objective, ObjectiveLevel, ObjectiveType, Period, User, WorkflowStatus } from '../../types';
 
 interface PlanViewProps {
   orgObjectives: Objective[];
@@ -28,13 +28,28 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
   const periodId = planFilters.periodId;
   const level = planFilters.level;
   const statuses = planFilters.statuses;
+  const types = planFilters.types || [];
   const setOwnerId = (v: string) => setPlanFilters({ ...planFilters, ownerId: v });
   const setPeriodId = (v: string) => setPlanFilters({ ...planFilters, periodId: v });
   const setLevel = (v: ObjectiveLevel | '') => setPlanFilters({ ...planFilters, level: v });
   const setStatuses = (v: WorkflowStatus[]) => setPlanFilters({ ...planFilters, statuses: v });
+  const setTypes = (v: ObjectiveType[]) => setPlanFilters({ ...planFilters, types: v });
 
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const statusMenuRef = useRef<HTMLDivElement>(null);
+  const [showTypeMenu, setShowTypeMenu] = useState(false);
+  const typeMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showTypeMenu) return;
+    const onClick = (e: MouseEvent) => {
+      if (typeMenuRef.current && !typeMenuRef.current.contains(e.target as Node)) {
+        setShowTypeMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [showTypeMenu]);
   const [showSavePlan, setShowSavePlan] = useState(false);
   const [newPlanName, setNewPlanName] = useState('');
 
@@ -127,6 +142,7 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
       if (periodId && o.periodId !== periodId) return false;
       if (level && o.level !== level) return false;
       if (statuses.length > 0 && !statuses.includes(o.workflowStatus)) return false;
+      if (types.length > 0 && (!o.type || !types.includes(o.type))) return false;
       return true;
     });
     const replacements = new Set(activePlan?.replacements || []);
@@ -153,7 +169,7 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
       if (ra !== rb) return ra - rb;
       return a.objective.title.localeCompare(b.objective.title);
     });
-  }, [orgObjectives, ownerId, periodId, level, statuses, activePlan]);
+  }, [orgObjectives, ownerId, periodId, level, statuses, types, activePlan]);
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 h-full flex flex-col min-w-0 relative">
@@ -226,6 +242,41 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
               {statuses.length > 0 && (
                 <button
                   onClick={() => setStatuses([])}
+                  className="w-full text-left px-3 py-1.5 text-xs text-blue-600 hover:bg-gray-50 border-t border-gray-100 mt-1"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+        <div ref={typeMenuRef} className="relative">
+          <button
+            onClick={() => setShowTypeMenu(!showTypeMenu)}
+            className="px-2 py-1 text-xs border border-gray-200 rounded bg-white hover:bg-gray-50"
+          >
+            {types.length === 0 ? 'Any type' : `Type (${types.length})`}
+          </button>
+          {showTypeMenu && (
+            <div className="absolute left-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-md shadow-lg py-1 min-w-[180px]">
+              {TYPE_OPTIONS.map((opt) => (
+                <label key={opt.value} className="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={types.includes(opt.value)}
+                    onChange={() => setTypes(
+                      types.includes(opt.value)
+                        ? types.filter(t => t !== opt.value)
+                        : [...types, opt.value]
+                    )}
+                    className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  {opt.label}
+                </label>
+              ))}
+              {types.length > 0 && (
+                <button
+                  onClick={() => setTypes([])}
                   className="w-full text-left px-3 py-1.5 text-xs text-blue-600 hover:bg-gray-50 border-t border-gray-100 mt-1"
                 >
                   Clear
@@ -455,7 +506,7 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
                         </svg>
                       </button>
                       {menuObjectiveId === o.id && (
-                        <div ref={menuRef} className="absolute left-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-md shadow-lg py-1 min-w-[200px]">
+                        <div ref={menuRef} className="absolute left-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-md shadow-lg py-1 min-w-[220px]">
                           <button
                             onClick={() => {
                               if (activePlan) togglePlanReplacement(activePlan.id, o.id);
@@ -465,6 +516,18 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
                           >
                             {isReplaced ? 'Stop replacing with children' : 'Replace with children'}
                           </button>
+                          {replacedBy && (
+                            <button
+                              onClick={() => {
+                                if (activePlan) togglePlanReplacement(activePlan.id, replacedBy.id);
+                                setMenuObjectiveId(null);
+                              }}
+                              className="w-full text-left text-xs px-3 py-1.5 hover:bg-gray-50 text-gray-700"
+                              title={`Restore "${replacedBy.title}" as a single row`}
+                            >
+                              Replace with parent ({replacedBy.title})
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
@@ -504,6 +567,9 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
         const statusLabels = statuses.length === 0
           ? 'Any status'
           : statuses.map(s => WORKFLOW_STATUS_OPTIONS.find(o => o.value === s)?.label || s).join(', ');
+        const typeLabels = types.length === 0
+          ? 'Any type'
+          : types.map(t => TYPE_OPTIONS.find(o => o.value === t)?.label || t).join(', ');
         return (
           <div
             className="absolute right-2 top-12 z-40 bg-white border border-gray-200 rounded-lg shadow-xl w-80 p-4"
@@ -515,6 +581,7 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
               <div><span className="text-gray-400">Period:</span> <span className="text-gray-700">{periodName}</span></div>
               <div><span className="text-gray-400">Level:</span> <span className="text-gray-700">{levelLabel}</span></div>
               <div><span className="text-gray-400">Status:</span> <span className="text-gray-700">{statusLabels}</span></div>
+              <div><span className="text-gray-400">Type:</span> <span className="text-gray-700">{typeLabels}</span></div>
             </div>
             <input
               type="text"

@@ -177,6 +177,9 @@ interface OKRActions {
   planViewColumns: ColumnKey[];
   setPlanViewColumns: (columns: ColumnKey[]) => Promise<void>;
   togglePlanViewColumn: (column: ColumnKey) => Promise<void>;
+  planTreeColumns: ColumnKey[];
+  setPlanTreeColumns: (columns: ColumnKey[]) => Promise<void>;
+  togglePlanTreeColumn: (column: ColumnKey) => Promise<void>;
   planFilters: import('../types').PlanFilters;
   setPlanFilters: (filters: import('../types').PlanFilters) => void;
   plans: import('../types').PlanDef[];
@@ -389,8 +392,9 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
   evergreenOverduePeriodIds: [] as string[],
   evergreenOverdueViewMode: 'tree' as 'tree' | 'table',
   objectiveViewMode: 'explore' as 'explore' | 'plan',
-  planViewColumns: ['workflowStatus', 'owner', 'period', 'nextStepDate'] as ColumnKey[],
-  planFilters: { ownerId: '', periodId: '', level: '', statuses: [] as WorkflowStatus[] } as import('../types').PlanFilters,
+  planViewColumns: ['level', 'period', 'workflowStatus', 'type', 'team', 'owner'] as ColumnKey[],
+  planTreeColumns: ['level', 'period', 'workflowStatus', 'type', 'team', 'owner'] as ColumnKey[],
+  planFilters: { ownerId: '', periodId: '', level: '', statuses: [] as WorkflowStatus[], types: [] as ObjectiveType[] } as import('../types').PlanFilters,
   plans: [] as import('../types').PlanDef[],
   activePlanId: null as string | null,
   lastSelectedPlanId: null as string | null,
@@ -1163,6 +1167,9 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
         if (data.preferences?.planViewColumns && Array.isArray(data.preferences.planViewColumns)) {
           updates.planViewColumns = data.preferences.planViewColumns;
         }
+        if (data.preferences?.planTreeColumns && Array.isArray(data.preferences.planTreeColumns)) {
+          updates.planTreeColumns = data.preferences.planTreeColumns;
+        }
         if (data.preferences?.plans && Array.isArray(data.preferences.plans)) {
           updates.plans = data.preferences.plans;
         }
@@ -1387,6 +1394,39 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       });
     } catch (err) {
       console.error('Failed to save plan view columns preference:', err);
+    }
+  },
+
+  setPlanTreeColumns: async (columns) => {
+    set({ planTreeColumns: columns });
+    try {
+      await fetch(`${API_URL}/api/users/me/preferences`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferences: { planTreeColumns: columns } }),
+      });
+    } catch (err) {
+      console.error('Failed to save plan tree columns preference:', err);
+    }
+  },
+
+  togglePlanTreeColumn: async (column) => {
+    const state = get();
+    if (column === 'title') return;
+    const next = state.planTreeColumns.includes(column)
+      ? state.planTreeColumns.filter(c => c !== column)
+      : [...state.planTreeColumns, column];
+    set({ planTreeColumns: next });
+    try {
+      await fetch(`${API_URL}/api/users/me/preferences`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferences: { planTreeColumns: next } }),
+      });
+    } catch (err) {
+      console.error('Failed to save plan tree columns preference:', err);
     }
   },
 

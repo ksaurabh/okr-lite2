@@ -131,9 +131,13 @@ export function ObjectiveTree({ highlightObjectiveId, onHighlightClear, onViewCh
   const filterListIds = useOKRStore((state: OKRStore) => state.filterListIds);
   const columnWidths = useOKRStore((state: OKRStore) => state.columnWidths);
   const setColumnWidths = useOKRStore((state: OKRStore) => state.setColumnWidths);
-  const visibleColumns = useOKRStore((state: OKRStore) => state.visibleColumns);
+  const visibleColumnsExplore = useOKRStore((state: OKRStore) => state.visibleColumns);
   const toggleColumnVisibility = useOKRStore((state: OKRStore) => state.toggleColumnVisibility);
+  const planTreeColumns = useOKRStore((state: OKRStore) => state.planTreeColumns);
+  const togglePlanTreeColumn = useOKRStore((state: OKRStore) => state.togglePlanTreeColumn);
   const objectiveViewMode = useOKRStore((state: OKRStore) => state.objectiveViewMode);
+  const visibleColumns = objectiveViewMode === 'plan' ? planTreeColumns : visibleColumnsExplore;
+  const toggleColumn = objectiveViewMode === 'plan' ? togglePlanTreeColumn : toggleColumnVisibility;
   const setObjectiveViewMode = useOKRStore((state: OKRStore) => state.setObjectiveViewMode);
 
   // Plan-mode splitter
@@ -615,7 +619,7 @@ export function ObjectiveTree({ highlightObjectiveId, onHighlightClear, onViewCh
                   <input
                     type="checkbox"
                     checked={visibleColumns.includes(col)}
-                    onChange={() => toggleColumnVisibility(col)}
+                    onChange={() => toggleColumn(col)}
                     className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                   />
                   {COLUMN_LABELS[col]}
@@ -848,6 +852,7 @@ export function ObjectiveTree({ highlightObjectiveId, onHighlightClear, onViewCh
                 resizingColumn={resizingColumn}
                 columnWidths={columnWidths}
                 visibleColumns={visibleColumns}
+                visibleColumnsOverride={planTreeColumns}
                 handleResizeStart={handleResizeStart}
                 filteredObjectives={filteredObjectives}
                 filteredObjectiveIds={filteredObjectiveIds}
@@ -1052,6 +1057,7 @@ interface TreeTableSectionProps {
   resizingColumn: keyof ColumnWidths | null;
   columnWidths: ColumnWidths;
   visibleColumns: ColumnKey[];
+  visibleColumnsOverride?: ColumnKey[];
   handleResizeStart: (column: keyof ColumnWidths, e: React.MouseEvent) => void;
   filteredObjectives: Objective[];
   filteredObjectiveIds: Set<string>;
@@ -1061,7 +1067,7 @@ interface TreeTableSectionProps {
   individualObjectives: Objective[];
 }
 
-function TreeTableSection({ resizingColumn, columnWidths, visibleColumns, handleResizeStart, filteredObjectives, filteredObjectiveIds, directlyMatchingIds, companyObjectives, teamObjectives, individualObjectives }: TreeTableSectionProps) {
+function TreeTableSection({ resizingColumn, columnWidths, visibleColumns, visibleColumnsOverride, handleResizeStart, filteredObjectives, filteredObjectiveIds, directlyMatchingIds, companyObjectives, teamObjectives, individualObjectives }: TreeTableSectionProps) {
   return (
     <section className={`bg-white rounded-lg shadow-sm border border-gray-200 overflow-x-auto ${resizingColumn ? 'select-none' : ''}`}>
       <div className="min-w-max">
@@ -1169,13 +1175,13 @@ function TreeTableSection({ resizingColumn, columnWidths, visibleColumns, handle
         </div>
         <div>
           {companyObjectives.map((obj: Objective) => (
-            <CompactObjectiveCard key={obj.id} objective={obj} filteredObjectiveIds={filteredObjectiveIds} directlyMatchingIds={directlyMatchingIds} />
+            <CompactObjectiveCard key={obj.id} objective={obj} filteredObjectiveIds={filteredObjectiveIds} directlyMatchingIds={directlyMatchingIds} visibleColumnsOverride={visibleColumnsOverride} />
           ))}
           {teamObjectives.map((obj: Objective) => (
-            <CompactObjectiveCard key={obj.id} objective={obj} filteredObjectiveIds={filteredObjectiveIds} directlyMatchingIds={directlyMatchingIds} />
+            <CompactObjectiveCard key={obj.id} objective={obj} filteredObjectiveIds={filteredObjectiveIds} directlyMatchingIds={directlyMatchingIds} visibleColumnsOverride={visibleColumnsOverride} />
           ))}
           {individualObjectives.map((obj: Objective) => (
-            <CompactObjectiveCard key={obj.id} objective={obj} filteredObjectiveIds={filteredObjectiveIds} directlyMatchingIds={directlyMatchingIds} />
+            <CompactObjectiveCard key={obj.id} objective={obj} filteredObjectiveIds={filteredObjectiveIds} directlyMatchingIds={directlyMatchingIds} visibleColumnsOverride={visibleColumnsOverride} />
           ))}
         </div>
       </div>
