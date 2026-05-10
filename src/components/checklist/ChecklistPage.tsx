@@ -313,7 +313,8 @@ export function ChecklistPage() {
   const toggleEvergreenOverdueColumn = useOKRStore((state: OKRStore) => state.toggleEvergreenOverdueColumn);
   const [showEvergreenColumnMenu, setShowEvergreenColumnMenu] = useState(false);
   const evergreenColumnMenuRef = useRef<HTMLDivElement>(null);
-  const [evergreenRightStatuses, setEvergreenRightStatuses] = useState<WorkflowStatus[]>([]);
+  const evergreenRightStatuses = useOKRStore((state: OKRStore) => state.evergreenOverdueStatuses);
+  const setEvergreenRightStatuses = useOKRStore((state: OKRStore) => state.setEvergreenOverdueStatuses);
   const [showEvergreenStatusMenu, setShowEvergreenStatusMenu] = useState(false);
   const evergreenStatusMenuRef = useRef<HTMLDivElement>(null);
 
@@ -1584,8 +1585,10 @@ export function ChecklistPage() {
                               <input
                                 type="checkbox"
                                 checked={evergreenRightStatuses.includes(opt.value)}
-                                onChange={() => setEvergreenRightStatuses(prev =>
-                                  prev.includes(opt.value) ? prev.filter(s => s !== opt.value) : [...prev, opt.value]
+                                onChange={() => setEvergreenRightStatuses(
+                                  evergreenRightStatuses.includes(opt.value)
+                                    ? evergreenRightStatuses.filter(s => s !== opt.value)
+                                    : [...evergreenRightStatuses, opt.value]
                                 )}
                                 className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                               />

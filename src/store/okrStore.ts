@@ -166,6 +166,8 @@ interface OKRActions {
   evergreenOverdueColumns: ColumnKey[];
   setEvergreenOverdueColumns: (columns: ColumnKey[]) => Promise<void>;
   toggleEvergreenOverdueColumn: (column: ColumnKey) => Promise<void>;
+  evergreenOverdueStatuses: WorkflowStatus[];
+  setEvergreenOverdueStatuses: (statuses: WorkflowStatus[]) => Promise<void>;
   fetchUserPreferences: () => Promise<void>;
 
   // Saved Views
@@ -360,6 +362,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
   columnWidths: DEFAULT_COLUMN_WIDTHS,
   visibleColumns: DEFAULT_VISIBLE_COLUMNS,
   evergreenOverdueColumns: ['workflowStatus', 'owner', 'nextStepDate'] as ColumnKey[],
+  evergreenOverdueStatuses: [] as WorkflowStatus[],
   savedViews: [],
   activeViewId: null,
   lists: [],
@@ -1112,6 +1115,9 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
         if (data.preferences?.evergreenOverdueColumns && Array.isArray(data.preferences.evergreenOverdueColumns)) {
           updates.evergreenOverdueColumns = data.preferences.evergreenOverdueColumns;
         }
+        if (data.preferences?.evergreenOverdueStatuses && Array.isArray(data.preferences.evergreenOverdueStatuses)) {
+          updates.evergreenOverdueStatuses = data.preferences.evergreenOverdueStatuses;
+        }
         if (Object.keys(updates).length > 0) {
           set(updates);
         }
@@ -1214,6 +1220,20 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       });
     } catch (err) {
       console.error('Failed to save evergreen overdue columns preference:', err);
+    }
+  },
+
+  setEvergreenOverdueStatuses: async (statuses: WorkflowStatus[]) => {
+    set({ evergreenOverdueStatuses: statuses });
+    try {
+      await fetch(`${API_URL}/api/users/me/preferences`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferences: { evergreenOverdueStatuses: statuses } }),
+      });
+    } catch (err) {
+      console.error('Failed to save evergreen overdue statuses preference:', err);
     }
   },
 
