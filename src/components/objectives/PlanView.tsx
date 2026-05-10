@@ -346,6 +346,13 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
       <div className={`overflow-x-auto flex-1 ${resizingColumn ? 'select-none' : ''}`}>
         <div className="min-w-max">
           <div className="flex items-center bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500 uppercase tracking-wider">
+            {activePlan && (
+              <>
+                <div className="flex-shrink-0 w-4 border-r border-gray-100" />
+                <div className="flex-shrink-0 w-4" />
+                <div className="flex-shrink-0 w-8" />
+              </>
+            )}
             <div className="relative flex items-center px-2 py-2 flex-shrink-0" style={{ width: columnWidths.title, minWidth: 150 }}>
               <div className="flex-1">Objective ({filtered.length})</div>
               <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('title', e)} />
@@ -486,13 +493,17 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
                       </svg>
                     </div>
                   )}
-                  {replacedBy && (
-                    <span
-                      className="flex-shrink-0 flex items-center justify-center w-4 text-blue-500 text-sm font-bold"
-                      title={`Shown because "${replacedBy.title}" was replaced with its children`}
-                    >
-                      *
-                    </span>
+                  {activePlan && (
+                    replacedBy ? (
+                      <span
+                        className="flex-shrink-0 flex items-center justify-center w-4 text-blue-500 text-sm font-bold"
+                        title={`Shown because "${replacedBy.title}" was replaced with its children`}
+                      >
+                        *
+                      </span>
+                    ) : (
+                      <span className="flex-shrink-0 w-4" />
+                    )
                   )}
                   {activePlan && (
                     <div className="flex-shrink-0 flex items-center pl-1 pr-1 relative">
