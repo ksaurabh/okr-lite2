@@ -20,6 +20,7 @@ const LEVEL_OPTIONS: { value: ObjectiveLevel; label: string }[] = [
 
 const WORKFLOW_STATUS_OPTIONS: { value: WorkflowStatus; label: string }[] = [
   { value: 'todo', label: 'Todo' },
+  { value: 'backlog', label: 'Backlog' },
   { value: 'planning', label: 'Planning' },
   { value: 'in_progress', label: 'In Progress' },
   { value: 'acceptance', label: 'Acceptance' },
@@ -402,9 +403,12 @@ export function ChecklistPage() {
       );
     }
 
-    // Finally, filter for items without next step date (excluding done/archived)
+    // Finally, filter for items without next step date (excluding done/archived/backlog)
     result = result.filter((obj: Objective) =>
-      !obj.nextStepDate && obj.workflowStatus !== 'done' && obj.workflowStatus !== 'archived'
+      !obj.nextStepDate &&
+      obj.workflowStatus !== 'done' &&
+      obj.workflowStatus !== 'archived' &&
+      obj.workflowStatus !== 'backlog'
     );
 
     return result;
@@ -1063,6 +1067,13 @@ export function ChecklistPage() {
 
         {isNoNextStepExpanded && (
           <div className="border-t border-gray-200">
+            <div className="px-4 py-3 bg-amber-50 border-b border-amber-100 text-xs text-amber-800">
+              To remove an item from this list, do one of the following:
+              <ul className="list-disc list-inside mt-1 space-y-0.5">
+                <li>Set a <span className="font-medium">Next Date</span> on it</li>
+                <li>Mark its status as <span className="font-medium">Done</span>, <span className="font-medium">Archived</span>, or <span className="font-medium">In Backlog</span></li>
+              </ul>
+            </div>
             {filteredObjectivesWithoutNextStep.length === 0 ? (
               <div className="p-6 text-center text-gray-500">
                 <svg className="mx-auto h-10 w-10 text-green-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">

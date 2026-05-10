@@ -21,6 +21,7 @@ interface ListsPageProps {
 
 const WORKFLOW_STATUS_LABELS: Record<WorkflowStatus, string> = {
   todo: 'To Do',
+  backlog: 'In Backlog',
   planning: 'In Planning',
   in_progress: 'In Progress',
   acceptance: 'In Acceptance',
@@ -30,6 +31,7 @@ const WORKFLOW_STATUS_LABELS: Record<WorkflowStatus, string> = {
 
 const WORKFLOW_STATUS_OPTIONS: { value: WorkflowStatus; label: string }[] = [
   { value: 'todo', label: 'To Do' },
+  { value: 'backlog', label: 'In Backlog' },
   { value: 'planning', label: 'In Planning' },
   { value: 'in_progress', label: 'In Progress' },
   { value: 'acceptance', label: 'In Acceptance' },

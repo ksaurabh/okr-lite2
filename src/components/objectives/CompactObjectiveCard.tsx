@@ -31,6 +31,7 @@ const levelBadges: Record<ObjectiveLevel, { label: string; bgColor: string; text
 
 const WORKFLOW_STATUS_OPTIONS: { value: WorkflowStatus; label: string }[] = [
   { value: 'todo', label: 'To Do' },
+  { value: 'backlog', label: 'In Backlog' },
   { value: 'planning', label: 'In Planning' },
   { value: 'in_progress', label: 'In Progress' },
   { value: 'acceptance', label: 'In Acceptance' },
