@@ -170,6 +170,8 @@ interface OKRActions {
   setEvergreenOverdueStatuses: (statuses: WorkflowStatus[]) => Promise<void>;
   evergreenOverduePeriodIds: string[];
   setEvergreenOverduePeriodIds: (ids: string[]) => Promise<void>;
+  evergreenOverdueViewMode: 'tree' | 'table';
+  setEvergreenOverdueViewMode: (mode: 'tree' | 'table') => Promise<void>;
   fetchUserPreferences: () => Promise<void>;
 
   // Saved Views
@@ -366,6 +368,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
   evergreenOverdueColumns: ['workflowStatus', 'owner', 'nextStepDate'] as ColumnKey[],
   evergreenOverdueStatuses: [] as WorkflowStatus[],
   evergreenOverduePeriodIds: [] as string[],
+  evergreenOverdueViewMode: 'tree' as 'tree' | 'table',
   savedViews: [],
   activeViewId: null,
   lists: [],
@@ -1124,6 +1127,9 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
         if (data.preferences?.evergreenOverduePeriodIds && Array.isArray(data.preferences.evergreenOverduePeriodIds)) {
           updates.evergreenOverduePeriodIds = data.preferences.evergreenOverduePeriodIds;
         }
+        if (data.preferences?.evergreenOverdueViewMode === 'tree' || data.preferences?.evergreenOverdueViewMode === 'table') {
+          updates.evergreenOverdueViewMode = data.preferences.evergreenOverdueViewMode;
+        }
         if (Object.keys(updates).length > 0) {
           set(updates);
         }
@@ -1240,6 +1246,20 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       });
     } catch (err) {
       console.error('Failed to save evergreen overdue statuses preference:', err);
+    }
+  },
+
+  setEvergreenOverdueViewMode: async (mode) => {
+    set({ evergreenOverdueViewMode: mode });
+    try {
+      await fetch(`${API_URL}/api/users/me/preferences`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferences: { evergreenOverdueViewMode: mode } }),
+      });
+    } catch (err) {
+      console.error('Failed to save evergreen overdue view mode preference:', err);
     }
   },
 

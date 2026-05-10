@@ -317,6 +317,8 @@ export function ChecklistPage() {
   const setEvergreenRightStatuses = useOKRStore((state: OKRStore) => state.setEvergreenOverdueStatuses);
   const evergreenRightPeriodIds = useOKRStore((state: OKRStore) => state.evergreenOverduePeriodIds);
   const setEvergreenRightPeriodIds = useOKRStore((state: OKRStore) => state.setEvergreenOverduePeriodIds);
+  const evergreenRightViewMode = useOKRStore((state: OKRStore) => state.evergreenOverdueViewMode);
+  const setEvergreenRightViewMode = useOKRStore((state: OKRStore) => state.setEvergreenOverdueViewMode);
   const [showEvergreenPeriodMenu, setShowEvergreenPeriodMenu] = useState(false);
   const evergreenPeriodMenuRef = useRef<HTMLDivElement>(null);
 
@@ -1582,6 +1584,22 @@ export function ChecklistPage() {
                 />
                 <div className="min-w-0" style={{ width: `${100 - evergreenLeftWidth}%` }}>
                   <div className="flex items-center justify-end gap-2 px-2 py-1 border-b border-gray-200 bg-gray-50 relative">
+                    <div className="inline-flex border border-gray-300 rounded overflow-hidden mr-auto">
+                      <button
+                        onClick={() => setEvergreenRightViewMode('tree')}
+                        className={`px-2 py-1 text-xs ${evergreenRightViewMode === 'tree' ? 'bg-blue-50 text-blue-700' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                        title="Tree view"
+                      >
+                        Tree
+                      </button>
+                      <button
+                        onClick={() => setEvergreenRightViewMode('table')}
+                        className={`px-2 py-1 text-xs border-l border-gray-300 ${evergreenRightViewMode === 'table' ? 'bg-blue-50 text-blue-700' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                        title="Flat table view"
+                      >
+                        Table
+                      </button>
+                    </div>
                     <div ref={evergreenPeriodMenuRef} className="relative">
                       <button
                         onClick={() => setShowEvergreenPeriodMenu(!showEvergreenPeriodMenu)}
@@ -1817,33 +1835,72 @@ export function ChecklistPage() {
                         )}
                         <div className="w-16 px-2 py-2"></div>
                       </div>
-                      <CompactObjectiveCard
-                        key={evergreenSelectedObjective.id}
-                        objective={evergreenSelectedObjective}
-                        depth={0}
-                        visibleColumnsOverride={evergreenOverdueColumns}
-                        groupPeriodsByDate
-                        filteredObjectiveIds={(evergreenRightStatuses.length > 0 || evergreenRightPeriodIds.length > 0)
-                          ? (() => {
-                              const matched = orgObjectives.filter((o: Objective) => {
-                                if (evergreenRightStatuses.length > 0 && !evergreenRightStatuses.includes(o.workflowStatus)) return false;
-                                if (evergreenRightPeriodIds.length > 0 && !evergreenRightPeriodIds.includes(o.periodId)) return false;
-                                return true;
-                              });
-                              const byId = new Map(orgObjectives.map((o: Objective) => [o.id, o]));
-                              const ids = new Set<string>();
-                              matched.forEach((o: Objective) => {
-                                let cur: Objective | undefined = o;
-                                while (cur && !ids.has(cur.id)) {
-                                  ids.add(cur.id);
-                                  if (!cur.parentId) break;
-                                  cur = byId.get(cur.parentId);
-                                }
-                              });
-                              return ids;
-                            })()
-                          : undefined}
-                      />
+                      {evergreenRightViewMode === 'tree' ? (
+                        <CompactObjectiveCard
+                          key={evergreenSelectedObjective.id}
+                          objective={evergreenSelectedObjective}
+                          depth={0}
+                          visibleColumnsOverride={evergreenOverdueColumns}
+                          groupPeriodsByDate
+                          filteredObjectiveIds={(evergreenRightStatuses.length > 0 || evergreenRightPeriodIds.length > 0)
+                            ? (() => {
+                                const matched = orgObjectives.filter((o: Objective) => {
+                                  if (evergreenRightStatuses.length > 0 && !evergreenRightStatuses.includes(o.workflowStatus)) return false;
+                                  if (evergreenRightPeriodIds.length > 0 && !evergreenRightPeriodIds.includes(o.periodId)) return false;
+                                  return true;
+                                });
+                                const byId = new Map(orgObjectives.map((o: Objective) => [o.id, o]));
+                                const ids = new Set<string>();
+                                matched.forEach((o: Objective) => {
+                                  let cur: Objective | undefined = o;
+                                  while (cur && !ids.has(cur.id)) {
+                                    ids.add(cur.id);
+                                    if (!cur.parentId) break;
+                                    cur = byId.get(cur.parentId);
+                                  }
+                                });
+                                return ids;
+                              })()
+                            : undefined}
+                        />
+                      ) : (() => {
+                        // Table mode: flat list of descendants of the selected objective
+                        // matching the filter (or all descendants if no filter), no ancestors.
+                        const descendantIds = new Set<string>();
+                        const collectDescendants = (parentId: string) => {
+                          orgObjectives.forEach((o: Objective) => {
+                            if (o.parentId === parentId && !descendantIds.has(o.id)) {
+                              descendantIds.add(o.id);
+                              collectDescendants(o.id);
+                            }
+                          });
+                        };
+                        collectDescendants(evergreenSelectedObjective.id);
+                        const flat = [evergreenSelectedObjective, ...orgObjectives.filter((o: Objective) => descendantIds.has(o.id))]
+                          .filter((o: Objective) => {
+                            if (evergreenRightStatuses.length > 0 && !evergreenRightStatuses.includes(o.workflowStatus)) return false;
+                            if (evergreenRightPeriodIds.length > 0 && !evergreenRightPeriodIds.includes(o.periodId)) return false;
+                            return true;
+                          });
+                        if (flat.length === 0) {
+                          return <div className="p-6 text-center text-sm text-gray-400">No matching items.</div>;
+                        }
+                        const noChildren = new Set<string>();
+                        return (
+                          <div>
+                            {flat.map((o: Objective) => (
+                              <CompactObjectiveCard
+                                key={o.id}
+                                objective={o}
+                                depth={0}
+                                visibleColumnsOverride={evergreenOverdueColumns}
+                                groupPeriodsByDate
+                                filteredObjectiveIds={noChildren}
+                              />
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </div>
                   ) : (
                     <div className="p-6 text-center text-sm text-gray-400">
