@@ -20,6 +20,7 @@ export function AdminPage() {
   const [importError, setImportError] = useState<string | null>(null);
   const [usersCount, setUsersCount] = useState<number>(0);
   const [orgsCount, setOrgsCount] = useState<number>(0);
+  const [lastBackupRestoredAt, setLastBackupRestoredAt] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const exportData = useOKRStore((state: OKRStore) => state.exportData);
@@ -72,6 +73,21 @@ export function AdminPage() {
       }
     };
     fetchCounts();
+  }, []);
+
+  useEffect(() => {
+    const fetchLastBackup = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/admin/last-backup-restore`, { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          setLastBackupRestoredAt(data.lastBackupRestoredAt || null);
+        }
+      } catch (err) {
+        console.error('Failed to fetch last backup time:', err);
+      }
+    };
+    fetchLastBackup();
   }, []);
 
   const handleAddDomain = async (e: React.FormEvent) => {
@@ -248,6 +264,18 @@ export function AdminPage() {
 
         // Update local store after server sync
         importData(pendingImportData);
+        try {
+          const res = await fetch(`${API_URL}/api/admin/last-backup-restore`, {
+            method: 'POST',
+            credentials: 'include',
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setLastBackupRestoredAt(data.lastBackupRestoredAt || null);
+          }
+        } catch (err) {
+          console.error('Failed to record backup timestamp:', err);
+        }
         setShowImportConfirm(false);
         setPendingImportData(null);
       } catch (err) {
@@ -406,8 +434,13 @@ export function AdminPage() {
                 <p className="text-xs text-gray-500">Upload a backup JSON file</p>
               </div>
             </div>
-            <p className="text-xs text-gray-600 mb-3">
+            <p className="text-xs text-gray-600 mb-2">
               Select a previously exported backup file to restore your data.
+            </p>
+            <p className="text-xs text-gray-500 mb-3">
+              {lastBackupRestoredAt
+                ? <>Last upload: <span className="font-medium text-gray-700" title={new Date(lastBackupRestoredAt).toString()}>{new Date(lastBackupRestoredAt).toLocaleString()}</span></>
+                : 'No backup has been uploaded yet.'}
             </p>
             <input
               ref={fileInputRef}

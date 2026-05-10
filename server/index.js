@@ -767,6 +767,18 @@ app.put('/api/users/:email/role', requireOrgAdminOrSuperAdmin, (req, res) => {
   res.json({ user: updatedUser });
 });
 
+app.get('/api/admin/last-backup-restore', requireOrgAdminOrSuperAdmin, (_req, res) => {
+  const data = getOKRData();
+  res.json({ lastBackupRestoredAt: data.lastBackupRestoredAt || null });
+});
+
+app.post('/api/admin/last-backup-restore', requireOrgAdminOrSuperAdmin, (_req, res) => {
+  const data = getOKRData();
+  data.lastBackupRestoredAt = new Date().toISOString();
+  saveOKRData(data);
+  res.json({ lastBackupRestoredAt: data.lastBackupRestoredAt });
+});
+
 app.delete('/api/users/:email', requireOrgAdminOrSuperAdmin, (req, res) => {
   const decodedEmail = decodeURIComponent(req.params.email).toLowerCase();
 
