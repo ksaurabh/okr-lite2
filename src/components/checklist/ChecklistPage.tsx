@@ -319,6 +319,20 @@ export function ChecklistPage() {
   const setEvergreenRightPeriodIds = useOKRStore((state: OKRStore) => state.setEvergreenOverduePeriodIds);
   const evergreenRightViewMode = useOKRStore((state: OKRStore) => state.evergreenOverdueViewMode);
   const setEvergreenRightViewMode = useOKRStore((state: OKRStore) => state.setEvergreenOverdueViewMode);
+  const [tableSortKey, setTableSortKey] = useState<string | null>(null);
+  const [tableSortDir, setTableSortDir] = useState<'asc' | 'desc'>('asc');
+  const handleTableSort = (key: string) => {
+    if (tableSortKey === key) {
+      setTableSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setTableSortKey(key);
+      setTableSortDir('asc');
+    }
+  };
+  const sortIndicator = (key: string) => {
+    if (tableSortKey !== key) return null;
+    return <span className="ml-1 text-[10px]">{tableSortDir === 'asc' ? '▲' : '▼'}</span>;
+  };
   const [showEvergreenPeriodMenu, setShowEvergreenPeriodMenu] = useState(false);
   const evergreenPeriodMenuRef = useRef<HTMLDivElement>(null);
 
@@ -1743,7 +1757,11 @@ export function ChecklistPage() {
                     <div className={`overflow-x-auto ${resizingColumn ? 'select-none' : ''}`}>
                       <div className="flex items-center bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500 uppercase tracking-wider">
                         <div className="relative flex items-center px-2 py-2 flex-shrink-0" style={{ width: columnWidths.title, minWidth: 150 }}>
-                          <div className="flex-1">Objective</div>
+                          {evergreenRightViewMode === 'table' ? (
+                            <button onClick={() => handleTableSort('title')} className="flex-1 text-left hover:text-gray-700 inline-flex items-center">Objective{sortIndicator('title')}</button>
+                          ) : (
+                            <div className="flex-1">Objective</div>
+                          )}
                           <div
                             className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
                             onMouseDown={(e) => handleResizeStart('title', e)}
@@ -1751,85 +1769,113 @@ export function ChecklistPage() {
                         </div>
                         {evergreenOverdueColumns.includes('level') && (
                           <div className="relative flex items-center" style={{ width: columnWidths.level }}>
-                            <div className="px-1 py-2 flex-1">Level</div>
+                            {evergreenRightViewMode === 'table' ? (
+                              <button onClick={() => handleTableSort('level')} className="px-1 py-2 flex-1 text-left hover:text-gray-700 inline-flex items-center">Level{sortIndicator('level')}</button>
+                            ) : <div className="px-1 py-2 flex-1">Level</div>}
                             <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('level', e)} />
                           </div>
                         )}
                         {evergreenOverdueColumns.includes('type') && (
                           <div className="relative flex items-center" style={{ width: columnWidths.type }}>
-                            <div className="px-1 py-2 flex-1">Type</div>
+                            {evergreenRightViewMode === 'table' ? (
+                              <button onClick={() => handleTableSort('type')} className="px-1 py-2 flex-1 text-left hover:text-gray-700 inline-flex items-center">Type{sortIndicator('type')}</button>
+                            ) : <div className="px-1 py-2 flex-1">Type</div>}
                             <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('type', e)} />
                           </div>
                         )}
                         {evergreenOverdueColumns.includes('workflowStatus') && (
                           <div className="relative flex items-center" style={{ width: columnWidths.workflowStatus }}>
-                            <div className="px-1 py-2 flex-1">Status</div>
+                            {evergreenRightViewMode === 'table' ? (
+                              <button onClick={() => handleTableSort('workflowStatus')} className="px-1 py-2 flex-1 text-left hover:text-gray-700 inline-flex items-center">Status{sortIndicator('workflowStatus')}</button>
+                            ) : <div className="px-1 py-2 flex-1">Status</div>}
                             <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('workflowStatus', e)} />
                           </div>
                         )}
                         {evergreenOverdueColumns.includes('parent') && (
                           <div className="relative flex items-center" style={{ width: columnWidths.parent }}>
-                            <div className="px-1 py-2 flex-1">Parent</div>
+                            {evergreenRightViewMode === 'table' ? (
+                              <button onClick={() => handleTableSort('parent')} className="px-1 py-2 flex-1 text-left hover:text-gray-700 inline-flex items-center">Parent{sortIndicator('parent')}</button>
+                            ) : <div className="px-1 py-2 flex-1">Parent</div>}
                             <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('parent', e)} />
                           </div>
                         )}
                         {evergreenOverdueColumns.includes('team') && (
                           <div className="relative flex items-center" style={{ width: columnWidths.team }}>
-                            <div className="px-1 py-2 flex-1">Team</div>
+                            {evergreenRightViewMode === 'table' ? (
+                              <button onClick={() => handleTableSort('team')} className="px-1 py-2 flex-1 text-left hover:text-gray-700 inline-flex items-center">Team{sortIndicator('team')}</button>
+                            ) : <div className="px-1 py-2 flex-1">Team</div>}
                             <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('team', e)} />
                           </div>
                         )}
                         {evergreenOverdueColumns.includes('owner') && (
                           <div className="relative flex items-center" style={{ width: columnWidths.owner }}>
-                            <div className="px-1 py-2 flex-1">Owner</div>
+                            {evergreenRightViewMode === 'table' ? (
+                              <button onClick={() => handleTableSort('owner')} className="px-1 py-2 flex-1 text-left hover:text-gray-700 inline-flex items-center">Owner{sortIndicator('owner')}</button>
+                            ) : <div className="px-1 py-2 flex-1">Owner</div>}
                             <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('owner', e)} />
                           </div>
                         )}
                         {evergreenOverdueColumns.includes('assignee') && (
                           <div className="relative flex items-center" style={{ width: columnWidths.assignee }}>
-                            <div className="px-1 py-2 flex-1">Assignee</div>
+                            {evergreenRightViewMode === 'table' ? (
+                              <button onClick={() => handleTableSort('assignee')} className="px-1 py-2 flex-1 text-left hover:text-gray-700 inline-flex items-center">Assignee{sortIndicator('assignee')}</button>
+                            ) : <div className="px-1 py-2 flex-1">Assignee</div>}
                             <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('assignee', e)} />
                           </div>
                         )}
                         {evergreenOverdueColumns.includes('period') && (
                           <div className="relative flex items-center" style={{ width: columnWidths.period }}>
-                            <div className="px-1 py-2 flex-1">Period</div>
+                            {evergreenRightViewMode === 'table' ? (
+                              <button onClick={() => handleTableSort('period')} className="px-1 py-2 flex-1 text-left hover:text-gray-700 inline-flex items-center">Period{sortIndicator('period')}</button>
+                            ) : <div className="px-1 py-2 flex-1">Period</div>}
                             <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('period', e)} />
                           </div>
                         )}
                         {evergreenOverdueColumns.includes('nextStepDate') && (
                           <div className="relative flex items-center" style={{ width: columnWidths.nextStepDate }}>
-                            <div className="px-1 py-2 flex-1">Next Date</div>
+                            {evergreenRightViewMode === 'table' ? (
+                              <button onClick={() => handleTableSort('nextStepDate')} className="px-1 py-2 flex-1 text-left hover:text-gray-700 inline-flex items-center">Next Date{sortIndicator('nextStepDate')}</button>
+                            ) : <div className="px-1 py-2 flex-1">Next Date</div>}
                             <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('nextStepDate', e)} />
                           </div>
                         )}
                         {evergreenOverdueColumns.includes('nextStep') && (
                           <div className="relative flex items-center" style={{ width: columnWidths.nextStep }}>
-                            <div className="px-1 py-2 flex-1">Next Step</div>
+                            {evergreenRightViewMode === 'table' ? (
+                              <button onClick={() => handleTableSort('nextStep')} className="px-1 py-2 flex-1 text-left hover:text-gray-700 inline-flex items-center">Next Step{sortIndicator('nextStep')}</button>
+                            ) : <div className="px-1 py-2 flex-1">Next Step</div>}
                             <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('nextStep', e)} />
                           </div>
                         )}
                         {evergreenOverdueColumns.includes('storyPoints') && (
                           <div className="relative flex items-center" style={{ width: columnWidths.storyPoints }}>
-                            <div className="px-1 py-2 flex-1 text-right">SP</div>
+                            {evergreenRightViewMode === 'table' ? (
+                              <button onClick={() => handleTableSort('storyPoints')} className="px-1 py-2 flex-1 text-right hover:text-gray-700 inline-flex items-center justify-end">SP{sortIndicator('storyPoints')}</button>
+                            ) : <div className="px-1 py-2 flex-1 text-right">SP</div>}
                             <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('storyPoints', e)} />
                           </div>
                         )}
                         {evergreenOverdueColumns.includes('valuePoints') && (
                           <div className="relative flex items-center" style={{ width: columnWidths.valuePoints }}>
-                            <div className="px-1 py-2 flex-1 text-right">VP</div>
+                            {evergreenRightViewMode === 'table' ? (
+                              <button onClick={() => handleTableSort('valuePoints')} className="px-1 py-2 flex-1 text-right hover:text-gray-700 inline-flex items-center justify-end">VP{sortIndicator('valuePoints')}</button>
+                            ) : <div className="px-1 py-2 flex-1 text-right">VP</div>}
                             <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('valuePoints', e)} />
                           </div>
                         )}
                         {evergreenOverdueColumns.includes('tags') && (
                           <div className="relative flex items-center" style={{ width: columnWidths.tags }}>
-                            <div className="px-1 py-2 flex-1">Tags</div>
+                            {evergreenRightViewMode === 'table' ? (
+                              <button onClick={() => handleTableSort('tags')} className="px-1 py-2 flex-1 text-left hover:text-gray-700 inline-flex items-center">Tags{sortIndicator('tags')}</button>
+                            ) : <div className="px-1 py-2 flex-1">Tags</div>}
                             <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('tags', e)} />
                           </div>
                         )}
                         {evergreenOverdueColumns.includes('progress') && (
                           <div className="relative flex items-center" style={{ width: columnWidths.progress }}>
-                            <div className="px-2 py-2 flex-1 text-right">Progress</div>
+                            {evergreenRightViewMode === 'table' ? (
+                              <button onClick={() => handleTableSort('progress')} className="px-2 py-2 flex-1 text-right hover:text-gray-700 inline-flex items-center justify-end">Progress{sortIndicator('progress')}</button>
+                            ) : <div className="px-2 py-2 flex-1 text-right">Progress</div>}
                             <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('progress', e)} />
                           </div>
                         )}
@@ -1876,12 +1922,46 @@ export function ChecklistPage() {
                           });
                         };
                         collectDescendants(evergreenSelectedObjective.id);
-                        const flat = [evergreenSelectedObjective, ...orgObjectives.filter((o: Objective) => descendantIds.has(o.id))]
+                        const flatRaw = [evergreenSelectedObjective, ...orgObjectives.filter((o: Objective) => descendantIds.has(o.id))]
                           .filter((o: Objective) => {
                             if (evergreenRightStatuses.length > 0 && !evergreenRightStatuses.includes(o.workflowStatus)) return false;
                             if (evergreenRightPeriodIds.length > 0 && !evergreenRightPeriodIds.includes(o.periodId)) return false;
                             return true;
                           });
+                        const objById = new Map(orgObjectives.map((o: Objective) => [o.id, o]));
+                        const periodById = new Map(orgPeriods.map((p: Period) => [p.id, p]));
+                        const teamById = new Map(orgTeams.map((t: Team) => [t.id, t]));
+                        const tagById = new Map(orgTags.map((t: Tag) => [t.id, t]));
+                        const sortValue = (o: Objective, key: string): string | number => {
+                          switch (key) {
+                            case 'title': return o.title.toLowerCase();
+                            case 'level': return o.level || '';
+                            case 'type': return o.type || '';
+                            case 'workflowStatus': return o.workflowStatus || '';
+                            case 'parent': return objById.get(o.parentId || '')?.title.toLowerCase() || '';
+                            case 'team': return teamById.get(o.teamId || '')?.name.toLowerCase() || '';
+                            case 'owner': return o.ownerId || '';
+                            case 'assignee': return o.assigneeId || '';
+                            case 'period': return periodById.get(o.periodId)?.startDate || '';
+                            case 'nextStepDate': return o.nextStepDate || '';
+                            case 'nextStep': return (o.nextStep || '').toLowerCase();
+                            case 'storyPoints': return o.storyPoints ?? -Infinity;
+                            case 'valuePoints': return o.valuePoints ?? -Infinity;
+                            case 'tags': return (o.tagIds || []).map(id => tagById.get(id)?.name || '').join(',').toLowerCase();
+                            case 'progress': return o.progress ?? -Infinity;
+                            default: return '';
+                          }
+                        };
+                        const flat = tableSortKey
+                          ? [...flatRaw].sort((a, b) => {
+                              const av = sortValue(a, tableSortKey);
+                              const bv = sortValue(b, tableSortKey);
+                              const cmp = typeof av === 'number' && typeof bv === 'number'
+                                ? av - bv
+                                : String(av).localeCompare(String(bv));
+                              return tableSortDir === 'asc' ? cmp : -cmp;
+                            })
+                          : flatRaw;
                         if (flat.length === 0) {
                           return <div className="p-6 text-center text-sm text-gray-400">No matching items.</div>;
                         }
