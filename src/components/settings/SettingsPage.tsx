@@ -29,7 +29,7 @@ export function SettingsPage() {
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editName, setEditName] = useState('');
 
-  const { isSuperAdmin, isOrgAdmin } = useAuth();
+  const { isSuperAdmin, isOrgAdmin, user: currentUser } = useAuth();
   const canManageRoles = isSuperAdmin || isOrgAdmin;
 
   useEffect(() => {
@@ -51,6 +51,31 @@ export function SettingsPage() {
       console.error('Error fetching users:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const deleteUser = async (email: string) => {
+    if (email.toLowerCase() === currentUser?.email?.toLowerCase()) {
+      setError('You cannot delete your own account.');
+      return;
+    }
+    if (!window.confirm(`Delete user "${email}"? This cannot be undone.`)) return;
+    try {
+      setUpdating(email);
+      const response = await fetch(`${API_URL}/api/users/${encodeURIComponent(email)}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to delete user');
+      }
+      setUsers(users.filter(u => u.email !== email));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete user');
+      console.error('Error deleting user:', err);
+    } finally {
+      setUpdating(null);
     }
   };
 
@@ -298,6 +323,18 @@ export function SettingsPage() {
                             <option value="user">User</option>
                             <option value="admin">Admin</option>
                           </select>
+                          {user.email.toLowerCase() !== currentUser?.email?.toLowerCase() && (
+                            <button
+                              onClick={() => deleteUser(user.email)}
+                              disabled={updating === user.email}
+                              className="p-1 text-gray-400 hover:text-red-600 rounded disabled:opacity-50"
+                              title="Delete user"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          )}
                           {updating === user.email && (
                             <span className="text-xs text-gray-500">Saving...</span>
                           )}

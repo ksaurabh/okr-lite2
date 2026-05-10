@@ -767,6 +767,31 @@ app.put('/api/users/:email/role', requireOrgAdminOrSuperAdmin, (req, res) => {
   res.json({ user: updatedUser });
 });
 
+app.delete('/api/users/:email', requireOrgAdminOrSuperAdmin, (req, res) => {
+  const decodedEmail = decodeURIComponent(req.params.email).toLowerCase();
+
+  if (decodedEmail === req.user.email.toLowerCase()) {
+    return res.status(400).json({ error: 'Cannot delete your own account' });
+  }
+
+  if (!isSuperAdmin(req.user.email)) {
+    const org = getOrganizationByDomain(req.user.domain);
+    const users = getUsersByOrganization(org?.id);
+    if (!users.some(u => u.email === decodedEmail)) {
+      return res.status(403).json({ error: 'Cannot delete users from other organizations' });
+    }
+  }
+
+  const users = getUsers();
+  const before = users.length;
+  const remaining = users.filter(u => u.email !== decodedEmail);
+  if (remaining.length === before) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+  saveUsers(remaining);
+  res.json({ ok: true });
+});
+
 app.put('/api/users/:email/name', requireOrgAdminOrSuperAdmin, (req, res) => {
   const { email } = req.params;
   const { name } = req.body;

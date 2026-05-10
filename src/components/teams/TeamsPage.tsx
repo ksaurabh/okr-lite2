@@ -1,20 +1,24 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
 import { Modal, Button } from '../common';
-import type { Team } from '../../types';
+import type { Team, User } from '../../types';
+
+const API_URL = import.meta.env.VITE_API_URL || '';
 
 interface TeamRowProps {
   team: Team;
   teams: Team[];
   depth: number;
   isAdmin: boolean;
+  leadName: string | null;
   onAddChild: (parentId: string) => void;
-  onRename: (team: Team) => void;
+  onEdit: (team: Team) => void;
   onDelete: (id: string) => void;
+  getLeadName: (email?: string) => string | null;
 }
 
-function TeamRow({ team, teams, depth, isAdmin, onAddChild, onRename, onDelete }: TeamRowProps) {
+function TeamRow({ team, teams, depth, isAdmin, leadName, onAddChild, onEdit, onDelete, getLeadName }: TeamRowProps) {
   const [isExpanded, setIsExpanded] = useState(true);
   const childTeams = teams.filter(t => t.parentId === team.id).sort((a, b) => a.name.localeCompare(b.name));
   const hasChildren = childTeams.length > 0;
@@ -39,6 +43,9 @@ function TeamRow({ team, teams, depth, isAdmin, onAddChild, onRename, onDelete }
             <span className="w-3 flex-shrink-0" />
           )}
           <span className="text-sm text-gray-900 truncate">{team.name}</span>
+          {leadName && (
+            <span className="text-xs text-gray-500 truncate">· Lead: {leadName}</span>
+          )}
           {team.shared === false && (
             <span className="text-[10px] uppercase tracking-wide text-gray-400 ml-2">private</span>
           )}
@@ -55,9 +62,9 @@ function TeamRow({ team, teams, depth, isAdmin, onAddChild, onRename, onDelete }
               </svg>
             </button>
             <button
-              onClick={() => onRename(team)}
+              onClick={() => onEdit(team)}
               className="text-gray-400 hover:text-blue-600 p-1"
-              title="Rename"
+              title="Edit team"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -84,9 +91,11 @@ function TeamRow({ team, teams, depth, isAdmin, onAddChild, onRename, onDelete }
               teams={teams}
               depth={depth + 1}
               isAdmin={isAdmin}
+              leadName={getLeadName(child.leadEmail)}
               onAddChild={onAddChild}
-              onRename={onRename}
+              onEdit={onEdit}
               onDelete={onDelete}
+              getLeadName={getLeadName}
             />
           ))}
         </div>
@@ -120,8 +129,32 @@ export function TeamsPage() {
   const [newTeamName, setNewTeamName] = useState('');
   const [isPrivate, setIsPrivate] = useState(false);
 
-  const [renameTarget, setRenameTarget] = useState<Team | null>(null);
-  const [renameValue, setRenameValue] = useState('');
+  const [editTarget, setEditTarget] = useState<Team | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editLeadEmail, setEditLeadEmail] = useState<string>('');
+  const [editParentId, setEditParentId] = useState<string>('');
+  const [orgUsers, setOrgUsers] = useState<User[]>([]);
+
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/users`, { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          setOrgUsers(data.users || []);
+        }
+      } catch (err) {
+        console.error('Failed to fetch users:', err);
+      }
+    };
+    fetchUsers();
+  }, []);
+
+  const getLeadName = (email?: string): string | null => {
+    if (!email) return null;
+    const u = orgUsers.find(u => u.email === email);
+    return u?.name || email;
+  };
 
   const openAdd = (parentId?: string) => {
     setParentTeamId(parentId);
@@ -136,18 +169,43 @@ export function TeamsPage() {
     setShowAddModal(false);
   };
 
-  const openRename = (team: Team) => {
-    setRenameTarget(team);
-    setRenameValue(team.name);
+  const openEdit = (team: Team) => {
+    setEditTarget(team);
+    setEditName(team.name);
+    setEditLeadEmail(team.leadEmail || '');
+    setEditParentId(team.parentId || '');
   };
 
-  const handleRename = async () => {
-    if (!renameTarget) return;
-    const trimmed = renameValue.trim();
-    if (trimmed && trimmed !== renameTarget.name) {
-      await updateTeam(renameTarget.id, { name: trimmed });
+  const validParentOptions = useMemo(() => {
+    if (!editTarget) return orgTeams;
+    const descendantIds = new Set<string>();
+    const collect = (id: string) => {
+      orgTeams.forEach(t => {
+        if (t.parentId === id && !descendantIds.has(t.id)) {
+          descendantIds.add(t.id);
+          collect(t.id);
+        }
+      });
+    };
+    collect(editTarget.id);
+    return orgTeams
+      .filter(t => t.id !== editTarget.id && !descendantIds.has(t.id))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [orgTeams, editTarget]);
+
+  const handleEditSave = async () => {
+    if (!editTarget) return;
+    const trimmedName = editName.trim();
+    const updates: Partial<Team> = {};
+    if (trimmedName && trimmedName !== editTarget.name) updates.name = trimmedName;
+    const newLead = editLeadEmail || undefined;
+    if (newLead !== editTarget.leadEmail) updates.leadEmail = newLead;
+    const newParent = editParentId || undefined;
+    if (newParent !== editTarget.parentId) updates.parentId = newParent;
+    if (Object.keys(updates).length > 0) {
+      await updateTeam(editTarget.id, updates);
     }
-    setRenameTarget(null);
+    setEditTarget(null);
   };
 
   const handleDelete = async (id: string) => {
@@ -186,9 +244,11 @@ export function TeamsPage() {
                 teams={orgTeams}
                 depth={0}
                 isAdmin={isAdmin}
+                leadName={getLeadName(team.leadEmail)}
                 onAddChild={(pid) => openAdd(pid)}
-                onRename={openRename}
+                onEdit={openEdit}
                 onDelete={handleDelete}
+                getLeadName={getLeadName}
               />
             ))}
           </div>
@@ -226,19 +286,47 @@ export function TeamsPage() {
         </div>
       </Modal>
 
-      <Modal isOpen={renameTarget !== null} onClose={() => setRenameTarget(null)} title="Rename Team">
+      <Modal isOpen={editTarget !== null} onClose={() => setEditTarget(null)} title="Edit Team">
         <div className="space-y-4">
-          <input
-            type="text"
-            value={renameValue}
-            onChange={(e) => setRenameValue(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleRename(); }}
-            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            autoFocus
-          />
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Name</label>
+            <input
+              type="text"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Lead / DRI</label>
+            <select
+              value={editLeadEmail}
+              onChange={(e) => setEditLeadEmail(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">— None —</option>
+              {[...orgUsers].sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email)).map(u => (
+                <option key={u.email} value={u.email}>{u.name || u.email}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Parent team</label>
+            <select
+              value={editParentId}
+              onChange={(e) => setEditParentId(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">— Top-level (no parent) —</option>
+              {validParentOptions.map(t => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+          </div>
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setRenameTarget(null)}>Cancel</Button>
-            <Button onClick={handleRename}>Save</Button>
+            <Button variant="secondary" onClick={() => setEditTarget(null)}>Cancel</Button>
+            <Button onClick={handleEditSave}>Save</Button>
           </div>
         </div>
       </Modal>
