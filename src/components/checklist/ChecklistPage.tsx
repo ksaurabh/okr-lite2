@@ -1824,11 +1824,24 @@ export function ChecklistPage() {
                         visibleColumnsOverride={evergreenOverdueColumns}
                         groupPeriodsByDate
                         filteredObjectiveIds={(evergreenRightStatuses.length > 0 || evergreenRightPeriodIds.length > 0)
-                          ? new Set(orgObjectives.filter((o: Objective) => {
-                              if (evergreenRightStatuses.length > 0 && !evergreenRightStatuses.includes(o.workflowStatus)) return false;
-                              if (evergreenRightPeriodIds.length > 0 && !evergreenRightPeriodIds.includes(o.periodId)) return false;
-                              return true;
-                            }).map((o: Objective) => o.id))
+                          ? (() => {
+                              const matched = orgObjectives.filter((o: Objective) => {
+                                if (evergreenRightStatuses.length > 0 && !evergreenRightStatuses.includes(o.workflowStatus)) return false;
+                                if (evergreenRightPeriodIds.length > 0 && !evergreenRightPeriodIds.includes(o.periodId)) return false;
+                                return true;
+                              });
+                              const byId = new Map(orgObjectives.map((o: Objective) => [o.id, o]));
+                              const ids = new Set<string>();
+                              matched.forEach((o: Objective) => {
+                                let cur: Objective | undefined = o;
+                                while (cur && !ids.has(cur.id)) {
+                                  ids.add(cur.id);
+                                  if (!cur.parentId) break;
+                                  cur = byId.get(cur.parentId);
+                                }
+                              });
+                              return ids;
+                            })()
                           : undefined}
                       />
                     </div>
