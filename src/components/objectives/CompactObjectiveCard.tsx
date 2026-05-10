@@ -672,14 +672,42 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
     }
   };
 
-  const setNextStepDatePreset = async (preset: 'week' | 'month' | 'quarter') => {
-    const d = new Date();
-    if (preset === 'week') d.setDate(d.getDate() + 7);
-    else if (preset === 'month') d.setMonth(d.getMonth() + 1);
-    else d.setMonth(d.getMonth() + 3);
-    const newDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    await handleNextStepDateChange(newDate);
+  const formatYmd = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+  const formatShortDate = (ymd: string) => {
+    const [y, m, day] = ymd.split('-').map(Number);
+    return new Date(y, m - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
+
+  const nextStepDateShortcuts = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const out: { label: string; date: string }[] = [];
+
+    const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+    const week = new Date(today); week.setDate(week.getDate() + 7);
+    const month = new Date(today); month.setMonth(month.getMonth() + 1);
+    const quarter = new Date(today); quarter.setMonth(quarter.getMonth() + 3);
+    out.push({ label: 'Today', date: formatYmd(today) });
+    out.push({ label: 'Tomorrow', date: formatYmd(tomorrow) });
+    out.push({ label: 'Next Week', date: formatYmd(week) });
+    out.push({ label: 'Next Month', date: formatYmd(month) });
+    out.push({ label: 'Next Quarter', date: formatYmd(quarter) });
+
+    const todayMs = today.getTime();
+    const futurePeriods = periods
+      .filter((p: Period) => {
+        const [y, m, d] = p.startDate.split('-').map(Number);
+        return new Date(y, m - 1, d).getTime() > todayMs && !p.archived;
+      })
+      .sort((a: Period, b: Period) => a.startDate.localeCompare(b.startDate));
+    futurePeriods.forEach((p: Period) => {
+      out.push({ label: p.name, date: p.startDate });
+    });
+
+    return out;
+  }, [periods]);
 
   const handleResolvedChange = async (newDate: string) => {
     setEditingResolved(false);
@@ -1458,15 +1486,16 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
                   <select
                     value=""
                     onChange={(e) => {
-                      const v = e.target.value as 'week' | 'month' | 'quarter' | '';
-                      if (v) setNextStepDatePreset(v);
+                      if (e.target.value) handleNextStepDateChange(e.target.value);
                     }}
                     className="text-xs px-2 py-1 border border-gray-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
                   >
                     <option value="">Shortcuts…</option>
-                    <option value="week">Next Week (+7 days)</option>
-                    <option value="month">Next Month (+1 month)</option>
-                    <option value="quarter">Next Quarter (+3 months)</option>
+                    {nextStepDateShortcuts.map((s) => (
+                      <option key={`${s.label}-${s.date}`} value={s.date}>
+                        {s.label} — {formatShortDate(s.date)}
+                      </option>
+                    ))}
                   </select>
                   <div className="flex justify-between items-center pt-1 border-t border-gray-100">
                     <button

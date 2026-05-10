@@ -75,7 +75,10 @@ export function PeriodsPage() {
     const candidates: { name: string; startDate: string; endDate: string; exists: boolean }[] = [];
     const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
     while (cursor <= end) {
-      if (cursor >= start && cursor <= end && cursor >= today) {
+      // Always include the month whose 1st is the quarter's start date, even if past;
+      // otherwise enforce the past-date cutoff.
+      const matchesQuarterStart = cursor.getTime() === start.getTime();
+      if (cursor >= start && cursor <= end && (cursor >= today || matchesQuarterStart)) {
         const year = cursor.getFullYear();
         const month = cursor.getMonth();
         const monthStart = new Date(year, month, 1);
