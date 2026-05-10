@@ -97,6 +97,12 @@ function formatTimestamp(timestamp: string): string {
   return new Date(timestamp).toLocaleString();
 }
 
+function formatExactTimestamp(timestamp: string): string {
+  const d = new Date(timestamp);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
 export function LogsPage({ onNavigateToObjective }: LogsPageProps) {
   const objectives = useOKRStore((state: OKRStore) => state.objectives);
   const updateObjective = useOKRStore((state: OKRStore) => state.updateObjective);
@@ -148,10 +154,13 @@ export function LogsPage({ onNavigateToObjective }: LogsPageProps) {
         {logEntries.map((entry) => (
           <div key={entry.entryId} className="px-4 py-3 flex gap-4 hover:bg-gray-50 transition-colors">
             {/* Timestamp */}
-            <div className="flex-shrink-0 w-20 text-right">
-              <span className="text-xs text-gray-400" title={formatTimestamp(entry.timestamp)}>
+            <div className="flex-shrink-0 w-44 text-right">
+              <div className="text-xs text-gray-400" title={formatTimestamp(entry.timestamp)}>
                 {timeAgo(entry.timestamp)}
-              </span>
+              </div>
+              <div className="text-[11px] text-gray-400 font-mono">
+                {formatExactTimestamp(entry.timestamp)}
+              </div>
             </div>
 
             {/* Action dot */}
