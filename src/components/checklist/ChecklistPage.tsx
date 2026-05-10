@@ -491,12 +491,14 @@ export function ChecklistPage() {
     today.setHours(0, 0, 0, 0);
     const todayMs = today.getTime();
     const source = isOverdueEvergreenFilterOn ? filteredObjectives : orgObjectives;
-    return source.filter((obj: Objective) => {
+    const matched = source.filter((obj: Objective) => {
       if (!obj.nextStepDate) return false;
       if (obj.workflowStatus === 'done' || obj.workflowStatus === 'archived' || obj.workflowStatus === 'backlog') return false;
       const [y, m, d] = obj.nextStepDate.split('-').map(Number);
       return new Date(y, m - 1, d).getTime() < todayMs;
     });
+    const matchedIds = new Set(matched.map(o => o.id));
+    return matched.filter(o => !o.parentId || !matchedIds.has(o.parentId));
   }, [filteredObjectives, orgObjectives, isOverdueEvergreenFilterOn]);
 
   const overdueEvergreenIds = useMemo(
