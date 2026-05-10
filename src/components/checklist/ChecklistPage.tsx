@@ -41,6 +41,7 @@ interface ChecklistSectionsState {
   isNoNextStepFilterOn: boolean;
   isNoPeriodFilterOn: boolean;
   isOverdueEvergreenFilterOn: boolean;
+  showOnlyAttention: boolean;
 }
 
 const defaultSectionsState: ChecklistSectionsState = {
@@ -52,6 +53,7 @@ const defaultSectionsState: ChecklistSectionsState = {
   isNoNextStepFilterOn: false,
   isNoPeriodFilterOn: false,
   isOverdueEvergreenFilterOn: false,
+  showOnlyAttention: true,
 };
 
 function loadSectionsState(): ChecklistSectionsState {
@@ -132,6 +134,12 @@ export function ChecklistPage() {
   const [isNoNextStepExpanded, setIsNoNextStepExpandedState] = useState(initialSections.isNoNextStepExpanded);
   const [isNoPeriodExpanded, setIsNoPeriodExpandedState] = useState(initialSections.isNoPeriodExpanded);
   const [isOverdueEvergreenExpanded, setIsOverdueEvergreenExpandedState] = useState(initialSections.isOverdueEvergreenExpanded);
+  const [showOnlyAttention, setShowOnlyAttentionState] = useState(initialSections.showOnlyAttention);
+
+  const setShowOnlyAttention = useCallback((v: boolean) => {
+    setShowOnlyAttentionState(v);
+    saveSectionsState({ showOnlyAttention: v });
+  }, []);
   const [evergreenSelectedObjective, setEvergreenSelectedObjective] = useState<Objective | null>(null);
   const [evergreenLeftWidth, setEvergreenLeftWidth] = useState<number>(() => {
     try {
@@ -305,6 +313,20 @@ export function ChecklistPage() {
   const toggleEvergreenOverdueColumn = useOKRStore((state: OKRStore) => state.toggleEvergreenOverdueColumn);
   const [showEvergreenColumnMenu, setShowEvergreenColumnMenu] = useState(false);
   const evergreenColumnMenuRef = useRef<HTMLDivElement>(null);
+  const [evergreenRightStatuses, setEvergreenRightStatuses] = useState<WorkflowStatus[]>([]);
+  const [showEvergreenStatusMenu, setShowEvergreenStatusMenu] = useState(false);
+  const evergreenStatusMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showEvergreenStatusMenu) return;
+    const handleClick = (e: MouseEvent) => {
+      if (evergreenStatusMenuRef.current && !evergreenStatusMenuRef.current.contains(e.target as Node)) {
+        setShowEvergreenStatusMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showEvergreenStatusMenu]);
 
   useEffect(() => {
     if (!showEvergreenColumnMenu) return;
@@ -858,6 +880,20 @@ export function ChecklistPage() {
     <div className="space-y-6">
       {/* Column Visibility Toggle */}
       <div className="flex items-center gap-4">
+        <button
+          onClick={() => setShowOnlyAttention(!showOnlyAttention)}
+          className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-sm shadow-sm ${
+            showOnlyAttention
+              ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'
+              : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+          }`}
+          title="Hide sections with no items needing attention"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span>{showOnlyAttention ? 'Showing only items needing attention' : 'Show only items needing attention'}</span>
+        </button>
         <div className="relative" ref={columnMenuRef}>
           <button
             onClick={() => setShowColumnMenu(!showColumnMenu)}
@@ -898,7 +934,7 @@ export function ChecklistPage() {
 
 
       {/* Items without Type Section */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+      <div className={`bg-white rounded-lg shadow-sm border border-gray-200 ${showOnlyAttention && filteredObjectivesWithoutType.length === 0 ? 'hidden' : ''}`}>
         <div
           role="button"
           tabIndex={0}
@@ -1113,7 +1149,7 @@ export function ChecklistPage() {
       </div>
 
       {/* Items without Next Step Section */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+      <div className={`bg-white rounded-lg shadow-sm border border-gray-200 ${showOnlyAttention && filteredObjectivesWithoutNextStep.length === 0 ? 'hidden' : ''}`}>
         <div
           role="button"
           tabIndex={0}
@@ -1335,7 +1371,7 @@ export function ChecklistPage() {
       </div>
 
       {/* Items without Period Section */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+      <div className={`bg-white rounded-lg shadow-sm border border-gray-200 ${showOnlyAttention && filteredObjectivesWithoutPeriod.length === 0 ? 'hidden' : ''}`}>
         <div
           role="button"
           tabIndex={0}
@@ -1435,7 +1471,7 @@ export function ChecklistPage() {
       </div>
 
       {/* Evergreen items with next date in the past */}
-      <div id="evergreen-overdue" className="bg-white rounded-lg shadow-sm border border-gray-200 scroll-mt-4">
+      <div id="evergreen-overdue" className={`bg-white rounded-lg shadow-sm border border-gray-200 scroll-mt-4 ${showOnlyAttention && overdueEvergreenMatched.length === 0 ? 'hidden' : ''}`}>
         <div
           role="button"
           tabIndex={0}
@@ -1529,7 +1565,44 @@ export function ChecklistPage() {
                   title="Drag to resize"
                 />
                 <div className="min-w-0" style={{ width: `${100 - evergreenLeftWidth}%` }}>
-                  <div className="flex items-center justify-end px-2 py-1 border-b border-gray-200 bg-gray-50 relative">
+                  <div className="flex items-center justify-end gap-2 px-2 py-1 border-b border-gray-200 bg-gray-50 relative">
+                    <div ref={evergreenStatusMenuRef} className="relative">
+                      <button
+                        onClick={() => setShowEvergreenStatusMenu(!showEvergreenStatusMenu)}
+                        className="flex items-center gap-1 px-2 py-1 text-xs text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded"
+                        title="Filter by status"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                        </svg>
+                        Status{evergreenRightStatuses.length > 0 ? ` (${evergreenRightStatuses.length})` : ''}
+                      </button>
+                      {showEvergreenStatusMenu && (
+                        <div className="absolute right-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-md shadow-lg py-1 min-w-[180px]">
+                          {WORKFLOW_STATUS_OPTIONS.map(opt => (
+                            <label key={opt.value} className="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={evergreenRightStatuses.includes(opt.value)}
+                                onChange={() => setEvergreenRightStatuses(prev =>
+                                  prev.includes(opt.value) ? prev.filter(s => s !== opt.value) : [...prev, opt.value]
+                                )}
+                                className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                              />
+                              {opt.label}
+                            </label>
+                          ))}
+                          {evergreenRightStatuses.length > 0 && (
+                            <button
+                              onClick={() => setEvergreenRightStatuses([])}
+                              className="w-full text-left px-3 py-1.5 text-xs text-blue-600 hover:bg-gray-50 border-t border-gray-100 mt-1"
+                            >
+                              Clear
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
                     <div ref={evergreenColumnMenuRef} className="relative">
                       <button
                         onClick={() => setShowEvergreenColumnMenu(!showEvergreenColumnMenu)}
@@ -1661,6 +1734,11 @@ export function ChecklistPage() {
                         objective={evergreenSelectedObjective}
                         depth={0}
                         visibleColumnsOverride={evergreenOverdueColumns}
+                        filteredObjectiveIds={evergreenRightStatuses.length > 0
+                          ? new Set(orgObjectives
+                              .filter((o: Objective) => evergreenRightStatuses.includes(o.workflowStatus))
+                              .map((o: Objective) => o.id))
+                          : undefined}
                       />
                     </div>
                   ) : (
