@@ -120,6 +120,8 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
 
   const reorderPlanItems = useOKRStore((s: OKRStore) => s.reorderPlanItems);
   const togglePlanReplacement = useOKRStore((s: OKRStore) => s.togglePlanReplacement);
+  const updatePlanFilters = useOKRStore((s: OKRStore) => s.updatePlanFilters);
+  const lastSelectedPlanId = useOKRStore((s: OKRStore) => s.lastSelectedPlanId);
   const setHighlightObjectiveId = useOKRStore((s: OKRStore) => s.setHighlightObjectiveId);
   const setForcedExpandedIds = useOKRStore((s: OKRStore) => s.setForcedExpandedIds);
   const [menuObjectiveId, setMenuObjectiveId] = useState<string | null>(null);
@@ -583,6 +585,23 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
               <div><span className="text-gray-400">Status:</span> <span className="text-gray-700">{statusLabels}</span></div>
               <div><span className="text-gray-400">Type:</span> <span className="text-gray-700">{typeLabels}</span></div>
             </div>
+            {(() => {
+              const referencePlanId = activePlanId || lastSelectedPlanId;
+              const referencePlan = referencePlanId ? plans.find(p => p.id === referencePlanId) : null;
+              const filtersDirty = referencePlan
+                ? JSON.stringify({ ...referencePlan.filters, types: referencePlan.filters.types || [] })
+                  !== JSON.stringify({ ...planFilters, types: planFilters.types || [] })
+                : false;
+              return referencePlan && (filtersDirty || activePlanId === referencePlanId) ? (
+                <button
+                  onClick={() => { updatePlanFilters(referencePlan.id); setShowSavePlan(false); }}
+                  className="w-full mb-2 px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                  Update "{referencePlan.name}"
+                </button>
+              ) : null;
+            })()}
+            <div className="text-xs text-gray-500 mb-1">Or save as a new plan:</div>
             <input
               type="text"
               value={newPlanName}
@@ -594,7 +613,7 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
                 }
                 if (e.key === 'Escape') setShowSavePlan(false);
               }}
-              placeholder="Plan name"
+              placeholder="New plan name"
               autoFocus
               className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3"
             />
@@ -610,7 +629,7 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
                 disabled={!newPlanName.trim()}
                 className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
               >
-                Save
+                Save as new
               </button>
             </div>
           </div>

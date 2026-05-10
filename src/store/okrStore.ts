@@ -190,6 +190,7 @@ interface OKRActions {
   applyPlan: (id: string) => void;
   reorderPlanItems: (id: string, orderedIds: string[]) => Promise<void>;
   togglePlanReplacement: (planId: string, objectiveId: string) => Promise<void>;
+  updatePlanFilters: (planId: string) => Promise<void>;
   highlightObjectiveId: string | null;
   setHighlightObjectiveId: (id: string | null) => void;
   forcedExpandedIds: string[] | null;
@@ -321,6 +322,7 @@ export interface BackupData {
   periods: Period[];
   tags: Tag[];
   lists?: List[];
+  plans?: import('../types').PlanDef[];
   users?: BackupUser[];
   organizations?: BackupOrganization[];
 }
@@ -1087,6 +1089,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       periods: state.periods,
       tags: state.tags,
       lists: state.lists,
+      plans: state.plans,
     };
   },
 
@@ -1128,6 +1131,22 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
         });
       } catch (err) {
         console.error('Failed to import lists:', err);
+      }
+    }
+
+    // Restore plans (and clear last selected if absent in backup)
+    if (data.plans !== undefined) {
+      const plans = data.plans || [];
+      set({ plans, activePlanId: null, lastSelectedPlanId: null });
+      try {
+        await fetch(`${API_URL}/api/users/me/preferences`, {
+          method: 'PUT',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ preferences: { plans, lastSelectedPlanId: null } }),
+        });
+      } catch (err) {
+        console.error('Failed to import plans:', err);
       }
     }
   },
@@ -1497,6 +1516,22 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
 
   setForcedExpandedIds: (ids) => {
     set({ forcedExpandedIds: ids });
+  },
+
+  updatePlanFilters: async (planId) => {
+    const state = get();
+    const plans = state.plans.map(p => p.id === planId ? { ...p, filters: { ...state.planFilters } } : p);
+    set({ plans, activePlanId: planId, lastSelectedPlanId: planId });
+    try {
+      await fetch(`${API_URL}/api/users/me/preferences`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferences: { plans, lastSelectedPlanId: planId } }),
+      });
+    } catch (err) {
+      console.error('Failed to update plan filters:', err);
+    }
   },
 
   togglePlanReplacement: async (planId, objectiveId) => {
