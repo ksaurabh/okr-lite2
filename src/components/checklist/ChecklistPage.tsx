@@ -33,19 +33,25 @@ const API_URL = import.meta.env.VITE_API_URL || '';
 const CHECKLIST_SECTIONS_KEY = 'okr-checklist-sections';
 
 interface ChecklistSectionsState {
-  isFilterExpanded: boolean;
   isNoTypeExpanded: boolean;
   isNoNextStepExpanded: boolean;
   isNoPeriodExpanded: boolean;
   isOverdueEvergreenExpanded: boolean;
+  isTypeFilterOn: boolean;
+  isNoNextStepFilterOn: boolean;
+  isNoPeriodFilterOn: boolean;
+  isOverdueEvergreenFilterOn: boolean;
 }
 
 const defaultSectionsState: ChecklistSectionsState = {
-  isFilterExpanded: false,
   isNoTypeExpanded: false,
   isNoNextStepExpanded: false,
   isNoPeriodExpanded: false,
   isOverdueEvergreenExpanded: false,
+  isTypeFilterOn: false,
+  isNoNextStepFilterOn: false,
+  isNoPeriodFilterOn: false,
+  isOverdueEvergreenFilterOn: false,
 };
 
 function loadSectionsState(): ChecklistSectionsState {
@@ -122,18 +128,16 @@ function PeriodFilterButton({ period, periods, activePeriodId, onSelect, depth }
 export function ChecklistPage() {
   // Load initial section states from localStorage (default to collapsed)
   const initialSections = loadSectionsState();
-  const [isFilterExpanded, setIsFilterExpandedState] = useState(initialSections.isFilterExpanded);
   const [isNoTypeExpanded, setIsNoTypeExpandedState] = useState(initialSections.isNoTypeExpanded);
   const [isNoNextStepExpanded, setIsNoNextStepExpandedState] = useState(initialSections.isNoNextStepExpanded);
   const [isNoPeriodExpanded, setIsNoPeriodExpandedState] = useState(initialSections.isNoPeriodExpanded);
   const [isOverdueEvergreenExpanded, setIsOverdueEvergreenExpandedState] = useState(initialSections.isOverdueEvergreenExpanded);
+  const [isTypeFilterOn, setIsTypeFilterOnState] = useState(initialSections.isTypeFilterOn);
+  const [isNoNextStepFilterOn, setIsNoNextStepFilterOnState] = useState(initialSections.isNoNextStepFilterOn);
+  const [isNoPeriodFilterOn, setIsNoPeriodFilterOnState] = useState(initialSections.isNoPeriodFilterOn);
+  const [isOverdueEvergreenFilterOn, setIsOverdueEvergreenFilterOnState] = useState(initialSections.isOverdueEvergreenFilterOn);
 
   // Wrapper functions that persist state changes
-  const setIsFilterExpanded = useCallback((expanded: boolean) => {
-    setIsFilterExpandedState(expanded);
-    saveSectionsState({ isFilterExpanded: expanded });
-  }, []);
-
   const setIsNoTypeExpanded = useCallback((expanded: boolean) => {
     setIsNoTypeExpandedState(expanded);
     saveSectionsState({ isNoTypeExpanded: expanded });
@@ -152,6 +156,38 @@ export function ChecklistPage() {
   const setIsOverdueEvergreenExpanded = useCallback((expanded: boolean) => {
     setIsOverdueEvergreenExpandedState(expanded);
     saveSectionsState({ isOverdueEvergreenExpanded: expanded });
+  }, []);
+
+  const toggleTypeFilter = useCallback(() => {
+    setIsTypeFilterOnState(prev => {
+      const next = !prev;
+      saveSectionsState({ isTypeFilterOn: next });
+      return next;
+    });
+  }, []);
+
+  const toggleNoNextStepFilter = useCallback(() => {
+    setIsNoNextStepFilterOnState(prev => {
+      const next = !prev;
+      saveSectionsState({ isNoNextStepFilterOn: next });
+      return next;
+    });
+  }, []);
+
+  const toggleNoPeriodFilter = useCallback(() => {
+    setIsNoPeriodFilterOnState(prev => {
+      const next = !prev;
+      saveSectionsState({ isNoPeriodFilterOn: next });
+      return next;
+    });
+  }, []);
+
+  const toggleOverdueEvergreenFilter = useCallback(() => {
+    setIsOverdueEvergreenFilterOnState(prev => {
+      const next = !prev;
+      saveSectionsState({ isOverdueEvergreenFilterOn: next });
+      return next;
+    });
   }, []);
 
   const [includeAncestorPeriods, setIncludeAncestorPeriods] = useState(false);
@@ -422,27 +458,28 @@ export function ChecklistPage() {
     return result;
   }, [orgObjectives, activePeriodId, filterTeamIds, filterTagIds, filterTypes, filterTypeNotSet, filterLevels, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterWorkflowStatuses, includeAncestorPeriods, includeChildPeriods, includeChildTeams, getAncestorPeriodIds, getDescendantPeriodIds, getDescendantTeamIds]);
 
-  const filteredObjectivesWithoutNextStep = useMemo(() =>
-    filteredObjectives.filter((obj: Objective) =>
+  const filteredObjectivesWithoutNextStep = useMemo(() => {
+    const source = isNoNextStepFilterOn ? filteredObjectives : orgObjectives;
+    return source.filter((obj: Objective) =>
       !obj.nextStepDate &&
       obj.workflowStatus !== 'done' &&
       obj.workflowStatus !== 'archived' &&
       obj.workflowStatus !== 'backlog'
-    ),
-    [filteredObjectives]
-  );
+    );
+  }, [filteredObjectives, orgObjectives, isNoNextStepFilterOn]);
 
-  const filteredObjectivesWithoutType = useMemo(() =>
-    filteredObjectives.filter((obj: Objective) => !obj.type),
-    [filteredObjectives]
-  );
+  const filteredObjectivesWithoutType = useMemo(() => {
+    const source = isTypeFilterOn ? filteredObjectives : orgObjectives;
+    return source.filter((obj: Objective) => !obj.type);
+  }, [filteredObjectives, orgObjectives, isTypeFilterOn]);
 
   const filteredObjectivesWithoutPeriod = useMemo(() => {
     const validPeriodIds = new Set(orgPeriods.map((p: Period) => p.id));
-    return filteredObjectives.filter((obj: Objective) =>
+    const source = isNoPeriodFilterOn ? filteredObjectives : orgObjectives;
+    return source.filter((obj: Objective) =>
       !obj.periodId || !validPeriodIds.has(obj.periodId)
     );
-  }, [filteredObjectives, orgPeriods]);
+  }, [filteredObjectives, orgObjectives, orgPeriods, isNoPeriodFilterOn]);
 
   const filteredObjectiveIdsNoPeriod = useMemo(
     () => new Set(filteredObjectivesWithoutPeriod.map((obj: Objective) => obj.id)),
@@ -453,13 +490,14 @@ export function ChecklistPage() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayMs = today.getTime();
-    return filteredObjectives.filter((obj: Objective) => {
+    const source = isOverdueEvergreenFilterOn ? filteredObjectives : orgObjectives;
+    return source.filter((obj: Objective) => {
       if (!obj.nextStepDate) return false;
       if (obj.workflowStatus === 'done' || obj.workflowStatus === 'archived' || obj.workflowStatus === 'backlog') return false;
       const [y, m, d] = obj.nextStepDate.split('-').map(Number);
       return new Date(y, m - 1, d).getTime() < todayMs;
     });
-  }, [filteredObjectives]);
+  }, [filteredObjectives, orgObjectives, isOverdueEvergreenFilterOn]);
 
   const overdueEvergreenIds = useMemo(
     () => new Set(overdueEvergreenObjectives.map((obj: Objective) => obj.id)),
@@ -476,6 +514,273 @@ export function ChecklistPage() {
   const filteredObjectiveIds = useMemo(
     () => new Set(filteredObjectivesWithoutNextStep.map((obj: Objective) => obj.id)),
     [filteredObjectivesWithoutNextStep]
+  );
+
+  const filterPanel = (
+    <div className="px-4 py-3 bg-gray-50/50 border-b border-gray-200">
+      <div className="flex items-center justify-end mb-2 min-h-[20px]">
+        {hasActiveFilters && (
+          <button
+            onClick={clearAllFilters}
+            className="text-xs text-blue-600 hover:text-blue-700"
+          >
+            Clear all
+          </button>
+        )}
+      </div>
+      <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+        {/* Period Filter */}
+        <div className="flex items-start gap-3">
+          <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Period</label>
+          <div className="flex-1">
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                onClick={() => setActivePeriod(null)}
+                className={`px-2 py-1 rounded-full text-xs transition-colors ${
+                  !activePeriodId
+                    ? 'bg-gray-800 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                All
+              </button>
+              {rootPeriods.map((period: Period) => (
+                <PeriodFilterButton
+                  key={period.id}
+                  period={period}
+                  periods={orgPeriods}
+                  activePeriodId={activePeriodId}
+                  onSelect={setActivePeriod}
+                  depth={0}
+                />
+              ))}
+            </div>
+            {activePeriodId && (
+              <div className="flex items-center gap-3 mt-1.5">
+                <label className="inline-flex items-center gap-1 text-xs text-gray-500 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={includeAncestorPeriods}
+                    onChange={(e) => setIncludeAncestorPeriods(e.target.checked)}
+                    className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  Parent
+                </label>
+                <label className="inline-flex items-center gap-1 text-xs text-gray-500 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={includeChildPeriods}
+                    onChange={(e) => setIncludeChildPeriods(e.target.checked)}
+                    className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  Child
+                </label>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Team Filter */}
+        {orgTeams.length > 0 && (
+          <div className="flex items-start gap-3">
+            <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Team</label>
+            <div className="flex-1">
+              <div className="flex flex-wrap gap-1.5">
+                {orgTeams.map((team: Team) => (
+                  <button
+                    key={team.id}
+                    onClick={() => toggleFilterTeam(team.id)}
+                    className={`px-2 py-1 rounded-full text-xs transition-colors ${
+                      filterTeamIds.includes(team.id)
+                        ? 'bg-gray-800 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {team.name}
+                  </button>
+                ))}
+              </div>
+              {filterTeamIds.length > 0 && (
+                <label className="inline-flex items-center gap-1 text-xs text-gray-500 cursor-pointer mt-1.5">
+                  <input
+                    type="checkbox"
+                    checked={includeChildTeams}
+                    onChange={(e) => setIncludeChildTeams(e.target.checked)}
+                    className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  Include child teams
+                </label>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Tag Filter */}
+        {orgTags.length > 0 && (
+          <div className="flex items-start gap-3">
+            <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Tags</label>
+            <div className="flex flex-wrap gap-1.5">
+              {orgTags.map((tag: Tag) => (
+                <button
+                  key={tag.id}
+                  onClick={() => toggleFilterTag(tag.id)}
+                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs transition-colors ${
+                    filterTagIds.includes(tag.id)
+                      ? 'bg-gray-800 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${tag.color}`}></span>
+                  {tag.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Type Filter */}
+        <div className="flex items-start gap-3">
+          <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Type</label>
+          <div className="flex flex-wrap gap-1.5">
+            {TYPE_OPTIONS.map((type) => (
+              <button
+                key={type.value}
+                onClick={() => toggleFilterType(type.value)}
+                className={`px-2 py-1 rounded-full text-xs transition-colors ${
+                  filterTypes.includes(type.value)
+                    ? 'bg-gray-800 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {type.label}
+              </button>
+            ))}
+            <button
+              onClick={() => toggleFilterTypeNotSet()}
+              className={`px-2 py-1 rounded-full text-xs transition-colors ${
+                filterTypeNotSet
+                  ? 'bg-gray-800 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Not Set
+            </button>
+          </div>
+        </div>
+
+        {/* Level Filter */}
+        <div className="flex items-start gap-3">
+          <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Level</label>
+          <div className="flex flex-wrap gap-1.5">
+            {LEVEL_OPTIONS.map((level) => (
+              <button
+                key={level.value}
+                onClick={() => toggleFilterLevel(level.value)}
+                className={`px-2 py-1 rounded-full text-xs transition-colors ${
+                  filterLevels.includes(level.value)
+                    ? 'bg-gray-800 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {level.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Status Filter */}
+        <div className="flex items-start gap-3">
+          <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Status</label>
+          <div className="flex flex-wrap gap-1.5">
+            {WORKFLOW_STATUS_OPTIONS.map((status) => (
+              <button
+                key={status.value}
+                onClick={() => toggleWorkflowStatusFilter(status.value)}
+                className={`px-2 py-1 rounded-full text-xs transition-colors ${
+                  filterWorkflowStatuses.includes(status.value)
+                    ? 'bg-gray-800 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {status.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Owner Filter */}
+        {orgUsers.length > 0 && (
+          <div className="flex items-start gap-3">
+            <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Owner</label>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <select
+                value={filterOwnerOperator}
+                onChange={(e) => setFilterOwnerOperator(e.target.value as FilterOperator)}
+                className="px-1.5 py-1 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="equals">=</option>
+                <option value="not_equals">!=</option>
+              </select>
+              {orgUsers.map((u: User) => (
+                <button
+                  key={u.id}
+                  onClick={() => {
+                    if (filterOwnerIds.includes(u.id)) {
+                      setFilterOwners(filterOwnerIds.filter(id => id !== u.id));
+                    } else {
+                      setFilterOwners([...filterOwnerIds, u.id]);
+                    }
+                  }}
+                  className={`px-2 py-1 rounded-full text-xs transition-colors ${
+                    filterOwnerIds.includes(u.id)
+                      ? 'bg-gray-800 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {u.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Assignee Filter */}
+        {orgUsers.length > 0 && (
+          <div className="flex items-start gap-3">
+            <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Assignee</label>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <select
+                value={filterAssigneeOperator}
+                onChange={(e) => setFilterAssigneeOperator(e.target.value as FilterOperator)}
+                className="px-1.5 py-1 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="equals">=</option>
+                <option value="not_equals">!=</option>
+              </select>
+              {orgUsers.map((u: User) => (
+                <button
+                  key={u.id}
+                  onClick={() => {
+                    if (filterAssigneeIds.includes(u.id)) {
+                      setFilterAssignees(filterAssigneeIds.filter(id => id !== u.id));
+                    } else {
+                      setFilterAssignees([...filterAssigneeIds, u.id]);
+                    }
+                  }}
+                  className={`px-2 py-1 rounded-full text-xs transition-colors ${
+                    filterAssigneeIds.includes(u.id)
+                      ? 'bg-gray-800 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {u.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 
   return (
@@ -520,306 +825,15 @@ export function ChecklistPage() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div
-          className="flex items-center justify-between p-4 cursor-pointer"
-          onClick={() => setIsFilterExpanded(!isFilterExpanded)}
-        >
-          <div className="flex items-center gap-2">
-            <button className="text-gray-400 hover:text-gray-600">
-              <svg
-                className={`w-4 h-4 transition-transform ${isFilterExpanded ? 'rotate-90' : ''}`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
-            <h3 className="text-sm font-medium text-gray-700">Filters</h3>
-            {hasActiveFilters && (
-              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-                Active
-              </span>
-            )}
-          </div>
-          {hasActiveFilters && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                clearAllFilters();
-              }}
-              className="text-xs text-blue-600 hover:text-blue-700"
-            >
-              Clear all
-            </button>
-          )}
-        </div>
-
-        {isFilterExpanded && (
-          <div className="px-4 pb-4 border-t border-gray-100 pt-4">
-            <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-              {/* Period Filter */}
-              <div className="flex items-start gap-3">
-                <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Period</label>
-                <div className="flex-1">
-                  <div className="flex flex-wrap gap-1.5">
-                    <button
-                      onClick={() => setActivePeriod(null)}
-                      className={`px-2 py-1 rounded-full text-xs transition-colors ${
-                        !activePeriodId
-                          ? 'bg-gray-800 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      All
-                    </button>
-                    {rootPeriods.map((period: Period) => (
-                      <PeriodFilterButton
-                        key={period.id}
-                        period={period}
-                        periods={orgPeriods}
-                        activePeriodId={activePeriodId}
-                        onSelect={setActivePeriod}
-                        depth={0}
-                      />
-                    ))}
-                  </div>
-                  {activePeriodId && (
-                    <div className="flex items-center gap-3 mt-1.5">
-                      <label className="inline-flex items-center gap-1 text-xs text-gray-500 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={includeAncestorPeriods}
-                          onChange={(e) => setIncludeAncestorPeriods(e.target.checked)}
-                          className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        />
-                        Parent
-                      </label>
-                      <label className="inline-flex items-center gap-1 text-xs text-gray-500 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={includeChildPeriods}
-                          onChange={(e) => setIncludeChildPeriods(e.target.checked)}
-                          className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        />
-                        Child
-                      </label>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Team Filter */}
-              {orgTeams.length > 0 && (
-                <div className="flex items-start gap-3">
-                  <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Team</label>
-                  <div className="flex-1">
-                    <div className="flex flex-wrap gap-1.5">
-                      {orgTeams.map((team: Team) => (
-                        <button
-                          key={team.id}
-                          onClick={() => toggleFilterTeam(team.id)}
-                          className={`px-2 py-1 rounded-full text-xs transition-colors ${
-                            filterTeamIds.includes(team.id)
-                              ? 'bg-gray-800 text-white'
-                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                          }`}
-                        >
-                          {team.name}
-                        </button>
-                      ))}
-                    </div>
-                    {filterTeamIds.length > 0 && (
-                      <label className="inline-flex items-center gap-1 text-xs text-gray-500 cursor-pointer mt-1.5">
-                        <input
-                          type="checkbox"
-                          checked={includeChildTeams}
-                          onChange={(e) => setIncludeChildTeams(e.target.checked)}
-                          className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        />
-                        Include child teams
-                      </label>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Tag Filter */}
-              {orgTags.length > 0 && (
-                <div className="flex items-start gap-3">
-                  <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Tags</label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {orgTags.map((tag: Tag) => (
-                      <button
-                        key={tag.id}
-                        onClick={() => toggleFilterTag(tag.id)}
-                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs transition-colors ${
-                          filterTagIds.includes(tag.id)
-                            ? 'bg-gray-800 text-white'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        <span className={`w-1.5 h-1.5 rounded-full ${tag.color}`}></span>
-                        {tag.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Type Filter */}
-              <div className="flex items-start gap-3">
-                <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Type</label>
-                <div className="flex flex-wrap gap-1.5">
-                  {TYPE_OPTIONS.map((type) => (
-                    <button
-                      key={type.value}
-                      onClick={() => toggleFilterType(type.value)}
-                      className={`px-2 py-1 rounded-full text-xs transition-colors ${
-                        filterTypes.includes(type.value)
-                          ? 'bg-gray-800 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      {type.label}
-                    </button>
-                  ))}
-                  <button
-                    onClick={() => toggleFilterTypeNotSet()}
-                    className={`px-2 py-1 rounded-full text-xs transition-colors ${
-                      filterTypeNotSet
-                        ? 'bg-gray-800 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    Not Set
-                  </button>
-                </div>
-              </div>
-
-              {/* Level Filter */}
-              <div className="flex items-start gap-3">
-                <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Level</label>
-                <div className="flex flex-wrap gap-1.5">
-                  {LEVEL_OPTIONS.map((level) => (
-                    <button
-                      key={level.value}
-                      onClick={() => toggleFilterLevel(level.value)}
-                      className={`px-2 py-1 rounded-full text-xs transition-colors ${
-                        filterLevels.includes(level.value)
-                          ? 'bg-gray-800 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      {level.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Status Filter */}
-              <div className="flex items-start gap-3">
-                <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Status</label>
-                <div className="flex flex-wrap gap-1.5">
-                  {WORKFLOW_STATUS_OPTIONS.map((status) => (
-                    <button
-                      key={status.value}
-                      onClick={() => toggleWorkflowStatusFilter(status.value)}
-                      className={`px-2 py-1 rounded-full text-xs transition-colors ${
-                        filterWorkflowStatuses.includes(status.value)
-                          ? 'bg-gray-800 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      {status.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Owner Filter */}
-              {orgUsers.length > 0 && (
-                <div className="flex items-start gap-3">
-                  <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Owner</label>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <select
-                      value={filterOwnerOperator}
-                      onChange={(e) => setFilterOwnerOperator(e.target.value as FilterOperator)}
-                      className="px-1.5 py-1 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      <option value="equals">=</option>
-                      <option value="not_equals">!=</option>
-                    </select>
-                    {orgUsers.map((u: User) => (
-                      <button
-                        key={u.id}
-                        onClick={() => {
-                          if (filterOwnerIds.includes(u.id)) {
-                            setFilterOwners(filterOwnerIds.filter(id => id !== u.id));
-                          } else {
-                            setFilterOwners([...filterOwnerIds, u.id]);
-                          }
-                        }}
-                        className={`px-2 py-1 rounded-full text-xs transition-colors ${
-                          filterOwnerIds.includes(u.id)
-                            ? 'bg-gray-800 text-white'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        {u.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Assignee Filter */}
-              {orgUsers.length > 0 && (
-                <div className="flex items-start gap-3">
-                  <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0 pt-1.5">Assignee</label>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <select
-                      value={filterAssigneeOperator}
-                      onChange={(e) => setFilterAssigneeOperator(e.target.value as FilterOperator)}
-                      className="px-1.5 py-1 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      <option value="equals">=</option>
-                      <option value="not_equals">!=</option>
-                    </select>
-                    {orgUsers.map((u: User) => (
-                      <button
-                        key={u.id}
-                        onClick={() => {
-                          if (filterAssigneeIds.includes(u.id)) {
-                            setFilterAssignees(filterAssigneeIds.filter(id => id !== u.id));
-                          } else {
-                            setFilterAssignees([...filterAssigneeIds, u.id]);
-                          }
-                        }}
-                        className={`px-2 py-1 rounded-full text-xs transition-colors ${
-                          filterAssigneeIds.includes(u.id)
-                            ? 'bg-gray-800 text-white'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        {u.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
 
       {/* Items without Type Section */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <button
+        <div
+          role="button"
+          tabIndex={0}
           onClick={() => setIsNoTypeExpanded(!isNoTypeExpanded)}
-          className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50"
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setIsNoTypeExpanded(!isNoTypeExpanded); } }}
+          className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 cursor-pointer"
         >
           <div className="flex items-center gap-3">
             <svg
@@ -830,6 +844,20 @@ export function ChecklistPage() {
             >
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => { e.stopPropagation(); toggleTypeFilter(); }}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); toggleTypeFilter(); } }}
+              title={isTypeFilterOn ? 'Filters on' : 'Filters off'}
+              className={`inline-flex items-center justify-center w-7 h-7 rounded-full transition-colors ${
+                isTypeFilterOn ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+              </svg>
+            </span>
             <div>
               <h3 className="text-sm font-medium text-gray-900">
                 Items without Type
@@ -846,10 +874,11 @@ export function ChecklistPage() {
           }`}>
             {filteredObjectivesWithoutType.length}
           </span>
-        </button>
+        </div>
 
         {isNoTypeExpanded && (
           <div className="border-t border-gray-200">
+            {isTypeFilterOn && filterPanel}
             {filteredObjectivesWithoutType.length === 0 ? (
               <div className="p-6 text-center text-gray-500">
                 <svg className="mx-auto h-10 w-10 text-green-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1014,9 +1043,12 @@ export function ChecklistPage() {
 
       {/* Items without Next Step Section */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <button
+        <div
+          role="button"
+          tabIndex={0}
           onClick={() => setIsNoNextStepExpanded(!isNoNextStepExpanded)}
-          className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50"
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setIsNoNextStepExpanded(!isNoNextStepExpanded); } }}
+          className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 cursor-pointer"
         >
           <div className="flex items-center gap-3">
             <svg
@@ -1027,6 +1059,20 @@ export function ChecklistPage() {
             >
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => { e.stopPropagation(); toggleNoNextStepFilter(); }}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); toggleNoNextStepFilter(); } }}
+              title={isNoNextStepFilterOn ? 'Filters on' : 'Filters off'}
+              className={`inline-flex items-center justify-center w-7 h-7 rounded-full transition-colors ${
+                isNoNextStepFilterOn ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+              </svg>
+            </span>
             <div>
               <h3 className="text-sm font-medium text-gray-900">
                 Items without Next Step
@@ -1043,10 +1089,11 @@ export function ChecklistPage() {
           }`}>
             {filteredObjectivesWithoutNextStep.length}
           </span>
-        </button>
+        </div>
 
         {isNoNextStepExpanded && (
           <div className="border-t border-gray-200">
+            {isNoNextStepFilterOn && filterPanel}
             <div className="px-4 py-3 bg-amber-50 border-b border-amber-100 text-xs text-amber-800">
               To remove an item from this list, do one of the following:
               <ul className="list-disc list-inside mt-1 space-y-0.5">
@@ -1218,9 +1265,12 @@ export function ChecklistPage() {
 
       {/* Items without Period Section */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <button
+        <div
+          role="button"
+          tabIndex={0}
           onClick={() => setIsNoPeriodExpanded(!isNoPeriodExpanded)}
-          className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50"
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setIsNoPeriodExpanded(!isNoPeriodExpanded); } }}
+          className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 cursor-pointer"
         >
           <div className="flex items-center gap-3">
             <svg
@@ -1231,6 +1281,20 @@ export function ChecklistPage() {
             >
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => { e.stopPropagation(); toggleNoPeriodFilter(); }}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); toggleNoPeriodFilter(); } }}
+              title={isNoPeriodFilterOn ? 'Filters on' : 'Filters off'}
+              className={`inline-flex items-center justify-center w-7 h-7 rounded-full transition-colors ${
+                isNoPeriodFilterOn ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+              </svg>
+            </span>
             <div>
               <h3 className="text-sm font-medium text-gray-900">
                 Items without Period
@@ -1247,10 +1311,11 @@ export function ChecklistPage() {
           }`}>
             {filteredObjectivesWithoutPeriod.length}
           </span>
-        </button>
+        </div>
 
         {isNoPeriodExpanded && (
           <div className="border-t border-gray-200">
+            {isNoPeriodFilterOn && filterPanel}
             <div className="px-4 py-3 bg-amber-50 border-b border-amber-100 text-xs text-amber-800">
               An item appears here if it has no period set, or if its period no longer exists.
               To remove it from this list, set a valid <span className="font-medium">Period</span> on the objective.
@@ -1300,9 +1365,12 @@ export function ChecklistPage() {
 
       {/* Evergreen items with next date in the past */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <button
+        <div
+          role="button"
+          tabIndex={0}
           onClick={() => setIsOverdueEvergreenExpanded(!isOverdueEvergreenExpanded)}
-          className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50"
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setIsOverdueEvergreenExpanded(!isOverdueEvergreenExpanded); } }}
+          className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 cursor-pointer"
         >
           <div className="flex items-center gap-3">
             <svg
@@ -1313,6 +1381,20 @@ export function ChecklistPage() {
             >
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => { e.stopPropagation(); toggleOverdueEvergreenFilter(); }}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); toggleOverdueEvergreenFilter(); } }}
+              title={isOverdueEvergreenFilterOn ? 'Filters on' : 'Filters off'}
+              className={`inline-flex items-center justify-center w-7 h-7 rounded-full transition-colors ${
+                isOverdueEvergreenFilterOn ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+              </svg>
+            </span>
             <div>
               <h3 className="text-sm font-medium text-gray-900">
                 Evergreen items with next date in the past
@@ -1329,10 +1411,11 @@ export function ChecklistPage() {
           }`}>
             {overdueEvergreenObjectives.length}
           </span>
-        </button>
+        </div>
 
         {isOverdueEvergreenExpanded && (
           <div className="border-t border-gray-200">
+            {isOverdueEvergreenFilterOn && filterPanel}
             <div className="px-4 py-3 bg-amber-50 border-b border-amber-100 text-xs text-amber-800">
               These open items have a Next Date that's already passed. To clear an item from this list,
               update its <span className="font-medium">Next Date</span>, mark it as
