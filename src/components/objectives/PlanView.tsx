@@ -22,6 +22,7 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
   const addPlan = useOKRStore((s: OKRStore) => s.addPlan);
   const activePlanId = useOKRStore((s: OKRStore) => s.activePlanId);
   const plans = useOKRStore((s: OKRStore) => s.plans);
+  const applyPlan = useOKRStore((s: OKRStore) => s.applyPlan);
 
   const ownerId = planFilters.ownerId;
   const periodId = planFilters.periodId;
@@ -192,8 +193,20 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
           )}
         </div>
         <div className="flex-1" />
-        {activePlan && (
-          <span className="text-xs text-gray-500 italic mr-1">Plan: {activePlan.name}</span>
+        {plans.length > 0 && (
+          <select
+            value={activePlanId || ''}
+            onChange={(e) => {
+              if (e.target.value) applyPlan(e.target.value);
+            }}
+            className="px-2 py-1 text-xs border border-gray-200 rounded bg-white"
+            title="Open another plan"
+          >
+            <option value="">{activePlan ? activePlan.name : '— Pick a plan —'}</option>
+            {plans.map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
         )}
         <button
           onClick={() => { setNewPlanName(activePlan?.name || ''); setShowSavePlan(true); }}
