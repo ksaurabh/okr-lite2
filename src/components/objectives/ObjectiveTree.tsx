@@ -3,6 +3,7 @@ import { useOKRStore, type OKRStore, type ColumnWidths, type ColumnKey, COLUMN_L
 import { useAuth } from '../../context/AuthContext';
 import { CompactObjectiveCard } from './CompactObjectiveCard';
 import { ObjectiveFilterPanel } from '../filters/ObjectiveFilterPanel';
+import { PlanView } from './PlanView';
 import {
   buildPeriodAncestorLookup,
   buildPeriodDescendantLookup,
@@ -131,6 +132,42 @@ export function ObjectiveTree({ highlightObjectiveId, onHighlightClear, onViewCh
   const setColumnWidths = useOKRStore((state: OKRStore) => state.setColumnWidths);
   const visibleColumns = useOKRStore((state: OKRStore) => state.visibleColumns);
   const toggleColumnVisibility = useOKRStore((state: OKRStore) => state.toggleColumnVisibility);
+  const objectiveViewMode = useOKRStore((state: OKRStore) => state.objectiveViewMode);
+  const setObjectiveViewMode = useOKRStore((state: OKRStore) => state.setObjectiveViewMode);
+
+  // Plan-mode splitter
+  const [planLeftWidth, setPlanLeftWidth] = useState<number>(() => {
+    try {
+      const v = localStorage.getItem('okr-objective-plan-left-width');
+      const n = v ? parseInt(v, 10) : NaN;
+      return Number.isFinite(n) && n >= 20 && n <= 80 ? n : 60;
+    } catch { return 60; }
+  });
+  const planSplitRef = useRef<HTMLDivElement>(null);
+  const isDraggingPlanSplitterRef = useRef(false);
+
+  useEffect(() => {
+    const handleMove = (e: MouseEvent) => {
+      if (!isDraggingPlanSplitterRef.current || !planSplitRef.current) return;
+      const rect = planSplitRef.current.getBoundingClientRect();
+      const pct = ((e.clientX - rect.left) / rect.width) * 100;
+      const clamped = Math.max(20, Math.min(80, pct));
+      setPlanLeftWidth(clamped);
+    };
+    const handleUp = () => {
+      if (!isDraggingPlanSplitterRef.current) return;
+      isDraggingPlanSplitterRef.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      try { localStorage.setItem('okr-objective-plan-left-width', String(Math.round(planLeftWidth))); } catch { /* ignore */ }
+    };
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('mouseup', handleUp);
+    return () => {
+      document.removeEventListener('mousemove', handleMove);
+      document.removeEventListener('mouseup', handleUp);
+    };
+  }, [planLeftWidth]);
 
   // Saved views
   const savedViews = useOKRStore((state: OKRStore) => state.savedViews);
@@ -525,6 +562,22 @@ export function ObjectiveTree({ highlightObjectiveId, onHighlightClear, onViewCh
           </div>
         )}
 
+        {/* View Mode Toggle */}
+        <div className="inline-flex rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
+          <button
+            onClick={() => setObjectiveViewMode('explore')}
+            className={`px-3 py-1.5 text-sm ${objectiveViewMode === 'explore' ? 'bg-gray-800 text-white' : 'text-gray-700 hover:bg-gray-50'}`}
+          >
+            Explore
+          </button>
+          <button
+            onClick={() => setObjectiveViewMode('plan')}
+            className={`px-3 py-1.5 text-sm border-l border-gray-200 ${objectiveViewMode === 'plan' ? 'bg-gray-800 text-white' : 'text-gray-700 hover:bg-gray-50'}`}
+          >
+            Plan
+          </button>
+        </div>
+
         {/* Column Visibility Toggle */}
         <div className="relative" ref={columnMenuRef}>
           <button
@@ -779,6 +832,36 @@ export function ObjectiveTree({ highlightObjectiveId, onHighlightClear, onViewCh
 
       {/* Objectives Table */}
       {filteredObjectives.length > 0 && (
+        objectiveViewMode === 'plan' ? (
+          <div ref={planSplitRef} className="flex relative items-stretch" style={{ minHeight: 400 }}>
+            <div className="min-w-0" style={{ width: `${planLeftWidth}%` }}>
+              <TreeTableSection
+                resizingColumn={resizingColumn}
+                columnWidths={columnWidths}
+                visibleColumns={visibleColumns}
+                handleResizeStart={handleResizeStart}
+                filteredObjectives={filteredObjectives}
+                filteredObjectiveIds={filteredObjectiveIds}
+                directlyMatchingIds={directlyMatchingObjectiveIds}
+                companyObjectives={companyObjectives}
+                teamObjectives={teamObjectives}
+                individualObjectives={individualObjectives}
+              />
+            </div>
+            <div
+              onMouseDown={() => {
+                isDraggingPlanSplitterRef.current = true;
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none';
+              }}
+              className="w-1 cursor-col-resize bg-gray-200 hover:bg-blue-400 active:bg-blue-500 flex-shrink-0 mx-1"
+              title="Drag to resize"
+            />
+            <div className="min-w-0" style={{ width: `${100 - planLeftWidth}%` }}>
+              <PlanView orgObjectives={orgObjectives} orgPeriods={orgPeriods} orgUsers={orgUsers} />
+            </div>
+          </div>
+        ) : (
         <section className={`bg-white rounded-lg shadow-sm border border-gray-200 overflow-x-auto ${resizingColumn ? 'select-none' : ''}`}>
           <div className="min-w-max">
           {/* Table header */}
@@ -950,7 +1033,143 @@ export function ObjectiveTree({ highlightObjectiveId, onHighlightClear, onViewCh
           </div>
           </div>
         </section>
+        )
       )}
     </div>
+  );
+}
+
+interface TreeTableSectionProps {
+  resizingColumn: keyof ColumnWidths | null;
+  columnWidths: ColumnWidths;
+  visibleColumns: ColumnKey[];
+  handleResizeStart: (column: keyof ColumnWidths, e: React.MouseEvent) => void;
+  filteredObjectives: Objective[];
+  filteredObjectiveIds: Set<string>;
+  directlyMatchingIds: Set<string>;
+  companyObjectives: Objective[];
+  teamObjectives: Objective[];
+  individualObjectives: Objective[];
+}
+
+function TreeTableSection({ resizingColumn, columnWidths, visibleColumns, handleResizeStart, filteredObjectives, filteredObjectiveIds, directlyMatchingIds, companyObjectives, teamObjectives, individualObjectives }: TreeTableSectionProps) {
+  return (
+    <section className={`bg-white rounded-lg shadow-sm border border-gray-200 overflow-x-auto ${resizingColumn ? 'select-none' : ''}`}>
+      <div className="min-w-max">
+        <div className="flex items-center bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500 uppercase tracking-wider">
+          <div className="relative flex items-center" style={{ width: columnWidths.title, minWidth: 150 }}>
+            <div className="px-2 py-2 flex-1">Objective ({filteredObjectives.length})</div>
+            <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('title', e)} />
+          </div>
+          {visibleColumns.includes('level') && (
+            <div className="relative flex items-center" style={{ width: columnWidths.level }}>
+              <div className="px-1 py-2 flex-1">Level</div>
+              <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('level', e)} />
+            </div>
+          )}
+          {visibleColumns.includes('type') && (
+            <div className="relative flex items-center" style={{ width: columnWidths.type }}>
+              <div className="px-1 py-2 flex-1">Type</div>
+              <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('type', e)} />
+            </div>
+          )}
+          {visibleColumns.includes('workflowStatus') && (
+            <div className="relative flex items-center" style={{ width: columnWidths.workflowStatus }}>
+              <div className="px-1 py-2 flex-1">Status</div>
+              <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('workflowStatus', e)} />
+            </div>
+          )}
+          {visibleColumns.includes('keyResult') && (
+            <div className="relative flex items-center" style={{ width: columnWidths.keyResult }}>
+              <div className="px-1 py-2 flex-1">KR</div>
+              <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('keyResult', e)} />
+            </div>
+          )}
+          {visibleColumns.includes('parent') && (
+            <div className="relative flex items-center" style={{ width: columnWidths.parent }}>
+              <div className="px-1 py-2 flex-1">Parent</div>
+              <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('parent', e)} />
+            </div>
+          )}
+          {visibleColumns.includes('team') && (
+            <div className="relative flex items-center" style={{ width: columnWidths.team }}>
+              <div className="px-1 py-2 flex-1">Team</div>
+              <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('team', e)} />
+            </div>
+          )}
+          {visibleColumns.includes('owner') && (
+            <div className="relative flex items-center" style={{ width: columnWidths.owner }}>
+              <div className="px-1 py-2 flex-1">Owner</div>
+              <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('owner', e)} />
+            </div>
+          )}
+          {visibleColumns.includes('assignee') && (
+            <div className="relative flex items-center" style={{ width: columnWidths.assignee }}>
+              <div className="px-1 py-2 flex-1">Assignee</div>
+              <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('assignee', e)} />
+            </div>
+          )}
+          {visibleColumns.includes('period') && (
+            <div className="relative flex items-center" style={{ width: columnWidths.period }}>
+              <div className="px-1 py-2 flex-1">Period</div>
+              <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('period', e)} />
+            </div>
+          )}
+          {visibleColumns.includes('nextStepDate') && (
+            <div className="relative flex items-center" style={{ width: columnWidths.nextStepDate }}>
+              <div className="px-1 py-2 flex-1">Next Date</div>
+              <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('nextStepDate', e)} />
+            </div>
+          )}
+          {visibleColumns.includes('nextStep') && (
+            <div className="relative flex items-center" style={{ width: columnWidths.nextStep }}>
+              <div className="px-1 py-2 flex-1">Next Step</div>
+              <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('nextStep', e)} />
+            </div>
+          )}
+          {visibleColumns.includes('storyPoints') && (
+            <div className="relative flex items-center" style={{ width: columnWidths.storyPoints }}>
+              <div className="px-1 py-2 flex-1 text-right">SP</div>
+              <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('storyPoints', e)} />
+            </div>
+          )}
+          {visibleColumns.includes('valuePoints') && (
+            <div className="relative flex items-center" style={{ width: columnWidths.valuePoints }}>
+              <div className="px-1 py-2 flex-1 text-right">VP</div>
+              <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('valuePoints', e)} />
+            </div>
+          )}
+          {visibleColumns.includes('tags') && (
+            <div className="relative flex items-center" style={{ width: columnWidths.tags }}>
+              <div className="px-1 py-2 flex-1">Tags</div>
+              <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('tags', e)} />
+            </div>
+          )}
+          {visibleColumns.includes('progress') && (
+            <div className="relative flex items-center" style={{ width: columnWidths.progress }}>
+              <div className="px-2 py-2 flex-1 text-right">Progress</div>
+              <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('progress', e)} />
+            </div>
+          )}
+          {visibleColumns.includes('resolved') && (
+            <div className="relative flex items-center" style={{ width: columnWidths.resolved }}>
+              <div className="px-1 py-2 flex-1">Resolved</div>
+              <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('resolved', e)} />
+            </div>
+          )}
+        </div>
+        <div>
+          {companyObjectives.map((obj: Objective) => (
+            <CompactObjectiveCard key={obj.id} objective={obj} filteredObjectiveIds={filteredObjectiveIds} directlyMatchingIds={directlyMatchingIds} />
+          ))}
+          {teamObjectives.map((obj: Objective) => (
+            <CompactObjectiveCard key={obj.id} objective={obj} filteredObjectiveIds={filteredObjectiveIds} directlyMatchingIds={directlyMatchingIds} />
+          ))}
+          {individualObjectives.map((obj: Objective) => (
+            <CompactObjectiveCard key={obj.id} objective={obj} filteredObjectiveIds={filteredObjectiveIds} directlyMatchingIds={directlyMatchingIds} />
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }

@@ -17,6 +17,7 @@ interface CompactObjectiveCardProps {
   visibleColumnsOverride?: import('../../store/okrStore').ColumnKey[];
   onRowClick?: (objective: Objective) => void;
   groupPeriodsByDate?: boolean;
+  hideRowActions?: boolean;
 }
 
 const getChildLevel = (parentLevel: ObjectiveLevel): ObjectiveLevel => {
@@ -64,7 +65,7 @@ function getNextStepDateIndicator(nextStepDate?: string): { color: string; toolt
   }
 }
 
-export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filteredObjectiveIds, directlyMatchingIds, defaultCollapsed = false, visibleColumnsOverride, onRowClick, groupPeriodsByDate = false }: CompactObjectiveCardProps) {
+export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filteredObjectiveIds, directlyMatchingIds, defaultCollapsed = false, visibleColumnsOverride, onRowClick, groupPeriodsByDate = false, hideRowActions = false }: CompactObjectiveCardProps) {
   // Only root-level items (depth 0) are expanded by default, unless caller opts into collapsed
   const [isExpanded, setIsExpanded] = useState(depth === 0 && !defaultCollapsed);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
@@ -147,6 +148,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   const visibleColumnsFromStore = useOKRStore((state: OKRStore) => state.visibleColumns);
   const visibleColumns = visibleColumnsOverride ?? visibleColumnsFromStore;
   const nameOnly = !!visibleColumnsOverride && visibleColumnsOverride.length === 0;
+  const minimalActions = nameOnly || hideRowActions;
   const setFilterObjective = useOKRStore((state: OKRStore) => state.setFilterObjective);
   const lists = useOKRStore((state: OKRStore) => state.lists);
   const addItemToList = useOKRStore((state: OKRStore) => state.addItemToList);
@@ -931,7 +933,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
             : { width: columnWidths.title, minWidth: 150, paddingLeft: depth * 20 + 8 }}
         >
           {/* Drag handle */}
-          {canModify && !nameOnly && (
+          {canModify && !minimalActions && (
             <div
               draggable
               onDragStart={handleDragStart}
@@ -949,7 +951,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
               </svg>
             </div>
           )}
-          {!canModify && !nameOnly && <div className="w-4 flex-shrink-0" />}
+          {!canModify && !minimalActions && <div className="w-4 flex-shrink-0" />}
 
           {/* Expand/collapse chevron */}
           <button
@@ -991,7 +993,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           )}
 
           {/* Colored bookmark icons for lists */}
-          {!nameOnly && objectiveLists.length > 0 && (
+          {!minimalActions && objectiveLists.length > 0 && (
             <div className="flex items-center gap-0.5 flex-shrink-0">
               {objectiveLists.map((list: List) => (
                 <span key={list.id} className="relative group/bookmark">
@@ -1012,7 +1014,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           )}
 
           {/* External link */}
-          {!nameOnly && objective.link?.url && (
+          {!minimalActions && objective.link?.url && (
             <a
               href={objective.link.url}
               target="_blank"
@@ -1030,7 +1032,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           )}
 
           {/* Next step date indicator */}
-          {!nameOnly && (() => {
+          {!minimalActions && (() => {
             const indicator = getNextStepDateIndicator(objective.nextStepDate);
             if (!indicator) return null;
             return (
@@ -1044,7 +1046,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           })()}
 
           {/* Quick add button - inline with title */}
-          {!nameOnly && canAddChild && (
+          {!minimalActions && canAddChild && (
             <span className="relative group/quickadd flex-shrink-0">
               <button
                 onClick={() => setShowQuickAdd(!showQuickAdd)}
@@ -1061,7 +1063,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           )}
 
           {/* Filter to descendants button */}
-          {!nameOnly && (
+          {!minimalActions && (
           <span className="relative group/filter flex-shrink-0">
             <button
               onClick={() => setFilterObjective(objective.id)}
@@ -1079,7 +1081,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           )}
 
           {/* Add to list button */}
-          {!nameOnly && (
+          {!minimalActions && (
           <div className="relative group/list">
             <button
               ref={listButtonRef}
@@ -1182,7 +1184,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           )}
 
           {/* Edit button - inline with title */}
-          {!nameOnly && canModify && (
+          {!minimalActions && canModify && (
             <span className="relative group/edit flex-shrink-0">
               <button
                 onClick={() => setShowEdit(true)}
@@ -1199,7 +1201,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           )}
 
           {/* Clone button - inline with title */}
-          {!nameOnly && canModify && (
+          {!minimalActions && canModify && (
             <span className="relative group/clone flex-shrink-0">
               <button
                 onClick={() => cloneObjective(objective.id, { orgId: organization?.id || '', userEmail, shared: objective.shared })}
@@ -1894,6 +1896,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
               visibleColumnsOverride={visibleColumnsOverride}
               onRowClick={onRowClick}
               groupPeriodsByDate={groupPeriodsByDate}
+              hideRowActions={hideRowActions}
             />
           ))}
         </>

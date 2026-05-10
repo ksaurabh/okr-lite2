@@ -172,6 +172,11 @@ interface OKRActions {
   setEvergreenOverduePeriodIds: (ids: string[]) => Promise<void>;
   evergreenOverdueViewMode: 'tree' | 'table';
   setEvergreenOverdueViewMode: (mode: 'tree' | 'table') => Promise<void>;
+  objectiveViewMode: 'explore' | 'plan';
+  setObjectiveViewMode: (mode: 'explore' | 'plan') => Promise<void>;
+  planViewColumns: ColumnKey[];
+  setPlanViewColumns: (columns: ColumnKey[]) => Promise<void>;
+  togglePlanViewColumn: (column: ColumnKey) => Promise<void>;
   fetchUserPreferences: () => Promise<void>;
 
   // Saved Views
@@ -369,6 +374,8 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
   evergreenOverdueStatuses: [] as WorkflowStatus[],
   evergreenOverduePeriodIds: [] as string[],
   evergreenOverdueViewMode: 'tree' as 'tree' | 'table',
+  objectiveViewMode: 'explore' as 'explore' | 'plan',
+  planViewColumns: ['workflowStatus', 'owner', 'period', 'nextStepDate'] as ColumnKey[],
   savedViews: [],
   activeViewId: null,
   lists: [],
@@ -1130,6 +1137,12 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
         if (data.preferences?.evergreenOverdueViewMode === 'tree' || data.preferences?.evergreenOverdueViewMode === 'table') {
           updates.evergreenOverdueViewMode = data.preferences.evergreenOverdueViewMode;
         }
+        if (data.preferences?.objectiveViewMode === 'explore' || data.preferences?.objectiveViewMode === 'plan') {
+          updates.objectiveViewMode = data.preferences.objectiveViewMode;
+        }
+        if (data.preferences?.planViewColumns && Array.isArray(data.preferences.planViewColumns)) {
+          updates.planViewColumns = data.preferences.planViewColumns;
+        }
         if (Object.keys(updates).length > 0) {
           set(updates);
         }
@@ -1293,6 +1306,53 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       });
     } catch (err) {
       console.error('Failed to save evergreen overdue columns preference:', err);
+    }
+  },
+
+  setObjectiveViewMode: async (mode) => {
+    set({ objectiveViewMode: mode });
+    try {
+      await fetch(`${API_URL}/api/users/me/preferences`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferences: { objectiveViewMode: mode } }),
+      });
+    } catch (err) {
+      console.error('Failed to save objective view mode preference:', err);
+    }
+  },
+
+  setPlanViewColumns: async (columns: ColumnKey[]) => {
+    set({ planViewColumns: columns });
+    try {
+      await fetch(`${API_URL}/api/users/me/preferences`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferences: { planViewColumns: columns } }),
+      });
+    } catch (err) {
+      console.error('Failed to save plan view columns preference:', err);
+    }
+  },
+
+  togglePlanViewColumn: async (column: ColumnKey) => {
+    const state = get();
+    if (column === 'title') return;
+    const next = state.planViewColumns.includes(column)
+      ? state.planViewColumns.filter(c => c !== column)
+      : [...state.planViewColumns, column];
+    set({ planViewColumns: next });
+    try {
+      await fetch(`${API_URL}/api/users/me/preferences`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferences: { planViewColumns: next } }),
+      });
+    } catch (err) {
+      console.error('Failed to save plan view columns preference:', err);
     }
   },
 
