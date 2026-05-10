@@ -163,6 +163,9 @@ interface OKRActions {
   visibleColumns: ColumnKey[];
   setVisibleColumns: (columns: ColumnKey[]) => Promise<void>;
   toggleColumnVisibility: (column: ColumnKey) => Promise<void>;
+  evergreenOverdueColumns: ColumnKey[];
+  setEvergreenOverdueColumns: (columns: ColumnKey[]) => Promise<void>;
+  toggleEvergreenOverdueColumn: (column: ColumnKey) => Promise<void>;
   fetchUserPreferences: () => Promise<void>;
 
   // Saved Views
@@ -356,6 +359,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
   editorWidth: undefined,
   columnWidths: DEFAULT_COLUMN_WIDTHS,
   visibleColumns: DEFAULT_VISIBLE_COLUMNS,
+  evergreenOverdueColumns: ['workflowStatus', 'owner', 'nextStepDate'] as ColumnKey[],
   savedViews: [],
   activeViewId: null,
   lists: [],
@@ -1105,6 +1109,9 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
         if (data.preferences?.visibleColumns && Array.isArray(data.preferences.visibleColumns)) {
           updates.visibleColumns = data.preferences.visibleColumns;
         }
+        if (data.preferences?.evergreenOverdueColumns && Array.isArray(data.preferences.evergreenOverdueColumns)) {
+          updates.evergreenOverdueColumns = data.preferences.evergreenOverdueColumns;
+        }
         if (Object.keys(updates).length > 0) {
           set(updates);
         }
@@ -1193,6 +1200,39 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       });
     } catch (err) {
       console.error('Failed to save visible columns preference:', err);
+    }
+  },
+
+  setEvergreenOverdueColumns: async (columns: ColumnKey[]) => {
+    set({ evergreenOverdueColumns: columns });
+    try {
+      await fetch(`${API_URL}/api/users/me/preferences`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferences: { evergreenOverdueColumns: columns } }),
+      });
+    } catch (err) {
+      console.error('Failed to save evergreen overdue columns preference:', err);
+    }
+  },
+
+  toggleEvergreenOverdueColumn: async (column: ColumnKey) => {
+    const state = get();
+    if (column === 'title') return;
+    const next = state.evergreenOverdueColumns.includes(column)
+      ? state.evergreenOverdueColumns.filter(c => c !== column)
+      : [...state.evergreenOverdueColumns, column];
+    set({ evergreenOverdueColumns: next });
+    try {
+      await fetch(`${API_URL}/api/users/me/preferences`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferences: { evergreenOverdueColumns: next } }),
+      });
+    } catch (err) {
+      console.error('Failed to save evergreen overdue columns preference:', err);
     }
   },
 

@@ -13,6 +13,9 @@ interface CompactObjectiveCardProps {
   depth?: number;
   filteredObjectiveIds?: Set<string>;
   directlyMatchingIds?: Set<string>;
+  defaultCollapsed?: boolean;
+  visibleColumnsOverride?: import('../../store/okrStore').ColumnKey[];
+  onRowClick?: (objective: Objective) => void;
 }
 
 const getChildLevel = (parentLevel: ObjectiveLevel): ObjectiveLevel => {
@@ -60,9 +63,9 @@ function getNextStepDateIndicator(nextStepDate?: string): { color: string; toolt
   }
 }
 
-export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filteredObjectiveIds, directlyMatchingIds }: CompactObjectiveCardProps) {
-  // Only root-level items (depth 0) are expanded by default
-  const [isExpanded, setIsExpanded] = useState(depth === 0);
+export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filteredObjectiveIds, directlyMatchingIds, defaultCollapsed = false, visibleColumnsOverride, onRowClick }: CompactObjectiveCardProps) {
+  // Only root-level items (depth 0) are expanded by default, unless caller opts into collapsed
+  const [isExpanded, setIsExpanded] = useState(depth === 0 && !defaultCollapsed);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [quickAddTitle, setQuickAddTitle] = useState('');
   const [isAdding, setIsAdding] = useState(false);
@@ -136,7 +139,9 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   const editorWidth = useOKRStore((state: OKRStore) => state.editorWidth);
   const setEditorWidth = useOKRStore((state: OKRStore) => state.setEditorWidth);
   const columnWidths = useOKRStore((state: OKRStore) => state.columnWidths);
-  const visibleColumns = useOKRStore((state: OKRStore) => state.visibleColumns);
+  const visibleColumnsFromStore = useOKRStore((state: OKRStore) => state.visibleColumns);
+  const visibleColumns = visibleColumnsOverride ?? visibleColumnsFromStore;
+  const nameOnly = !!visibleColumnsOverride && visibleColumnsOverride.length === 0;
   const setFilterObjective = useOKRStore((state: OKRStore) => state.setFilterObjective);
   const lists = useOKRStore((state: OKRStore) => state.lists);
   const addItemToList = useOKRStore((state: OKRStore) => state.addItemToList);
@@ -892,15 +897,21 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
       {/* Main tree table row */}
       <div
         data-objective-id={objective.id}
-        className={`group flex items-center hover:bg-gray-50 border-b border-gray-100 ${isDragOver ? 'bg-blue-50 border-blue-300' : ''}`}
+        className={`group flex items-center hover:bg-gray-50 border-b border-gray-100 ${isDragOver ? 'bg-blue-50 border-blue-300' : ''} ${onRowClick ? 'cursor-pointer' : ''}`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
+        onClick={onRowClick ? () => onRowClick(objective) : undefined}
       >
-        {/* Tree column - uses title width */}
-        <div className="flex items-center gap-1 py-1.5 px-2 min-w-0" style={{ width: columnWidths.title, minWidth: 150, paddingLeft: depth * 20 + 8 }}>
+        {/* Tree column - uses title width (or fills the row in nameOnly mode) */}
+        <div
+          className={`flex items-center gap-1 py-1.5 px-2 min-w-0 ${nameOnly ? 'flex-1' : 'flex-shrink-0'}`}
+          style={nameOnly
+            ? { paddingLeft: depth * 20 + 8 }
+            : { width: columnWidths.title, minWidth: 150, paddingLeft: depth * 20 + 8 }}
+        >
           {/* Drag handle */}
-          {canModify && (
+          {canModify && !nameOnly && (
             <div
               draggable
               onDragStart={handleDragStart}
@@ -918,7 +929,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
               </svg>
             </div>
           )}
-          {!canModify && <div className="w-4 flex-shrink-0" />}
+          {!canModify && !nameOnly && <div className="w-4 flex-shrink-0" />}
 
           {/* Expand/collapse chevron */}
           <button
@@ -948,19 +959,19 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
             />
           ) : (
             <span
-              onClick={() => canModify && setEditingTitle(true)}
-              className={`text-sm truncate ${
+              onClick={() => !nameOnly && canModify && setEditingTitle(true)}
+              className={`text-sm truncate flex-1 min-w-0 ${
                 directlyMatchingIds && directlyMatchingIds.size > 0 && !directlyMatchingIds.has(objective.id)
                   ? 'text-gray-400'
                   : 'text-gray-900'
-              } ${canModify ? 'cursor-pointer hover:bg-gray-100 px-1 py-0.5 rounded -mx-1' : ''}`}
+              } ${!nameOnly && canModify ? 'cursor-pointer hover:bg-gray-100 px-1 py-0.5 rounded -mx-1' : ''}`}
             >
               {objective.title}
             </span>
           )}
 
           {/* Colored bookmark icons for lists */}
-          {objectiveLists.length > 0 && (
+          {!nameOnly && objectiveLists.length > 0 && (
             <div className="flex items-center gap-0.5 flex-shrink-0">
               {objectiveLists.map((list: List) => (
                 <span key={list.id} className="relative group/bookmark">
@@ -981,7 +992,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           )}
 
           {/* External link */}
-          {objective.link?.url && (
+          {!nameOnly && objective.link?.url && (
             <a
               href={objective.link.url}
               target="_blank"
@@ -999,7 +1010,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           )}
 
           {/* Next step date indicator */}
-          {(() => {
+          {!nameOnly && (() => {
             const indicator = getNextStepDateIndicator(objective.nextStepDate);
             if (!indicator) return null;
             return (
@@ -1013,7 +1024,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           })()}
 
           {/* Quick add button - inline with title */}
-          {canAddChild && (
+          {!nameOnly && canAddChild && (
             <span className="relative group/quickadd flex-shrink-0">
               <button
                 onClick={() => setShowQuickAdd(!showQuickAdd)}
@@ -1030,6 +1041,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           )}
 
           {/* Filter to descendants button */}
+          {!nameOnly && (
           <span className="relative group/filter flex-shrink-0">
             <button
               onClick={() => setFilterObjective(objective.id)}
@@ -1044,8 +1056,10 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
               Filter to descendants
             </span>
           </span>
+          )}
 
           {/* Add to list button */}
+          {!nameOnly && (
           <div className="relative group/list">
             <button
               ref={listButtonRef}
@@ -1145,9 +1159,10 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
               </div>
             )}
           </div>
+          )}
 
           {/* Edit button - inline with title */}
-          {canModify && (
+          {!nameOnly && canModify && (
             <span className="relative group/edit flex-shrink-0">
               <button
                 onClick={() => setShowEdit(true)}
@@ -1164,7 +1179,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           )}
 
           {/* Clone button - inline with title */}
-          {canModify && (
+          {!nameOnly && canModify && (
             <span className="relative group/clone flex-shrink-0">
               <button
                 onClick={() => cloneObjective(objective.id, { orgId: organization?.id || '', userEmail, shared: objective.shared })}
@@ -1794,6 +1809,8 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
               depth={depth + 1}
               filteredObjectiveIds={filteredObjectiveIds}
               directlyMatchingIds={directlyMatchingIds}
+              visibleColumnsOverride={visibleColumnsOverride}
+              onRowClick={onRowClick}
             />
           ))}
         </>

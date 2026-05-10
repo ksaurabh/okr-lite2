@@ -19,8 +19,38 @@ import { useOKRStore } from './store/okrStore';
 
 type View = 'dashboard' | 'objectives' | 'views' | 'checklist' | 'progress' | 'updates' | 'lists' | 'logwork' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin' | 'logs';
 
+const ALL_VIEWS: View[] = ['dashboard', 'objectives', 'views', 'checklist', 'progress', 'updates', 'lists', 'logwork', 'teams', 'periods', 'tags', 'settings', 'admin', 'logs'];
+const RESERVED_PATHS = new Set(['/auth/callback', '/invite/accept']);
+
+function viewFromPath(pathname: string): View {
+  if (RESERVED_PATHS.has(pathname)) return 'dashboard';
+  const seg = pathname.replace(/^\/+/, '').split('/')[0];
+  if (!seg) return 'dashboard';
+  return (ALL_VIEWS as string[]).includes(seg) ? (seg as View) : 'dashboard';
+}
+
+function pathFromView(view: View): string {
+  return view === 'dashboard' ? '/' : `/${view}`;
+}
+
 function AppContent() {
-  const [currentView, setCurrentView] = useState<View>('dashboard');
+  const [currentView, setCurrentViewState] = useState<View>(() => viewFromPath(window.location.pathname));
+
+  const setCurrentView = (view: View) => {
+    setCurrentViewState(view);
+    const path = pathFromView(view);
+    if (window.location.pathname !== path) {
+      window.history.pushState({}, '', path);
+    }
+  };
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setCurrentViewState(viewFromPath(window.location.pathname));
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
   const [showAddObjective, setShowAddObjective] = useState(false);
   const [highlightObjectiveId, setHighlightObjectiveId] = useState<string | null>(null);
 

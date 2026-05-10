@@ -132,6 +132,39 @@ export function ChecklistPage() {
   const [isNoNextStepExpanded, setIsNoNextStepExpandedState] = useState(initialSections.isNoNextStepExpanded);
   const [isNoPeriodExpanded, setIsNoPeriodExpandedState] = useState(initialSections.isNoPeriodExpanded);
   const [isOverdueEvergreenExpanded, setIsOverdueEvergreenExpandedState] = useState(initialSections.isOverdueEvergreenExpanded);
+  const [evergreenSelectedObjective, setEvergreenSelectedObjective] = useState<Objective | null>(null);
+  const [evergreenLeftWidth, setEvergreenLeftWidth] = useState<number>(() => {
+    try {
+      const v = localStorage.getItem('okr-checklist-evergreen-left-width');
+      const n = v ? parseInt(v, 10) : NaN;
+      return Number.isFinite(n) && n >= 10 && n <= 80 ? n : 20;
+    } catch { return 20; }
+  });
+  const evergreenSplitRef = useRef<HTMLDivElement>(null);
+  const isDraggingEvergreenSplitterRef = useRef(false);
+
+  useEffect(() => {
+    const handleMove = (e: MouseEvent) => {
+      if (!isDraggingEvergreenSplitterRef.current || !evergreenSplitRef.current) return;
+      const rect = evergreenSplitRef.current.getBoundingClientRect();
+      const pct = ((e.clientX - rect.left) / rect.width) * 100;
+      const clamped = Math.max(10, Math.min(80, pct));
+      setEvergreenLeftWidth(clamped);
+    };
+    const handleUp = () => {
+      if (!isDraggingEvergreenSplitterRef.current) return;
+      isDraggingEvergreenSplitterRef.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      try { localStorage.setItem('okr-checklist-evergreen-left-width', String(Math.round(evergreenLeftWidth))); } catch { /* ignore */ }
+    };
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('mouseup', handleUp);
+    return () => {
+      document.removeEventListener('mousemove', handleMove);
+      document.removeEventListener('mouseup', handleUp);
+    };
+  }, [evergreenLeftWidth]);
   const [isTypeFilterOn, setIsTypeFilterOnState] = useState(initialSections.isTypeFilterOn);
   const [isNoNextStepFilterOn, setIsNoNextStepFilterOnState] = useState(initialSections.isNoNextStepFilterOn);
   const [isNoPeriodFilterOn, setIsNoPeriodFilterOnState] = useState(initialSections.isNoPeriodFilterOn);
@@ -156,6 +189,24 @@ export function ChecklistPage() {
   const setIsOverdueEvergreenExpanded = useCallback((expanded: boolean) => {
     setIsOverdueEvergreenExpandedState(expanded);
     saveSectionsState({ isOverdueEvergreenExpanded: expanded });
+    if (expanded) {
+      if (window.location.hash !== '#evergreen-overdue') {
+        window.history.replaceState({}, '', `${window.location.pathname}#evergreen-overdue`);
+      }
+    } else if (window.location.hash === '#evergreen-overdue') {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+
+  // On mount, if URL hash points to this section, expand it and scroll into view.
+  useEffect(() => {
+    if (window.location.hash === '#evergreen-overdue') {
+      setIsOverdueEvergreenExpandedState(true);
+      saveSectionsState({ isOverdueEvergreenExpanded: true });
+      setTimeout(() => {
+        document.getElementById('evergreen-overdue')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
+    }
   }, []);
 
   const toggleTypeFilter = useCallback(() => {
@@ -250,6 +301,21 @@ export function ChecklistPage() {
   const setColumnWidths = useOKRStore((state: OKRStore) => state.setColumnWidths);
   const visibleColumns = useOKRStore((state: OKRStore) => state.visibleColumns);
   const toggleColumnVisibility = useOKRStore((state: OKRStore) => state.toggleColumnVisibility);
+  const evergreenOverdueColumns = useOKRStore((state: OKRStore) => state.evergreenOverdueColumns);
+  const toggleEvergreenOverdueColumn = useOKRStore((state: OKRStore) => state.toggleEvergreenOverdueColumn);
+  const [showEvergreenColumnMenu, setShowEvergreenColumnMenu] = useState(false);
+  const evergreenColumnMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showEvergreenColumnMenu) return;
+    const handleClick = (e: MouseEvent) => {
+      if (evergreenColumnMenuRef.current && !evergreenColumnMenuRef.current.contains(e.target as Node)) {
+        setShowEvergreenColumnMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showEvergreenColumnMenu]);
 
   // Toggle workflow status filter
   const toggleWorkflowStatusFilter = useCallback((status: WorkflowStatus) => {
@@ -486,24 +552,27 @@ export function ChecklistPage() {
     [filteredObjectivesWithoutPeriod]
   );
 
-  const overdueEvergreenObjectives = useMemo(() => {
+  const overdueEvergreenMatched = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayMs = today.getTime();
     const source = isOverdueEvergreenFilterOn ? filteredObjectives : orgObjectives;
-    const matched = source.filter((obj: Objective) => {
+    return source.filter((obj: Objective) => {
       if (!obj.nextStepDate) return false;
       if (obj.workflowStatus === 'done' || obj.workflowStatus === 'archived' || obj.workflowStatus === 'backlog') return false;
       const [y, m, d] = obj.nextStepDate.split('-').map(Number);
       return new Date(y, m - 1, d).getTime() < todayMs;
     });
-    const matchedIds = new Set(matched.map(o => o.id));
-    return matched.filter(o => !o.parentId || !matchedIds.has(o.parentId));
   }, [filteredObjectives, orgObjectives, isOverdueEvergreenFilterOn]);
 
   const overdueEvergreenIds = useMemo(
-    () => new Set(overdueEvergreenObjectives.map((obj: Objective) => obj.id)),
-    [overdueEvergreenObjectives]
+    () => new Set(overdueEvergreenMatched.map((obj: Objective) => obj.id)),
+    [overdueEvergreenMatched]
+  );
+
+  const overdueEvergreenObjectives = useMemo(
+    () => overdueEvergreenMatched.filter(o => !o.parentId || !overdueEvergreenIds.has(o.parentId)),
+    [overdueEvergreenMatched, overdueEvergreenIds]
   );
 
   // Get IDs for quick lookup
@@ -1366,7 +1435,7 @@ export function ChecklistPage() {
       </div>
 
       {/* Evergreen items with next date in the past */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+      <div id="evergreen-overdue" className="bg-white rounded-lg shadow-sm border border-gray-200 scroll-mt-4">
         <div
           role="button"
           tabIndex={0}
@@ -1402,16 +1471,16 @@ export function ChecklistPage() {
                 Evergreen items with next date in the past
               </h3>
               <p className="text-xs text-gray-500">
-                {overdueEvergreenObjectives.length} {overdueEvergreenObjectives.length === 1 ? 'item' : 'items'} overdue
+                {overdueEvergreenMatched.length} {overdueEvergreenMatched.length === 1 ? 'item' : 'items'} overdue
               </p>
             </div>
           </div>
           <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${
-            overdueEvergreenObjectives.length > 0
+            overdueEvergreenMatched.length > 0
               ? 'bg-amber-100 text-amber-700'
               : 'bg-green-100 text-green-700'
           }`}>
-            {overdueEvergreenObjectives.length}
+            {overdueEvergreenMatched.length}
           </span>
         </div>
 
@@ -1432,40 +1501,180 @@ export function ChecklistPage() {
                 <p className="text-sm">No open items have a past Next Date — nice!</p>
               </div>
             ) : (
-              <div className={`overflow-hidden ${resizingColumn ? 'select-none' : ''}`}>
-                <div className="flex items-center bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  <div className="px-2 py-2 flex-shrink-0" style={{ width: columnWidths.title, minWidth: 150 }}>Objective</div>
-                  {visibleColumns.includes('level') && <div className="px-1 py-2 flex items-center" style={{ width: columnWidths.level }}>Level</div>}
-                  {visibleColumns.includes('type') && <div className="px-1 py-2 flex items-center" style={{ width: columnWidths.type }}>Type</div>}
-                  {visibleColumns.includes('workflowStatus') && <div className="px-1 py-2 flex items-center" style={{ width: columnWidths.workflowStatus }}>Status</div>}
-                  {visibleColumns.includes('parent') && <div className="px-1 py-2 flex items-center" style={{ width: columnWidths.parent }}>Parent</div>}
-                  {visibleColumns.includes('team') && <div className="px-1 py-2 flex items-center" style={{ width: columnWidths.team }}>Team</div>}
-                  {visibleColumns.includes('owner') && <div className="px-1 py-2 flex items-center" style={{ width: columnWidths.owner }}>Owner</div>}
-                  {visibleColumns.includes('assignee') && <div className="px-1 py-2 flex items-center" style={{ width: columnWidths.assignee }}>Assignee</div>}
-                  {visibleColumns.includes('period') && <div className="px-1 py-2 flex items-center" style={{ width: columnWidths.period }}>Period</div>}
-                  {visibleColumns.includes('nextStepDate') && <div className="px-1 py-2 flex items-center" style={{ width: columnWidths.nextStepDate }}>Next Date</div>}
-                  {visibleColumns.includes('nextStep') && <div className="px-1 py-2 flex items-center" style={{ width: columnWidths.nextStep }}>Next Step</div>}
-                  {visibleColumns.includes('storyPoints') && <div className="px-1 py-2 flex items-center text-right" style={{ width: columnWidths.storyPoints }}>SP</div>}
-                  {visibleColumns.includes('valuePoints') && <div className="px-1 py-2 flex items-center text-right" style={{ width: columnWidths.valuePoints }}>VP</div>}
-                  {visibleColumns.includes('tags') && <div className="px-1 py-2 flex items-center" style={{ width: columnWidths.tags }}>Tags</div>}
-                  {visibleColumns.includes('progress') && <div className="px-2 py-2 flex items-center text-right" style={{ width: columnWidths.progress }}>Progress</div>}
-                  <div className="w-16 px-2 py-2"></div>
-                </div>
-                <div>
+              <div ref={evergreenSplitRef} className="flex relative">
+                <div className="border-r border-gray-200 overflow-x-hidden" style={{ width: `${evergreenLeftWidth}%` }}>
                   {overdueEvergreenObjectives.map((obj: Objective) => (
-                    <CompactObjectiveCard
+                    <div
                       key={obj.id}
-                      objective={obj}
-                      depth={0}
-                      filteredObjectiveIds={overdueEvergreenIds}
-                    />
+                      className={evergreenSelectedObjective?.id === obj.id ? 'bg-blue-50' : ''}
+                    >
+                      <CompactObjectiveCard
+                        objective={obj}
+                        depth={0}
+                        filteredObjectiveIds={overdueEvergreenIds}
+                        defaultCollapsed
+                        visibleColumnsOverride={[]}
+                        onRowClick={setEvergreenSelectedObjective}
+                      />
+                    </div>
                   ))}
+                </div>
+                <div
+                  onMouseDown={() => {
+                    isDraggingEvergreenSplitterRef.current = true;
+                    document.body.style.cursor = 'col-resize';
+                    document.body.style.userSelect = 'none';
+                  }}
+                  className="w-1 cursor-col-resize bg-gray-200 hover:bg-blue-400 active:bg-blue-500 flex-shrink-0"
+                  title="Drag to resize"
+                />
+                <div className="min-w-0" style={{ width: `${100 - evergreenLeftWidth}%` }}>
+                  <div className="flex items-center justify-end px-2 py-1 border-b border-gray-200 bg-gray-50 relative">
+                    <div ref={evergreenColumnMenuRef} className="relative">
+                      <button
+                        onClick={() => setShowEvergreenColumnMenu(!showEvergreenColumnMenu)}
+                        className="flex items-center gap-1 px-2 py-1 text-xs text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded"
+                        title="Choose columns"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                        </svg>
+                        Columns
+                      </button>
+                      {showEvergreenColumnMenu && (
+                        <div className="absolute right-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-md shadow-lg py-1 min-w-[180px]">
+                          {(Object.keys(COLUMN_LABELS) as ColumnKey[])
+                            .filter(c => c !== 'title')
+                            .map(col => (
+                              <label key={col} className="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={evergreenOverdueColumns.includes(col)}
+                                  onChange={() => toggleEvergreenOverdueColumn(col)}
+                                  className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                />
+                                {COLUMN_LABELS[col]}
+                              </label>
+                            ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {evergreenSelectedObjective ? (
+                    <div className={`overflow-x-auto ${resizingColumn ? 'select-none' : ''}`}>
+                      <div className="flex items-center bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <div className="relative flex items-center px-2 py-2 flex-shrink-0" style={{ width: columnWidths.title, minWidth: 150 }}>
+                          <div className="flex-1">Objective</div>
+                          <div
+                            className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10"
+                            onMouseDown={(e) => handleResizeStart('title', e)}
+                          />
+                        </div>
+                        {evergreenOverdueColumns.includes('level') && (
+                          <div className="relative flex items-center" style={{ width: columnWidths.level }}>
+                            <div className="px-1 py-2 flex-1">Level</div>
+                            <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('level', e)} />
+                          </div>
+                        )}
+                        {evergreenOverdueColumns.includes('type') && (
+                          <div className="relative flex items-center" style={{ width: columnWidths.type }}>
+                            <div className="px-1 py-2 flex-1">Type</div>
+                            <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('type', e)} />
+                          </div>
+                        )}
+                        {evergreenOverdueColumns.includes('workflowStatus') && (
+                          <div className="relative flex items-center" style={{ width: columnWidths.workflowStatus }}>
+                            <div className="px-1 py-2 flex-1">Status</div>
+                            <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('workflowStatus', e)} />
+                          </div>
+                        )}
+                        {evergreenOverdueColumns.includes('parent') && (
+                          <div className="relative flex items-center" style={{ width: columnWidths.parent }}>
+                            <div className="px-1 py-2 flex-1">Parent</div>
+                            <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('parent', e)} />
+                          </div>
+                        )}
+                        {evergreenOverdueColumns.includes('team') && (
+                          <div className="relative flex items-center" style={{ width: columnWidths.team }}>
+                            <div className="px-1 py-2 flex-1">Team</div>
+                            <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('team', e)} />
+                          </div>
+                        )}
+                        {evergreenOverdueColumns.includes('owner') && (
+                          <div className="relative flex items-center" style={{ width: columnWidths.owner }}>
+                            <div className="px-1 py-2 flex-1">Owner</div>
+                            <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('owner', e)} />
+                          </div>
+                        )}
+                        {evergreenOverdueColumns.includes('assignee') && (
+                          <div className="relative flex items-center" style={{ width: columnWidths.assignee }}>
+                            <div className="px-1 py-2 flex-1">Assignee</div>
+                            <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('assignee', e)} />
+                          </div>
+                        )}
+                        {evergreenOverdueColumns.includes('period') && (
+                          <div className="relative flex items-center" style={{ width: columnWidths.period }}>
+                            <div className="px-1 py-2 flex-1">Period</div>
+                            <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('period', e)} />
+                          </div>
+                        )}
+                        {evergreenOverdueColumns.includes('nextStepDate') && (
+                          <div className="relative flex items-center" style={{ width: columnWidths.nextStepDate }}>
+                            <div className="px-1 py-2 flex-1">Next Date</div>
+                            <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('nextStepDate', e)} />
+                          </div>
+                        )}
+                        {evergreenOverdueColumns.includes('nextStep') && (
+                          <div className="relative flex items-center" style={{ width: columnWidths.nextStep }}>
+                            <div className="px-1 py-2 flex-1">Next Step</div>
+                            <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('nextStep', e)} />
+                          </div>
+                        )}
+                        {evergreenOverdueColumns.includes('storyPoints') && (
+                          <div className="relative flex items-center" style={{ width: columnWidths.storyPoints }}>
+                            <div className="px-1 py-2 flex-1 text-right">SP</div>
+                            <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('storyPoints', e)} />
+                          </div>
+                        )}
+                        {evergreenOverdueColumns.includes('valuePoints') && (
+                          <div className="relative flex items-center" style={{ width: columnWidths.valuePoints }}>
+                            <div className="px-1 py-2 flex-1 text-right">VP</div>
+                            <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('valuePoints', e)} />
+                          </div>
+                        )}
+                        {evergreenOverdueColumns.includes('tags') && (
+                          <div className="relative flex items-center" style={{ width: columnWidths.tags }}>
+                            <div className="px-1 py-2 flex-1">Tags</div>
+                            <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('tags', e)} />
+                          </div>
+                        )}
+                        {evergreenOverdueColumns.includes('progress') && (
+                          <div className="relative flex items-center" style={{ width: columnWidths.progress }}>
+                            <div className="px-2 py-2 flex-1 text-right">Progress</div>
+                            <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handleResizeStart('progress', e)} />
+                          </div>
+                        )}
+                        <div className="w-16 px-2 py-2"></div>
+                      </div>
+                      <CompactObjectiveCard
+                        key={evergreenSelectedObjective.id}
+                        objective={evergreenSelectedObjective}
+                        depth={0}
+                        visibleColumnsOverride={evergreenOverdueColumns}
+                      />
+                    </div>
+                  ) : (
+                    <div className="p-6 text-center text-sm text-gray-400">
+                      Click an item on the left to see its objective tree.
+                    </div>
+                  )}
                 </div>
               </div>
             )}
           </div>
         )}
       </div>
+
     </div>
   );
 }
