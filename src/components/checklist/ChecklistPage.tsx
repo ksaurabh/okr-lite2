@@ -315,6 +315,21 @@ export function ChecklistPage() {
   const evergreenColumnMenuRef = useRef<HTMLDivElement>(null);
   const evergreenRightStatuses = useOKRStore((state: OKRStore) => state.evergreenOverdueStatuses);
   const setEvergreenRightStatuses = useOKRStore((state: OKRStore) => state.setEvergreenOverdueStatuses);
+  const evergreenRightPeriodIds = useOKRStore((state: OKRStore) => state.evergreenOverduePeriodIds);
+  const setEvergreenRightPeriodIds = useOKRStore((state: OKRStore) => state.setEvergreenOverduePeriodIds);
+  const [showEvergreenPeriodMenu, setShowEvergreenPeriodMenu] = useState(false);
+  const evergreenPeriodMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showEvergreenPeriodMenu) return;
+    const handleClick = (e: MouseEvent) => {
+      if (evergreenPeriodMenuRef.current && !evergreenPeriodMenuRef.current.contains(e.target as Node)) {
+        setShowEvergreenPeriodMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showEvergreenPeriodMenu]);
   const [showEvergreenStatusMenu, setShowEvergreenStatusMenu] = useState(false);
   const evergreenStatusMenuRef = useRef<HTMLDivElement>(null);
 
@@ -1567,6 +1582,76 @@ export function ChecklistPage() {
                 />
                 <div className="min-w-0" style={{ width: `${100 - evergreenLeftWidth}%` }}>
                   <div className="flex items-center justify-end gap-2 px-2 py-1 border-b border-gray-200 bg-gray-50 relative">
+                    <div ref={evergreenPeriodMenuRef} className="relative">
+                      <button
+                        onClick={() => setShowEvergreenPeriodMenu(!showEvergreenPeriodMenu)}
+                        className="flex items-center gap-1 px-2 py-1 text-xs text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded"
+                        title="Filter by period"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                        Period{evergreenRightPeriodIds.length > 0 ? ` (${evergreenRightPeriodIds.length})` : ''}
+                      </button>
+                      {showEvergreenPeriodMenu && (() => {
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+                        const todayMs = today.getTime();
+                        const parseEnd = (ymd: string) => {
+                          const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(ymd);
+                          return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime() : NaN;
+                        };
+                        const past: Period[] = [];
+                        const current: Period[] = [];
+                        orgPeriods.forEach((p: Period) => {
+                          const end = parseEnd(p.endDate);
+                          if (Number.isFinite(end) && end < todayMs) past.push(p);
+                          else current.push(p);
+                        });
+                        const sortByStart = (a: Period, b: Period) => a.startDate.localeCompare(b.startDate);
+                        current.sort(sortByStart);
+                        past.sort(sortByStart);
+                        const renderItem = (p: Period) => (
+                          <label key={p.id} className="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={evergreenRightPeriodIds.includes(p.id)}
+                              onChange={() => setEvergreenRightPeriodIds(
+                                evergreenRightPeriodIds.includes(p.id)
+                                  ? evergreenRightPeriodIds.filter(id => id !== p.id)
+                                  : [...evergreenRightPeriodIds, p.id]
+                              )}
+                              className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            {p.name}
+                          </label>
+                        );
+                        return (
+                          <div className="absolute right-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-md shadow-lg py-1 min-w-[200px] max-h-80 overflow-y-auto">
+                            {current.length > 0 && (
+                              <>
+                                <div className="px-3 py-1 text-[10px] uppercase tracking-wider text-gray-400 bg-gray-50">Current</div>
+                                {current.map(renderItem)}
+                              </>
+                            )}
+                            {past.length > 0 && (
+                              <>
+                                <div className="px-3 py-1 text-[10px] uppercase tracking-wider text-gray-400 bg-gray-50 border-t border-gray-100">In the Past</div>
+                                {past.map(renderItem)}
+                              </>
+                            )}
+                            {evergreenRightPeriodIds.length > 0 && (
+                              <button
+                                onClick={() => setEvergreenRightPeriodIds([])}
+                                className="w-full text-left px-3 py-1.5 text-xs text-blue-600 hover:bg-gray-50 border-t border-gray-100 mt-1"
+                              >
+                                Clear
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
                     <div ref={evergreenStatusMenuRef} className="relative">
                       <button
                         onClick={() => setShowEvergreenStatusMenu(!showEvergreenStatusMenu)}
@@ -1738,10 +1823,12 @@ export function ChecklistPage() {
                         depth={0}
                         visibleColumnsOverride={evergreenOverdueColumns}
                         groupPeriodsByDate
-                        filteredObjectiveIds={evergreenRightStatuses.length > 0
-                          ? new Set(orgObjectives
-                              .filter((o: Objective) => evergreenRightStatuses.includes(o.workflowStatus))
-                              .map((o: Objective) => o.id))
+                        filteredObjectiveIds={(evergreenRightStatuses.length > 0 || evergreenRightPeriodIds.length > 0)
+                          ? new Set(orgObjectives.filter((o: Objective) => {
+                              if (evergreenRightStatuses.length > 0 && !evergreenRightStatuses.includes(o.workflowStatus)) return false;
+                              if (evergreenRightPeriodIds.length > 0 && !evergreenRightPeriodIds.includes(o.periodId)) return false;
+                              return true;
+                            }).map((o: Objective) => o.id))
                           : undefined}
                       />
                     </div>

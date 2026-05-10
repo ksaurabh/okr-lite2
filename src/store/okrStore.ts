@@ -168,6 +168,8 @@ interface OKRActions {
   toggleEvergreenOverdueColumn: (column: ColumnKey) => Promise<void>;
   evergreenOverdueStatuses: WorkflowStatus[];
   setEvergreenOverdueStatuses: (statuses: WorkflowStatus[]) => Promise<void>;
+  evergreenOverduePeriodIds: string[];
+  setEvergreenOverduePeriodIds: (ids: string[]) => Promise<void>;
   fetchUserPreferences: () => Promise<void>;
 
   // Saved Views
@@ -363,6 +365,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
   visibleColumns: DEFAULT_VISIBLE_COLUMNS,
   evergreenOverdueColumns: ['workflowStatus', 'owner', 'nextStepDate'] as ColumnKey[],
   evergreenOverdueStatuses: [] as WorkflowStatus[],
+  evergreenOverduePeriodIds: [] as string[],
   savedViews: [],
   activeViewId: null,
   lists: [],
@@ -1118,6 +1121,9 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
         if (data.preferences?.evergreenOverdueStatuses && Array.isArray(data.preferences.evergreenOverdueStatuses)) {
           updates.evergreenOverdueStatuses = data.preferences.evergreenOverdueStatuses;
         }
+        if (data.preferences?.evergreenOverduePeriodIds && Array.isArray(data.preferences.evergreenOverduePeriodIds)) {
+          updates.evergreenOverduePeriodIds = data.preferences.evergreenOverduePeriodIds;
+        }
         if (Object.keys(updates).length > 0) {
           set(updates);
         }
@@ -1234,6 +1240,20 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       });
     } catch (err) {
       console.error('Failed to save evergreen overdue statuses preference:', err);
+    }
+  },
+
+  setEvergreenOverduePeriodIds: async (ids) => {
+    set({ evergreenOverduePeriodIds: ids });
+    try {
+      await fetch(`${API_URL}/api/users/me/preferences`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferences: { evergreenOverduePeriodIds: ids } }),
+      });
+    } catch (err) {
+      console.error('Failed to save evergreen overdue periods preference:', err);
     }
   },
 
