@@ -199,6 +199,8 @@ export interface PlanDef {
   filters: PlanFilters;
   ranks?: Record<string, number>;
   replacements?: string[];
+  exclusions?: string[];
+  hiddenChildrenOf?: string[];
   versions?: PlanVersion[];
 }
 

@@ -190,6 +190,8 @@ interface OKRActions {
   applyPlan: (id: string) => void;
   reorderPlanItems: (id: string, orderedIds: string[]) => Promise<void>;
   togglePlanReplacement: (planId: string, objectiveId: string) => Promise<void>;
+  togglePlanExclusion: (planId: string, objectiveId: string) => Promise<void>;
+  togglePlanHideChildren: (planId: string, objectiveId: string) => Promise<void>;
   updatePlanFilters: (planId: string) => Promise<void>;
   savePlanVersion: (planId: string, itemIds: string[]) => Promise<void>;
   highlightObjectiveId: string | null;
@@ -1555,6 +1557,52 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       });
     } catch (err) {
       console.error('Failed to update plan filters:', err);
+    }
+  },
+
+  togglePlanHideChildren: async (planId, objectiveId) => {
+    const state = get();
+    const plans = state.plans.map(p => {
+      if (p.id !== planId) return p;
+      const current = p.hiddenChildrenOf || [];
+      const hiddenChildrenOf = current.includes(objectiveId)
+        ? current.filter(x => x !== objectiveId)
+        : [...current, objectiveId];
+      return { ...p, hiddenChildrenOf };
+    });
+    set({ plans });
+    try {
+      await fetch(`${API_URL}/api/users/me/preferences`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferences: { plans } }),
+      });
+    } catch (err) {
+      console.error('Failed to save plan hide-children:', err);
+    }
+  },
+
+  togglePlanExclusion: async (planId, objectiveId) => {
+    const state = get();
+    const plans = state.plans.map(p => {
+      if (p.id !== planId) return p;
+      const current = p.exclusions || [];
+      const exclusions = current.includes(objectiveId)
+        ? current.filter(x => x !== objectiveId)
+        : [...current, objectiveId];
+      return { ...p, exclusions };
+    });
+    set({ plans });
+    try {
+      await fetch(`${API_URL}/api/users/me/preferences`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferences: { plans } }),
+      });
+    } catch (err) {
+      console.error('Failed to save plan exclusion:', err);
     }
   },
 

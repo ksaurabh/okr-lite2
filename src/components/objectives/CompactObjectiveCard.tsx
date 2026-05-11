@@ -961,8 +961,14 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           {/* Expand/collapse chevron */}
           <button
             onClick={() => {
-              if (forcedExpandedIds) setForcedExpandedIds(null);
-              setIsExpanded(!effectiveIsExpanded);
+              if (forcedExpandedIds) {
+                const next = effectiveIsExpanded
+                  ? forcedExpandedIds.filter(id => id !== objectiveProp.id)
+                  : [...new Set([...forcedExpandedIds, objectiveProp.id])];
+                setForcedExpandedIds(next);
+              } else {
+                setIsExpanded(!effectiveIsExpanded);
+              }
             }}
             className={`w-4 h-4 flex items-center justify-center text-gray-400 hover:text-gray-600 flex-shrink-0 ${!hasChildren ? 'invisible' : ''}`}
           >

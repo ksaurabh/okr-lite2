@@ -120,6 +120,11 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
 
   const reorderPlanItems = useOKRStore((s: OKRStore) => s.reorderPlanItems);
   const togglePlanReplacement = useOKRStore((s: OKRStore) => s.togglePlanReplacement);
+  const togglePlanExclusion = useOKRStore((s: OKRStore) => s.togglePlanExclusion);
+  const togglePlanHideChildren = useOKRStore((s: OKRStore) => s.togglePlanHideChildren);
+  const [isExcludedExpanded, setIsExcludedExpanded] = useState(false);
+  const [isReplacedExpanded, setIsReplacedExpanded] = useState(false);
+  const [isHiddenChildrenExpanded, setIsHiddenChildrenExpanded] = useState(false);
   const updatePlanFilters = useOKRStore((s: OKRStore) => s.updatePlanFilters);
   const savePlanVersion = useOKRStore((s: OKRStore) => s.savePlanVersion);
   const lastSelectedPlanId = useOKRStore((s: OKRStore) => s.lastSelectedPlanId);
@@ -159,20 +164,35 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
       if (ownerId && o.ownerId !== ownerId) return false;
       if (periodId && o.periodId !== periodId) return false;
       if (level && o.level !== level) return false;
-      if (statuses.length > 0 && !statuses.includes(o.workflowStatus)) return false;
+      if (statuses.length > 0 && !statuses.includes(o.workflowStatus || 'todo')) return false;
       if (types.length > 0 && (!o.type || !types.includes(o.type))) return false;
       return true;
     });
     const replacements = new Set(activePlan?.replacements || []);
+    const exclusions = new Set(activePlan?.exclusions || []);
+    const hiddenChildrenOf = new Set(activePlan?.hiddenChildrenOf || []);
+    const byId = new Map(orgObjectives.map(o => [o.id, o]));
+    const isHiddenDescendant = (objId: string) => {
+      let cur = byId.get(byId.get(objId)?.parentId || '');
+      while (cur) {
+        if (hiddenChildrenOf.has(cur.id)) return true;
+        cur = byId.get(cur.parentId || '');
+      }
+      return false;
+    };
     const matchedById = new Map(matched.map(o => [o.id, o]));
     const seen = new Map<string, Objective | null>(); // id -> replacedBy parent (or null)
     matched.forEach((o: Objective) => {
       if (replacements.has(o.id)) {
         const children = orgObjectives.filter(c => c.parentId === o.id);
         children.forEach(c => {
+          if (exclusions.has(c.id)) return;
+          if (isHiddenDescendant(c.id)) return;
           if (!seen.has(c.id)) seen.set(c.id, matchedById.has(c.id) ? null : o);
         });
       } else {
+        if (exclusions.has(o.id)) return;
+        if (isHiddenDescendant(o.id)) return;
         if (!seen.has(o.id)) seen.set(o.id, null);
       }
     });
@@ -607,6 +627,29 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
                               Replace with parent ({replacedBy.title})
                             </button>
                           )}
+                          {(() => {
+                            const isHidden = activePlan?.hiddenChildrenOf?.includes(o.id) ?? false;
+                            return (
+                              <button
+                                onClick={() => {
+                                  if (activePlan) togglePlanHideChildren(activePlan.id, o.id);
+                                  setMenuObjectiveId(null);
+                                }}
+                                className="w-full text-left text-xs px-3 py-1.5 hover:bg-gray-50 text-gray-700"
+                              >
+                                {isHidden ? 'Show children' : 'Hide children'}
+                              </button>
+                            );
+                          })()}
+                          <button
+                            onClick={() => {
+                              if (activePlan) togglePlanExclusion(activePlan.id, o.id);
+                              setMenuObjectiveId(null);
+                            }}
+                            className="w-full text-left text-xs px-3 py-1.5 hover:bg-gray-50 text-red-600"
+                          >
+                            Exclude from Plan
+                          </button>
                         </div>
                       )}
                     </div>
@@ -627,7 +670,7 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
                           ancestors.push(cur.id);
                           cur = byId.get(cur.parentId || '');
                         }
-                        setForcedExpandedIds(ancestors);
+                        setForcedExpandedIds([obj.id, ...ancestors]);
                         setHighlightObjectiveId(obj.id);
                       }}
                       filteredObjectiveIds={NO_CHILDREN}
@@ -637,6 +680,238 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
               );})}
             </div>
           )}
+          {activePlan && !selectedVersionId && (activePlan.exclusions?.length || 0) > 0 && (() => {
+            const excludedItems = (activePlan.exclusions || [])
+              .map(id => orgObjectives.find(o => o.id === id))
+              .filter((o): o is Objective => !!o);
+            if (excludedItems.length === 0) return null;
+            return (
+              <div className="border-t-2 border-gray-200 mt-2">
+                <button
+                  onClick={() => setIsExcludedExpanded(!isExcludedExpanded)}
+                  className="w-full flex items-center gap-1 px-3 py-2 text-[10px] uppercase tracking-wider text-gray-500 bg-gray-50 hover:bg-gray-100"
+                >
+                  <svg className={`w-3 h-3 transition-transform ${isExcludedExpanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                  Excluded from Plan ({excludedItems.length})
+                </button>
+                {isExcludedExpanded && excludedItems.map(item => {
+                  const isMenuOpen = menuObjectiveId === item.id;
+                  return (
+                    <div key={item.id} className="group relative flex items-stretch hover:bg-gray-50/40 opacity-60">
+                      <div className="flex-shrink-0 w-4 border-r border-gray-100" />
+                      <div className="flex-shrink-0 w-4" />
+                      <div className="flex-shrink-0 flex items-center pl-1 pr-1 relative">
+                        <button
+                          onClick={() => setMenuObjectiveId(isMenuOpen ? null : item.id)}
+                          className="p-1 text-gray-400 hover:text-gray-700 rounded-full hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Row actions"
+                        >
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                            <circle cx="5" cy="12" r="2" />
+                            <circle cx="12" cy="12" r="2" />
+                            <circle cx="19" cy="12" r="2" />
+                          </svg>
+                        </button>
+                        {isMenuOpen && (
+                          <div ref={menuRef} className="absolute left-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-md shadow-lg py-1 min-w-[220px]">
+                            <button
+                              onClick={() => {
+                                togglePlanExclusion(activePlan.id, item.id);
+                                setMenuObjectiveId(null);
+                              }}
+                              className="w-full text-left text-xs px-3 py-1.5 hover:bg-gray-50 text-blue-600"
+                            >
+                              Delete this setting
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <CompactObjectiveCard
+                          objective={item}
+                          depth={0}
+                          visibleColumnsOverride={planViewColumns}
+                          defaultCollapsed
+                          groupPeriodsByDate
+                          hideRowActions
+                          onTitleClick={(obj) => {
+                            const byId = new Map(orgObjectives.map(x => [x.id, x]));
+                            const ancestors: string[] = [];
+                            let cur = byId.get(obj.parentId || '');
+                            while (cur) {
+                              ancestors.push(cur.id);
+                              cur = byId.get(cur.parentId || '');
+                            }
+                            setForcedExpandedIds([obj.id, ...ancestors]);
+                            setHighlightObjectiveId(obj.id);
+                          }}
+                          filteredObjectiveIds={NO_CHILDREN}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+          {activePlan && !selectedVersionId && (activePlan.replacements?.length || 0) > 0 && (() => {
+            const replacedParents = (activePlan.replacements || [])
+              .map(id => orgObjectives.find(o => o.id === id))
+              .filter((o): o is Objective => !!o);
+            if (replacedParents.length === 0) return null;
+            return (
+              <div className="border-t-2 border-gray-200 mt-2">
+                <button
+                  onClick={() => setIsReplacedExpanded(!isReplacedExpanded)}
+                  className="w-full flex items-center gap-1 px-3 py-2 text-[10px] uppercase tracking-wider text-gray-500 bg-gray-50 hover:bg-gray-100"
+                >
+                  <svg className={`w-3 h-3 transition-transform ${isReplacedExpanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                  Replaced with children ({replacedParents.length})
+                </button>
+                {isReplacedExpanded && replacedParents.map(parent => {
+                  const childCount = orgObjectives.filter(o => o.parentId === parent.id).length;
+                  const isMenuOpen = menuObjectiveId === parent.id;
+                  return (
+                    <div key={parent.id} className="group relative flex items-stretch hover:bg-gray-50/40">
+                      <div className="flex-shrink-0 w-4 border-r border-gray-100" />
+                      <div className="flex-shrink-0 w-4" />
+                      <div className="flex-shrink-0 flex items-center pl-1 pr-1 relative">
+                        <button
+                          onClick={() => setMenuObjectiveId(isMenuOpen ? null : parent.id)}
+                          className="p-1 text-gray-400 hover:text-gray-700 rounded-full hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Row actions"
+                        >
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                            <circle cx="5" cy="12" r="2" />
+                            <circle cx="12" cy="12" r="2" />
+                            <circle cx="19" cy="12" r="2" />
+                          </svg>
+                        </button>
+                        {isMenuOpen && (
+                          <div ref={menuRef} className="absolute left-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-md shadow-lg py-1 min-w-[220px]">
+                            <button
+                              onClick={() => {
+                                togglePlanReplacement(activePlan.id, parent.id);
+                                setMenuObjectiveId(null);
+                              }}
+                              className="w-full text-left text-xs px-3 py-1.5 hover:bg-gray-50 text-gray-700"
+                            >
+                              Stop replacing with children
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <CompactObjectiveCard
+                          objective={parent}
+                          depth={0}
+                          visibleColumnsOverride={planViewColumns}
+                          defaultCollapsed
+                          groupPeriodsByDate
+                          hideRowActions
+                          onTitleClick={(obj) => {
+                            const byId = new Map(orgObjectives.map(x => [x.id, x]));
+                            const ancestors: string[] = [];
+                            let cur = byId.get(obj.parentId || '');
+                            while (cur) {
+                              ancestors.push(cur.id);
+                              cur = byId.get(cur.parentId || '');
+                            }
+                            setForcedExpandedIds([obj.id, ...ancestors]);
+                            setHighlightObjectiveId(obj.id);
+                          }}
+                          filteredObjectiveIds={NO_CHILDREN}
+                        />
+                      </div>
+                      <div className="flex-shrink-0 px-3 self-center text-[11px] text-gray-400">
+                        {childCount} {childCount === 1 ? 'child' : 'children'} shown above
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+          {activePlan && !selectedVersionId && (activePlan.hiddenChildrenOf?.length || 0) > 0 && (() => {
+            const hiddenParents = (activePlan.hiddenChildrenOf || [])
+              .map(id => orgObjectives.find(o => o.id === id))
+              .filter((o): o is Objective => !!o);
+            if (hiddenParents.length === 0) return null;
+            return (
+              <div className="border-t-2 border-gray-200 mt-2">
+                <button
+                  onClick={() => setIsHiddenChildrenExpanded(!isHiddenChildrenExpanded)}
+                  className="w-full flex items-center gap-1 px-3 py-2 text-[10px] uppercase tracking-wider text-gray-500 bg-gray-50 hover:bg-gray-100"
+                >
+                  <svg className={`w-3 h-3 transition-transform ${isHiddenChildrenExpanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                  Hide children ({hiddenParents.length})
+                </button>
+                {isHiddenChildrenExpanded && hiddenParents.map(parent => {
+                  const isMenuOpen = menuObjectiveId === parent.id;
+                  return (
+                    <div key={parent.id} className="group relative flex items-stretch hover:bg-gray-50/40">
+                      <div className="flex-shrink-0 w-4 border-r border-gray-100" />
+                      <div className="flex-shrink-0 w-4" />
+                      <div className="flex-shrink-0 flex items-center pl-1 pr-1 relative">
+                        <button
+                          onClick={() => setMenuObjectiveId(isMenuOpen ? null : parent.id)}
+                          className="p-1 text-gray-400 hover:text-gray-700 rounded-full hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Row actions"
+                        >
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                            <circle cx="5" cy="12" r="2" />
+                            <circle cx="12" cy="12" r="2" />
+                            <circle cx="19" cy="12" r="2" />
+                          </svg>
+                        </button>
+                        {isMenuOpen && (
+                          <div ref={menuRef} className="absolute left-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-md shadow-lg py-1 min-w-[220px]">
+                            <button
+                              onClick={() => {
+                                togglePlanHideChildren(activePlan.id, parent.id);
+                                setMenuObjectiveId(null);
+                              }}
+                              className="w-full text-left text-xs px-3 py-1.5 hover:bg-gray-50 text-blue-600"
+                            >
+                              Delete this setting
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <CompactObjectiveCard
+                          objective={parent}
+                          depth={0}
+                          visibleColumnsOverride={planViewColumns}
+                          defaultCollapsed
+                          groupPeriodsByDate
+                          hideRowActions
+                          onTitleClick={(obj) => {
+                            const byId = new Map(orgObjectives.map(x => [x.id, x]));
+                            const ancestors: string[] = [];
+                            let cur = byId.get(obj.parentId || '');
+                            while (cur) {
+                              ancestors.push(cur.id);
+                              cur = byId.get(cur.parentId || '');
+                            }
+                            setForcedExpandedIds([obj.id, ...ancestors]);
+                            setHighlightObjectiveId(obj.id);
+                          }}
+                          filteredObjectiveIds={NO_CHILDREN}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
       </div>
       {showSavePlan && (() => {
