@@ -19,6 +19,7 @@ interface CompactObjectiveCardProps {
   onTitleClick?: (objective: Objective) => void;
   groupPeriodsByDate?: boolean;
   hideRowActions?: boolean;
+  quickAddToListId?: string;
 }
 
 const getChildLevel = (parentLevel: ObjectiveLevel): ObjectiveLevel => {
@@ -66,7 +67,7 @@ function getNextStepDateIndicator(nextStepDate?: string): { color: string; toolt
   }
 }
 
-export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filteredObjectiveIds, directlyMatchingIds, defaultCollapsed = false, visibleColumnsOverride, onRowClick, onTitleClick, groupPeriodsByDate = false, hideRowActions = false }: CompactObjectiveCardProps) {
+export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filteredObjectiveIds, directlyMatchingIds, defaultCollapsed = false, visibleColumnsOverride, onRowClick, onTitleClick, groupPeriodsByDate = false, hideRowActions = false, quickAddToListId }: CompactObjectiveCardProps) {
   // Only root-level items (depth 0) are expanded by default, unless caller opts into collapsed
   const [isExpanded, setIsExpanded] = useState(depth === 0 && !defaultCollapsed);
   const forcedExpandedIds = useOKRStore((s: OKRStore) => s.forcedExpandedIds);
@@ -1102,7 +1103,13 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           <div className="relative group/list">
             <button
               ref={listButtonRef}
-              onClick={() => setShowListDropdown(!showListDropdown)}
+              onClick={() => {
+                if (quickAddToListId) {
+                  addItemToList(quickAddToListId, objective.id);
+                } else {
+                  setShowListDropdown(!showListDropdown);
+                }
+              }}
               className={`p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 ${showListDropdown ? 'text-blue-600 opacity-100' : 'text-gray-400 hover:text-gray-600'}`}
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1111,10 +1118,10 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
             </button>
             {!showListDropdown && (
               <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 px-2 py-1 text-xs text-white bg-gray-800 rounded whitespace-nowrap opacity-0 group-hover/list:opacity-100 transition-opacity duration-75 pointer-events-none z-50">
-                Add to list
+                {quickAddToListId ? 'Add to Child List' : 'Add to list'}
               </span>
             )}
-            {showListDropdown && listDropdownPosition && (
+            {!quickAddToListId && showListDropdown && listDropdownPosition && (
               <div
                 ref={listDropdownRef}
                 className="fixed z-[100] bg-white border border-gray-300 rounded shadow-lg min-w-[150px]"
@@ -1915,6 +1922,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
               onTitleClick={onTitleClick}
               groupPeriodsByDate={groupPeriodsByDate}
               hideRowActions={hideRowActions}
+              quickAddToListId={quickAddToListId}
             />
           ))}
         </>

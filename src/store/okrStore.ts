@@ -172,6 +172,17 @@ interface OKRActions {
   setEvergreenOverduePeriodIds: (ids: string[]) => Promise<void>;
   evergreenOverdueViewMode: 'tree' | 'table';
   setEvergreenOverdueViewMode: (mode: 'tree' | 'table') => Promise<void>;
+  listViewModes: Record<string, 'list' | 'plan'>;
+  setListViewMode: (listId: string, mode: 'list' | 'plan') => Promise<void>;
+  listPlanColumns: ColumnKey[];
+  setListPlanColumns: (columns: ColumnKey[]) => Promise<void>;
+  toggleListPlanColumn: (column: ColumnKey) => Promise<void>;
+  listPlanChildView: 'table' | 'cards';
+  setListPlanChildView: (mode: 'table' | 'cards') => Promise<void>;
+  listPlanTreeView: 'table' | 'cards';
+  setListPlanTreeView: (mode: 'table' | 'cards') => Promise<void>;
+  listPlanCurrentView: 'table' | 'cards';
+  setListPlanCurrentView: (mode: 'table' | 'cards') => Promise<void>;
   objectiveViewMode: 'explore' | 'plan';
   setObjectiveViewMode: (mode: 'explore' | 'plan') => Promise<void>;
   planViewColumns: ColumnKey[];
@@ -216,10 +227,11 @@ interface OKRActions {
   // Lists
   lists: List[];
   fetchLists: () => Promise<void>;
-  createList: (name: string, color?: string) => Promise<List | null>;
+  createList: (name: string, color?: string, parentId?: string) => Promise<List | null>;
   deleteList: (listId: string) => Promise<void>;
   renameList: (listId: string, newName: string) => Promise<void>;
   updateListColor: (listId: string, color: string) => Promise<void>;
+  updateListParent: (listId: string, parentId: string | null) => Promise<void>;
   addItemToList: (listId: string, objectiveId: string) => Promise<void>;
   removeItemFromList: (listId: string, objectiveId: string) => Promise<void>;
   reorderListItems: (listId: string, items: { objectiveId: string; order: number }[]) => Promise<void>;
@@ -396,6 +408,11 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
   evergreenOverdueStatuses: [] as WorkflowStatus[],
   evergreenOverduePeriodIds: [] as string[],
   evergreenOverdueViewMode: 'tree' as 'tree' | 'table',
+  listViewModes: {} as Record<string, 'list' | 'plan'>,
+  listPlanColumns: ['workflowStatus', 'owner', 'period'] as ColumnKey[],
+  listPlanChildView: 'cards' as 'table' | 'cards',
+  listPlanTreeView: 'cards' as 'table' | 'cards',
+  listPlanCurrentView: 'cards' as 'table' | 'cards',
   objectiveViewMode: 'explore' as 'explore' | 'plan',
   planViewColumns: ['level', 'period', 'workflowStatus', 'type', 'team', 'owner'] as ColumnKey[],
   planTreeColumns: ['level', 'period', 'workflowStatus', 'type', 'team', 'owner'] as ColumnKey[],
@@ -1183,6 +1200,21 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
         if (data.preferences?.evergreenOverdueViewMode === 'tree' || data.preferences?.evergreenOverdueViewMode === 'table') {
           updates.evergreenOverdueViewMode = data.preferences.evergreenOverdueViewMode;
         }
+        if (data.preferences?.listViewModes && typeof data.preferences.listViewModes === 'object') {
+          updates.listViewModes = data.preferences.listViewModes;
+        }
+        if (data.preferences?.listPlanColumns && Array.isArray(data.preferences.listPlanColumns)) {
+          updates.listPlanColumns = data.preferences.listPlanColumns;
+        }
+        if (data.preferences?.listPlanChildView === 'table' || data.preferences?.listPlanChildView === 'cards') {
+          updates.listPlanChildView = data.preferences.listPlanChildView;
+        }
+        if (data.preferences?.listPlanTreeView === 'table' || data.preferences?.listPlanTreeView === 'cards') {
+          updates.listPlanTreeView = data.preferences.listPlanTreeView;
+        }
+        if (data.preferences?.listPlanCurrentView === 'table' || data.preferences?.listPlanCurrentView === 'cards') {
+          updates.listPlanCurrentView = data.preferences.listPlanCurrentView;
+        }
         if (data.preferences?.objectiveViewMode === 'explore' || data.preferences?.objectiveViewMode === 'plan') {
           updates.objectiveViewMode = data.preferences.objectiveViewMode;
         }
@@ -1336,6 +1368,97 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       });
     } catch (err) {
       console.error('Failed to save evergreen overdue view mode preference:', err);
+    }
+  },
+
+  setListViewMode: async (listId, mode) => {
+    const state = get();
+    const listViewModes = { ...state.listViewModes, [listId]: mode };
+    set({ listViewModes });
+    try {
+      await fetch(`${API_URL}/api/users/me/preferences`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferences: { listViewModes } }),
+      });
+    } catch (err) {
+      console.error('Failed to save list view mode preference:', err);
+    }
+  },
+
+  setListPlanColumns: async (columns) => {
+    set({ listPlanColumns: columns });
+    try {
+      await fetch(`${API_URL}/api/users/me/preferences`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferences: { listPlanColumns: columns } }),
+      });
+    } catch (err) {
+      console.error('Failed to save list plan columns preference:', err);
+    }
+  },
+
+  setListPlanChildView: async (mode) => {
+    set({ listPlanChildView: mode });
+    try {
+      await fetch(`${API_URL}/api/users/me/preferences`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferences: { listPlanChildView: mode } }),
+      });
+    } catch (err) {
+      console.error('Failed to save list plan child view preference:', err);
+    }
+  },
+
+  setListPlanTreeView: async (mode) => {
+    set({ listPlanTreeView: mode });
+    try {
+      await fetch(`${API_URL}/api/users/me/preferences`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferences: { listPlanTreeView: mode } }),
+      });
+    } catch (err) {
+      console.error('Failed to save list plan tree view preference:', err);
+    }
+  },
+
+  setListPlanCurrentView: async (mode) => {
+    set({ listPlanCurrentView: mode });
+    try {
+      await fetch(`${API_URL}/api/users/me/preferences`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferences: { listPlanCurrentView: mode } }),
+      });
+    } catch (err) {
+      console.error('Failed to save list plan current view preference:', err);
+    }
+  },
+
+  toggleListPlanColumn: async (column) => {
+    const state = get();
+    if (column === 'title') return;
+    const next = state.listPlanColumns.includes(column)
+      ? state.listPlanColumns.filter(c => c !== column)
+      : [...state.listPlanColumns, column];
+    set({ listPlanColumns: next });
+    try {
+      await fetch(`${API_URL}/api/users/me/preferences`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferences: { listPlanColumns: next } }),
+      });
+    } catch (err) {
+      console.error('Failed to save list plan columns preference:', err);
     }
   },
 
@@ -1908,7 +2031,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     }
   },
 
-  createList: async (name: string, color?: string) => {
+  createList: async (name: string, color?: string, parentId?: string) => {
     try {
       const response = await fetch(`${API_URL}/api/users/me/lists`, {
         method: 'POST',
@@ -1916,13 +2039,22 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name, color: color || '#6b7280' }),
+        body: JSON.stringify({ name, color: color || '#6b7280', parentId }),
       });
 
       if (response.ok) {
         const data = await response.json();
-        set({ lists: data.lists });
-        return data.list;
+        // Defensive: if the server response doesn't carry parentId (older server build),
+        // patch it locally and persist via the rename/color endpoint isn't possible —
+        // but at least the in-memory list will have parentId so the UI works.
+        let list = data.list;
+        let lists = data.lists;
+        if (parentId && list && !list.parentId) {
+          list = { ...list, parentId };
+          lists = (lists || []).map((l: List) => l.id === list.id ? list : l);
+        }
+        set({ lists });
+        return list;
       }
     } catch (err) {
       console.error('Failed to create list:', err);
@@ -1983,6 +2115,30 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       }
     } catch (err) {
       console.error('Failed to update list color:', err);
+    }
+  },
+
+  updateListParent: async (listId, parentId) => {
+    // Optimistic local update so the UI updates even if the server is on older code.
+    const state = get();
+    const lists = state.lists.map(l => l.id === listId
+      ? (parentId ? { ...l, parentId } : (() => { const { parentId: _drop, ...rest } = l as List & { parentId?: string }; void _drop; return rest as List; })())
+      : l
+    );
+    set({ lists });
+    try {
+      const response = await fetch(`${API_URL}/api/users/me/lists/${listId}`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parentId: parentId || null }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.lists) set({ lists: data.lists });
+      }
+    } catch (err) {
+      console.error('Failed to update list parent:', err);
     }
   },
 

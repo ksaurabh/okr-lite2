@@ -993,7 +993,7 @@ app.put('/api/users/me/lists', requireAuth, (req, res) => {
 
 // Create a new list
 app.post('/api/users/me/lists', requireAuth, (req, res) => {
-  const { name, color } = req.body;
+  const { name, color, parentId } = req.body;
 
   if (!name || !name.trim()) {
     return res.status(400).json({ error: 'List name is required' });
@@ -1007,6 +1007,7 @@ app.post('/api/users/me/lists', requireAuth, (req, res) => {
     items: [],
     createdAt: now,
     updatedAt: now,
+    ...(parentId ? { parentId } : {}),
   };
 
   const lists = getUserLists(req.user.email);
@@ -1019,7 +1020,7 @@ app.post('/api/users/me/lists', requireAuth, (req, res) => {
 // Update a list (rename or change color)
 app.put('/api/users/me/lists/:listId', requireAuth, (req, res) => {
   const { listId } = req.params;
-  const { name, color } = req.body;
+  const { name, color, parentId } = req.body;
 
   const lists = getUserLists(req.user.email);
   const listIndex = lists.findIndex(l => l.id === listId);
@@ -1033,6 +1034,10 @@ app.put('/api/users/me/lists/:listId', requireAuth, (req, res) => {
   }
   if (color) {
     lists[listIndex].color = color;
+  }
+  if ('parentId' in req.body) {
+    if (parentId) lists[listIndex].parentId = parentId;
+    else delete lists[listIndex].parentId;
   }
   lists[listIndex].updatedAt = new Date().toISOString();
 

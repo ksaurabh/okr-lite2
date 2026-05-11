@@ -247,4 +247,5 @@ export interface List {
   items: ListItem[];
   createdAt: string;
   updatedAt: string;
+  parentId?: string;
 }
