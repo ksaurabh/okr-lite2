@@ -29,6 +29,12 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
   const level = planFilters.level;
   const statuses = planFilters.statuses;
   const types = planFilters.types || [];
+  const listId = planFilters.listId || '';
+  const setListId = (v: string) => setPlanFilters({ ...planFilters, listId: v || undefined });
+  const lists = useOKRStore((s: OKRStore) => s.lists);
+  const [showBuildList, setShowBuildList] = useState(false);
+  const [newBuildListName, setNewBuildListName] = useState('');
+  const [buildingList, setBuildingList] = useState(false);
   const setOwnerId = (v: string) => setPlanFilters({ ...planFilters, ownerId: v });
   const setPeriodId = (v: string) => setPlanFilters({ ...planFilters, periodId: v });
   const setLevel = (v: ObjectiveLevel | '') => setPlanFilters({ ...planFilters, level: v });
@@ -52,6 +58,24 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
   }, [showTypeMenu]);
   const [showSavePlan, setShowSavePlan] = useState(false);
   const [newPlanName, setNewPlanName] = useState('');
+  const createList = useOKRStore((s: OKRStore) => s.createList);
+  const addItemToList = useOKRStore((s: OKRStore) => s.addItemToList);
+  const [showSaveList, setShowSaveList] = useState(false);
+  const [newListName, setNewListName] = useState('');
+  const [savingList, setSavingList] = useState(false);
+  const [showActionsMenu, setShowActionsMenu] = useState(false);
+  const actionsMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showActionsMenu) return;
+    const onClick = (e: MouseEvent) => {
+      if (actionsMenuRef.current && !actionsMenuRef.current.contains(e.target as Node)) {
+        setShowActionsMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [showActionsMenu]);
 
   const activePlan = plans.find(p => p.id === activePlanId) || null;
 
@@ -166,6 +190,10 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
       if (level && o.level !== level) return false;
       if (statuses.length > 0 && !statuses.includes(o.workflowStatus || 'todo')) return false;
       if (types.length > 0 && (!o.type || !types.includes(o.type))) return false;
+      if (listId) {
+        const list = lists.find(l => l.id === listId);
+        if (!list || !list.items.some(it => it.objectiveId === o.id)) return false;
+      }
       return true;
     });
     const replacements = new Set(activePlan?.replacements || []);
@@ -207,7 +235,7 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
       if (ra !== rb) return ra - rb;
       return a.objective.title.localeCompare(b.objective.title);
     });
-  }, [orgObjectives, ownerId, periodId, level, statuses, types, activePlan, selectedVersionId]);
+  }, [orgObjectives, ownerId, periodId, level, statuses, types, listId, lists, activePlan, selectedVersionId]);
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 h-full flex flex-col min-w-0 relative">
@@ -323,12 +351,35 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
             </div>
           )}
         </div>
+        {listId && (() => {
+          const list = lists.find(l => l.id === listId);
+          return list ? (
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-blue-50 text-blue-700 border border-blue-200">
+              <span className="w-2 h-2 rounded-sm" style={{ backgroundColor: list.color || '#6b7280' }} />
+              List: {list.name}
+              <button onClick={() => setListId('')} className="text-blue-400 hover:text-blue-700 ml-0.5" title="Clear list filter">
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </span>
+          ) : null;
+        })()}
         <div className="flex-1" />
         {activePlan && (() => {
           const dirty = JSON.stringify({ ...activePlan.filters, types: activePlan.filters.types || [] })
             !== JSON.stringify({ ...planFilters, types: planFilters.types || [] });
           return dirty ? (
-            <span className="text-xs text-amber-600 italic" title="Filters differ from this plan">unsaved changes</span>
+            <span className="inline-flex items-center gap-2">
+              <span className="text-xs text-amber-600 italic" title="Filters differ from this plan">unsaved changes</span>
+              <button
+                onClick={() => applyPlan(activePlan.id)}
+                className="text-xs text-blue-600 hover:text-blue-700"
+                title="Revert to the plan's saved filters"
+              >
+                Discard
+              </button>
+            </span>
           ) : null;
         })()}
         {plans.length > 0 && (
@@ -348,57 +399,92 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
         )}
         {activePlan && (() => {
           const versions = [...(activePlan.versions || [])].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-          const currentItemIds = selectedVersionId ? [] : filtered.map(f => f.objective.id);
-          const lastVersion = versions[0];
-          const lastItemIds = lastVersion?.itemIds || [];
-          const isDifferent = !lastVersion || JSON.stringify(currentItemIds) !== JSON.stringify(lastItemIds);
           const fmt = (iso: string) => {
             const d = new Date(iso);
             const pad = (n: number) => String(n).padStart(2, '0');
             return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
           };
           return (
-            <>
-              <select
-                value={selectedVersionId || 'current'}
-                onChange={(e) => setSelectedVersionId(e.target.value === 'current' ? null : e.target.value)}
-                className="px-2 py-1 text-xs border border-gray-200 rounded bg-white"
-                title="View a saved version"
-              >
-                <option value="current">Current</option>
-                {versions.length > 0 && (
-                  <optgroup label="Show version history">
-                    {versions.map(v => (
-                      <option key={v.id} value={v.id}>{fmt(v.timestamp)} ({v.itemIds.length})</option>
-                    ))}
-                  </optgroup>
-                )}
-              </select>
-              {!selectedVersionId && isDifferent && (
-                <button
-                  onClick={() => savePlanVersion(activePlan.id, currentItemIds)}
-                  className="flex items-center gap-1 px-2 py-1 text-xs text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded"
-                  title="Capture the current items as a new version"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                  Save version
-                </button>
+            <select
+              value={selectedVersionId || 'current'}
+              onChange={(e) => setSelectedVersionId(e.target.value === 'current' ? null : e.target.value)}
+              className="px-2 py-1 text-xs border border-gray-200 rounded bg-white"
+              title="View a saved version"
+            >
+              <option value="current">Current</option>
+              {versions.length > 0 && (
+                <optgroup label="Show version history">
+                  {versions.map(v => (
+                    <option key={v.id} value={v.id}>{fmt(v.timestamp)} ({v.itemIds.length})</option>
+                  ))}
+                </optgroup>
               )}
-            </>
+            </select>
           );
         })()}
-        <button
-          onClick={() => { setNewPlanName(activePlan?.name || ''); setShowSavePlan(true); }}
-          className="flex items-center gap-1 px-2 py-1 text-xs text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded"
-          title="Save current filters as a Plan"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
-          </svg>
-          Save as Plan
-        </button>
+        <div ref={actionsMenuRef} className="relative">
+          <button
+            onClick={() => setShowActionsMenu(!showActionsMenu)}
+            className="flex items-center gap-1 px-2 py-1 text-xs text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded border border-gray-200 bg-white"
+            title="Plan actions"
+          >
+            Actions
+            <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {showActionsMenu && (() => {
+            const currentItemIds = selectedVersionId ? [] : filtered.map(f => f.objective.id);
+            const lastVersion = activePlan?.versions && [...activePlan.versions].sort((a, b) => b.timestamp.localeCompare(a.timestamp))[0];
+            const lastItemIds = lastVersion?.itemIds || [];
+            const versionIsDifferent = !!activePlan && !selectedVersionId && (!lastVersion || JSON.stringify(currentItemIds) !== JSON.stringify(lastItemIds));
+            return (
+              <div className="absolute right-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-md shadow-lg py-1 min-w-[180px]">
+                {versionIsDifferent && (
+                  <button
+                    onClick={() => {
+                      if (activePlan) savePlanVersion(activePlan.id, currentItemIds);
+                      setShowActionsMenu(false);
+                    }}
+                    className="w-full text-left text-xs px-3 py-1.5 hover:bg-gray-50 text-gray-700"
+                  >
+                    Save version
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setNewPlanName(activePlan?.name || '');
+                    setShowSavePlan(true);
+                    setShowActionsMenu(false);
+                  }}
+                  className="w-full text-left text-xs px-3 py-1.5 hover:bg-gray-50 text-gray-700"
+                >
+                  Save as Plan
+                </button>
+                <button
+                  onClick={() => {
+                    setNewListName(activePlan?.name || '');
+                    setShowSaveList(true);
+                    setShowActionsMenu(false);
+                  }}
+                  className="w-full text-left text-xs px-3 py-1.5 hover:bg-gray-50 text-gray-700"
+                >
+                  Save as List
+                </button>
+                <button
+                  onClick={() => {
+                    setNewBuildListName('');
+                    setShowBuildList(true);
+                    setShowActionsMenu(false);
+                  }}
+                  className="w-full text-left text-xs px-3 py-1.5 hover:bg-gray-50 text-gray-700"
+                >
+                  Build a List
+                </button>
+              </div>
+            );
+          })()}
+        </div>
         <div ref={columnMenuRef} className="relative">
           <button
             onClick={() => setShowColumnMenu(!showColumnMenu)}
@@ -987,6 +1073,107 @@ export function PlanView({ orgObjectives, orgPeriods, orgUsers }: PlanViewProps)
           </div>
         );
       })()}
+      {showBuildList && (
+        <div
+          className="absolute right-2 top-12 z-40 bg-white border border-gray-200 rounded-lg shadow-xl w-80 p-4"
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <h3 className="text-sm font-semibold text-gray-900 mb-2">Build a List</h3>
+          <p className="text-xs text-gray-500 mb-3">
+            Creates a new (empty) list and narrows this Plan to items in it. Add items via the "Add to list" action on the objective tree.
+          </p>
+          <input
+            type="text"
+            value={newBuildListName}
+            onChange={(e) => setNewBuildListName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Escape') setShowBuildList(false); }}
+            placeholder="List name"
+            autoFocus
+            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3"
+          />
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => setShowBuildList(false)}
+              disabled={buildingList}
+              className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={async () => {
+                const name = newBuildListName.trim();
+                if (!name) return;
+                setBuildingList(true);
+                try {
+                  const list = await createList(name);
+                  if (list) setListId(list.id);
+                  setShowBuildList(false);
+                } finally {
+                  setBuildingList(false);
+                }
+              }}
+              disabled={buildingList || !newBuildListName.trim()}
+              className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+            >
+              {buildingList ? 'Creating…' : 'Create & filter'}
+            </button>
+          </div>
+        </div>
+      )}
+      {showSaveList && (
+        <div
+          className="absolute right-2 top-12 z-40 bg-white border border-gray-200 rounded-lg shadow-xl w-80 p-4"
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <h3 className="text-sm font-semibold text-gray-900 mb-2">Save as List</h3>
+          <p className="text-xs text-gray-500 mb-3">
+            Creates a list with the {filtered.length} {filtered.length === 1 ? 'item' : 'items'} currently shown in the plan.
+          </p>
+          <input
+            type="text"
+            value={newListName}
+            onChange={(e) => setNewListName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setShowSaveList(false);
+            }}
+            placeholder="List name"
+            autoFocus
+            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3"
+          />
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => setShowSaveList(false)}
+              disabled={savingList}
+              className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={async () => {
+                const name = newListName.trim();
+                if (!name) return;
+                setSavingList(true);
+                try {
+                  const list = await createList(name);
+                  if (list) {
+                    const ids = filtered.map(f => f.objective.id);
+                    for (const oid of ids) {
+                      await addItemToList(list.id, oid);
+                    }
+                  }
+                  setShowSaveList(false);
+                } finally {
+                  setSavingList(false);
+                }
+              }}
+              disabled={savingList || !newListName.trim() || filtered.length === 0}
+              className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+            >
+              {savingList ? 'Saving…' : 'Create list'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

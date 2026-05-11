@@ -185,6 +185,7 @@ export interface PlanFilters {
   level: ObjectiveLevel | '';
   statuses: WorkflowStatus[];
   types?: ObjectiveType[];
+  listId?: string;
 }
 
 export interface PlanVersion {
