@@ -77,15 +77,22 @@ export function AdminPage() {
 
   useEffect(() => {
     const fetchLastBackup = async () => {
+      let serverTs: string | null = null;
       try {
         const res = await fetch(`${API_URL}/api/admin/last-backup-restore`, { credentials: 'include' });
         if (res.ok) {
           const data = await res.json();
-          setLastBackupRestoredAt(data.lastBackupRestoredAt || null);
+          serverTs = data.lastBackupRestoredAt || null;
         }
       } catch (err) {
         console.error('Failed to fetch last backup time:', err);
       }
+      let localTs: string | null = null;
+      try {
+        localTs = localStorage.getItem('okr-last-backup-restored-at');
+      } catch { /* ignore */ }
+      const pick = serverTs && localTs ? (serverTs > localTs ? serverTs : localTs) : (serverTs || localTs);
+      setLastBackupRestoredAt(pick);
     };
     fetchLastBackup();
   }, []);
@@ -264,6 +271,9 @@ export function AdminPage() {
 
         // Update local store after server sync
         importData(pendingImportData);
+        const nowIso = new Date().toISOString();
+        try { localStorage.setItem('okr-last-backup-restored-at', nowIso); } catch { /* ignore */ }
+        setLastBackupRestoredAt(nowIso);
         try {
           const res = await fetch(`${API_URL}/api/admin/last-backup-restore`, {
             method: 'POST',
@@ -271,7 +281,9 @@ export function AdminPage() {
           });
           if (res.ok) {
             const data = await res.json();
-            setLastBackupRestoredAt(data.lastBackupRestoredAt || null);
+            if (data.lastBackupRestoredAt) setLastBackupRestoredAt(data.lastBackupRestoredAt);
+          } else {
+            console.warn('Failed to record backup timestamp on server:', res.status, await res.text().catch(() => ''));
           }
         } catch (err) {
           console.error('Failed to record backup timestamp:', err);
@@ -439,8 +451,8 @@ export function AdminPage() {
             </p>
             <p className="text-xs text-gray-500 mb-3">
               {lastBackupRestoredAt
-                ? <>Last upload: <span className="font-medium text-gray-700" title={new Date(lastBackupRestoredAt).toString()}>{new Date(lastBackupRestoredAt).toLocaleString()}</span></>
-                : 'No backup has been uploaded yet.'}
+                ? <>Last restored: <span className="font-medium text-gray-700" title={new Date(lastBackupRestoredAt).toString()}>{new Date(lastBackupRestoredAt).toLocaleString()}</span></>
+                : 'No backup has been restored yet.'}
             </p>
             <input
               ref={fileInputRef}
