@@ -248,4 +248,6 @@ export interface List {
   createdAt: string;
   updatedAt: string;
   parentId?: string;
+  ownerId?: string;
+  periodId?: string;
 }

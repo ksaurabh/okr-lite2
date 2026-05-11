@@ -209,6 +209,8 @@ interface OKRActions {
   setHighlightObjectiveId: (id: string | null) => void;
   forcedExpandedIds: string[] | null;
   setForcedExpandedIds: (ids: string[] | null) => void;
+  planFocusListId: string | null;
+  setPlanFocusListId: (id: string | null) => void;
   fetchUserPreferences: () => Promise<void>;
 
   // Saved Views
@@ -227,7 +229,7 @@ interface OKRActions {
   // Lists
   lists: List[];
   fetchLists: () => Promise<void>;
-  createList: (name: string, color?: string, parentId?: string) => Promise<List | null>;
+  createList: (name: string, color?: string, parentId?: string, meta?: { ownerId?: string; periodId?: string }) => Promise<List | { error: string } | null>;
   deleteList: (listId: string) => Promise<void>;
   renameList: (listId: string, newName: string) => Promise<void>;
   updateListColor: (listId: string, color: string) => Promise<void>;
@@ -422,6 +424,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
   lastSelectedPlanId: null as string | null,
   highlightObjectiveId: null as string | null,
   forcedExpandedIds: null as string[] | null,
+  planFocusListId: null as string | null,
   savedViews: [],
   activeViewId: null,
   lists: [],
@@ -1644,6 +1647,10 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     set({ forcedExpandedIds: ids });
   },
 
+  setPlanFocusListId: (id) => {
+    set({ planFocusListId: id });
+  },
+
   savePlanVersion: async (planId, itemIds) => {
     const state = get();
     const newVersion = {
@@ -2031,7 +2038,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     }
   },
 
-  createList: async (name: string, color?: string, parentId?: string) => {
+  createList: async (name: string, color?: string, parentId?: string, meta?: { ownerId?: string; periodId?: string }) => {
     try {
       const response = await fetch(`${API_URL}/api/users/me/lists`, {
         method: 'POST',
@@ -2039,23 +2046,43 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name, color: color || '#6b7280', parentId }),
+        body: JSON.stringify({ name, color: color || '#6b7280', parentId, ownerId: meta?.ownerId, periodId: meta?.periodId }),
       });
 
       if (response.ok) {
         const data = await response.json();
-        // Defensive: if the server response doesn't carry parentId (older server build),
-        // patch it locally and persist via the rename/color endpoint isn't possible —
-        // but at least the in-memory list will have parentId so the UI works.
         let list = data.list;
-        let lists = data.lists;
+        let lists: List[] = data.lists || [];
         if (parentId && list && !list.parentId) {
           list = { ...list, parentId };
-          lists = (lists || []).map((l: List) => l.id === list.id ? list : l);
+          lists = lists.map((l: List) => l.id === list.id ? list : l);
         }
+        if (meta?.ownerId && list && !list.ownerId) {
+          list = { ...list, ownerId: meta.ownerId };
+          lists = lists.map((l: List) => l.id === list.id ? list : l);
+        }
+        if (meta?.periodId && list && !list.periodId) {
+          list = { ...list, periodId: meta.periodId };
+          lists = lists.map((l: List) => l.id === list.id ? list : l);
+        }
+        // Preserve any locally-known metadata (parentId, ownerId, periodId) for OTHER lists
+        // in case the running server is on older code and strips those fields from the response.
+        const prevById = new Map(get().lists.map(l => [l.id, l]));
+        lists = lists.map((l: List) => {
+          const prev = prevById.get(l.id);
+          if (!prev) return l;
+          return {
+            ...l,
+            parentId: l.parentId ?? prev.parentId,
+            ownerId: l.ownerId ?? prev.ownerId,
+            periodId: l.periodId ?? prev.periodId,
+          };
+        });
         set({ lists });
         return list;
       }
+      const errData = await response.json().catch(() => ({}));
+      return { error: errData.error || `Failed to create list (HTTP ${response.status})` };
     } catch (err) {
       console.error('Failed to create list:', err);
     }

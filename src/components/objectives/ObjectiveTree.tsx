@@ -135,10 +135,8 @@ export function ObjectiveTree({ highlightObjectiveId, onHighlightClear, onViewCh
   const toggleColumnVisibility = useOKRStore((state: OKRStore) => state.toggleColumnVisibility);
   const planTreeColumns = useOKRStore((state: OKRStore) => state.planTreeColumns);
   const togglePlanTreeColumn = useOKRStore((state: OKRStore) => state.togglePlanTreeColumn);
-  const objectiveViewMode = useOKRStore((state: OKRStore) => state.objectiveViewMode);
-  const visibleColumns = objectiveViewMode === 'plan' ? planTreeColumns : visibleColumnsExplore;
-  const toggleColumn = objectiveViewMode === 'plan' ? togglePlanTreeColumn : toggleColumnVisibility;
-  const setObjectiveViewMode = useOKRStore((state: OKRStore) => state.setObjectiveViewMode);
+  const visibleColumns = visibleColumnsExplore;
+  const toggleColumn = toggleColumnVisibility;
 
   // Plan-mode splitter
   const [planLeftWidth, setPlanLeftWidth] = useState<number>(() => {
@@ -575,22 +573,6 @@ export function ObjectiveTree({ highlightObjectiveId, onHighlightClear, onViewCh
           </div>
         )}
 
-        {/* View Mode Toggle */}
-        <div className="inline-flex rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
-          <button
-            onClick={() => setObjectiveViewMode('explore')}
-            className={`px-3 py-1.5 text-sm ${objectiveViewMode === 'explore' ? 'bg-gray-800 text-white' : 'text-gray-700 hover:bg-gray-50'}`}
-          >
-            Explore
-          </button>
-          <button
-            onClick={() => setObjectiveViewMode('plan')}
-            className={`px-3 py-1.5 text-sm border-l border-gray-200 ${objectiveViewMode === 'plan' ? 'bg-gray-800 text-white' : 'text-gray-700 hover:bg-gray-50'}`}
-          >
-            Plan
-          </button>
-        </div>
-
         {/* Column Visibility Toggle */}
         <div className="relative" ref={columnMenuRef}>
           <button
@@ -845,37 +827,6 @@ export function ObjectiveTree({ highlightObjectiveId, onHighlightClear, onViewCh
 
       {/* Objectives Table */}
       {filteredObjectives.length > 0 && (
-        objectiveViewMode === 'plan' ? (
-          <div ref={planSplitRef} className="flex relative items-stretch" style={{ minHeight: 400 }}>
-            <div className="min-w-0" style={{ width: `${planLeftWidth}%` }}>
-              <TreeTableSection
-                resizingColumn={resizingColumn}
-                columnWidths={columnWidths}
-                visibleColumns={visibleColumns}
-                visibleColumnsOverride={planTreeColumns}
-                handleResizeStart={handleResizeStart}
-                filteredObjectives={filteredObjectives}
-                filteredObjectiveIds={filteredObjectiveIds}
-                directlyMatchingIds={directlyMatchingObjectiveIds}
-                companyObjectives={companyObjectives}
-                teamObjectives={teamObjectives}
-                individualObjectives={individualObjectives}
-              />
-            </div>
-            <div
-              onMouseDown={() => {
-                isDraggingPlanSplitterRef.current = true;
-                document.body.style.cursor = 'col-resize';
-                document.body.style.userSelect = 'none';
-              }}
-              className="w-1 cursor-col-resize bg-gray-200 hover:bg-blue-400 active:bg-blue-500 flex-shrink-0 mx-1"
-              title="Drag to resize"
-            />
-            <div className="min-w-0" style={{ width: `${100 - planLeftWidth}%` }}>
-              <PlanView orgObjectives={orgObjectives} orgPeriods={orgPeriods} orgUsers={orgUsers} />
-            </div>
-          </div>
-        ) : (
         <section className={`bg-white rounded-lg shadow-sm border border-gray-200 overflow-x-auto ${resizingColumn ? 'select-none' : ''}`}>
           <div className="min-w-max">
           {/* Table header */}
@@ -1047,7 +998,6 @@ export function ObjectiveTree({ highlightObjectiveId, onHighlightClear, onViewCh
           </div>
           </div>
         </section>
-        )
       )}
     </div>
   );

@@ -993,10 +993,15 @@ app.put('/api/users/me/lists', requireAuth, (req, res) => {
 
 // Create a new list
 app.post('/api/users/me/lists', requireAuth, (req, res) => {
-  const { name, color, parentId } = req.body;
+  const { name, color, parentId, ownerId, periodId } = req.body;
 
   if (!name || !name.trim()) {
     return res.status(400).json({ error: 'List name is required' });
+  }
+
+  const existing = getUserLists(req.user.email);
+  if (existing.some(l => l.name === name.trim())) {
+    return res.status(409).json({ error: `A list named "${name.trim()}" already exists. Pick a different name.` });
   }
 
   const now = new Date().toISOString();
@@ -1008,6 +1013,8 @@ app.post('/api/users/me/lists', requireAuth, (req, res) => {
     createdAt: now,
     updatedAt: now,
     ...(parentId ? { parentId } : {}),
+    ...(ownerId ? { ownerId } : {}),
+    ...(periodId ? { periodId } : {}),
   };
 
   const lists = getUserLists(req.user.email);
@@ -1038,6 +1045,14 @@ app.put('/api/users/me/lists/:listId', requireAuth, (req, res) => {
   if ('parentId' in req.body) {
     if (parentId) lists[listIndex].parentId = parentId;
     else delete lists[listIndex].parentId;
+  }
+  if ('ownerId' in req.body) {
+    if (req.body.ownerId) lists[listIndex].ownerId = req.body.ownerId;
+    else delete lists[listIndex].ownerId;
+  }
+  if ('periodId' in req.body) {
+    if (req.body.periodId) lists[listIndex].periodId = req.body.periodId;
+    else delete lists[listIndex].periodId;
   }
   lists[listIndex].updatedAt = new Date().toISOString();
 

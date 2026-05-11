@@ -107,6 +107,8 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
   const [columnWidths, setColumnWidths] = useState<ListColumnWidths>(loadListColumnWidths);
   const [resizingColumn, setResizingColumn] = useState<keyof ListColumnWidths | null>(null);
   const [orgUsers, setOrgUsers] = useState<User[]>([]);
+  const planFocusListId = useOKRStore((state: OKRStore) => state.planFocusListId);
+  const setPlanFocusListId = useOKRStore((state: OKRStore) => state.setPlanFocusListId);
   const listViewModes = useOKRStore((state: OKRStore) => state.listViewModes);
   const setListViewMode = useOKRStore((state: OKRStore) => state.setListViewMode);
   const listPlanColumns = useOKRStore((state: OKRStore) => state.listPlanColumns);
@@ -118,6 +120,66 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
   const listPlanCurrentView = useOKRStore((state: OKRStore) => state.listPlanCurrentView);
   const setListPlanCurrentView = useOKRStore((state: OKRStore) => state.setListPlanCurrentView);
   const [collapsedCardIds, setCollapsedCardIds] = useState<Set<string>>(new Set());
+  const [firstColStatusFilter, setFirstColStatusFilter] = useState<WorkflowStatus[]>([]);
+  const [thirdColStatusFilter, setThirdColStatusFilter] = useState<WorkflowStatus[]>([]);
+  const [firstColOwnerFilter, setFirstColOwnerFilter] = useState<string[]>([]);
+  const [firstColAssigneeFilter, setFirstColAssigneeFilter] = useState<string[]>([]);
+  const [firstColPeriodFilter, setFirstColPeriodFilter] = useState<string[]>([]);
+  const [thirdColOwnerFilter, setThirdColOwnerFilter] = useState<string[]>([]);
+  const [thirdColAssigneeFilter, setThirdColAssigneeFilter] = useState<string[]>([]);
+  const [thirdColPeriodFilter, setThirdColPeriodFilter] = useState<string[]>([]);
+  const [collapsedFilterSections, setCollapsedFilterSections] = useState<Set<string>>(new Set(['first:Owner', 'first:Assignee', 'first:Period', 'third:Owner', 'third:Assignee', 'third:Period']));
+  const toggleFilterSection = (key: string) => {
+    setCollapsedFilterSections(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const passesFilters = (
+    obj: Objective,
+    statuses: WorkflowStatus[],
+    ownerIds: string[],
+    assigneeIds: string[],
+    periodIds: string[],
+  ): boolean => {
+    if (statuses.length > 0 && !statuses.includes(obj.workflowStatus || 'todo')) return false;
+    if (ownerIds.length > 0 && (!obj.ownerId || !ownerIds.includes(obj.ownerId))) return false;
+    if (assigneeIds.length > 0 && (!obj.assigneeId || !assigneeIds.includes(obj.assigneeId))) return false;
+    if (periodIds.length > 0 && !periodIds.includes(obj.periodId)) return false;
+    return true;
+  };
+
+  const filterCount = (
+    statuses: WorkflowStatus[],
+    ownerIds: string[],
+    assigneeIds: string[],
+    periodIds: string[],
+  ): number => statuses.length + ownerIds.length + assigneeIds.length + periodIds.length;
+  const [showFirstColFilter, setShowFirstColFilter] = useState(false);
+  const [showThirdColFilter, setShowThirdColFilter] = useState(false);
+  const firstColFilterRef = useRef<HTMLDivElement>(null);
+  const thirdColFilterRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showFirstColFilter) return;
+    const onClick = (e: MouseEvent) => {
+      if (firstColFilterRef.current && !firstColFilterRef.current.contains(e.target as Node)) setShowFirstColFilter(false);
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [showFirstColFilter]);
+
+  useEffect(() => {
+    if (!showThirdColFilter) return;
+    const onClick = (e: MouseEvent) => {
+      if (thirdColFilterRef.current && !thirdColFilterRef.current.contains(e.target as Node)) setShowThirdColFilter(false);
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [showThirdColFilter]);
 
   const toggleCardCollapsed = (id: string) => {
     setCollapsedCardIds(prev => {
@@ -373,6 +435,22 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
     fetchLists();
   }, [fetchLists]);
 
+  useEffect(() => {
+    try {
+      const pending = localStorage.getItem('okr-lists-pending-selection');
+      if (pending && lists.some(l => l.id === pending)) {
+        setSelectedListId(pending);
+        localStorage.removeItem('okr-lists-pending-selection');
+      }
+    } catch { /* ignore */ }
+  }, [lists]);
+
+  useEffect(() => {
+    if (planFocusListId && lists.some(l => l.id === planFocusListId)) {
+      setSelectedListId(planFocusListId);
+    }
+  }, [planFocusListId, lists]);
+
   // Fetch users for owner/assignee display
   useEffect(() => {
     const fetchUsers = async () => {
@@ -527,6 +605,19 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
     setDraggedItemId(null);
   };
 
+  const reorderItemsInList = async (listId: string, draggedObjectiveId: string, targetObjectiveId: string) => {
+    const list = lists.find(l => l.id === listId);
+    if (!list || draggedObjectiveId === targetObjectiveId) return;
+    const items = [...list.items].sort((a, b) => a.order - b.order);
+    const draggedIndex = items.findIndex(i => i.objectiveId === draggedObjectiveId);
+    const targetIndex = items.findIndex(i => i.objectiveId === targetObjectiveId);
+    if (draggedIndex === -1 || targetIndex === -1) return;
+    const [moved] = items.splice(draggedIndex, 1);
+    items.splice(targetIndex, 0, moved);
+    const reordered = items.map((item, idx) => ({ objectiveId: item.objectiveId, order: idx }));
+    await reorderListItems(listId, reordered);
+  };
+
   const getObjective = useCallback((objectiveId: string): Objective | undefined => {
     return objectives.find(o => o.id === objectiveId);
   }, [objectives]);
@@ -548,19 +639,23 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
     ? [...selectedList.items].sort((a, b) => a.order - b.order)
     : [];
 
+  const planFocus = planFocusListId ? lists.find(l => l.id === planFocusListId) : null;
+  const planFocusEffective = planFocus && planFocus.id === selectedListId ? planFocus : null;
+
   return (
-    <div className="flex h-full">
-      {/* Lists sidebar */}
-      <div className={`border-r border-gray-200 bg-gray-50 flex flex-col h-full max-h-full transition-all duration-200 ${isListsCollapsed ? 'w-12' : 'w-64'}`}>
+    <div className="flex h-full -ml-5">
+      {/* Lists sidebar (hidden in plan focus mode) */}
+      {!planFocusEffective && (
+      <div className={`border-r border-gray-200 bg-gray-50 flex flex-col h-full max-h-full transition-all duration-200 ${isListsCollapsed ? 'w-6' : 'w-64'}`}>
         {isListsCollapsed ? (
           /* Collapsed sidebar */
-          <div className="flex flex-col items-center py-4">
+          <div className="flex flex-col items-center py-2">
             <button
               onClick={() => setIsListsCollapsed(false)}
-              className="p-2 text-gray-400 hover:text-gray-600 rounded"
+              className="p-0.5 text-gray-400 hover:text-gray-600 rounded"
               title="Expand sidebar"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
             </button>
@@ -742,13 +837,35 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
           </>
         )}
       </div>
+      )}
 
       {/* List content */}
       <div className="flex-1 overflow-auto">
+        {planFocusEffective && (
+          <div className="px-4 pt-3 pb-2 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-white">
+            <button
+              onClick={() => { setPlanFocusListId(null); onViewChange('plans'); }}
+              className="text-xs text-blue-600 hover:text-blue-700 mb-1"
+            >
+              ← Back to Plans
+            </button>
+            <div className="flex items-center gap-3 flex-wrap">
+              <h2 className="text-xl font-semibold text-gray-900">{planFocusEffective.name}</h2>
+              <span className="text-xs text-gray-500">
+                <span className="text-gray-400">Owner:</span> <span className="text-gray-700">{orgUsers.find(u => u.id === planFocusEffective.ownerId)?.name || orgUsers.find(u => u.id === planFocusEffective.ownerId)?.email || planFocusEffective.ownerId || '—'}</span>
+              </span>
+              <span className="text-xs text-gray-500">
+                <span className="text-gray-400">Period:</span> <span className="text-gray-700">{periods.find(p => p.id === planFocusEffective.periodId)?.name || '—'}</span>
+              </span>
+            </div>
+          </div>
+        )}
         {selectedList ? (
           <div className="p-4">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold text-gray-900">{selectedList.name}</h2>
+              {!planFocusEffective ? (
+                <h2 className="text-xl font-semibold text-gray-900">{selectedList.name}</h2>
+              ) : <span />}
               <div className="flex items-center gap-2">
                 {isListPlanMode && (
                   <>
@@ -884,7 +1001,91 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
             {isListPlanMode ? (
               <div ref={listPlanSplitRef} className="flex relative" style={{ minHeight: 600 }}>
                 <div className="border border-gray-200 rounded-lg overflow-y-auto bg-white" style={{ width: `${listPlanLeftWidth}%` }}>
-                  <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-end bg-gray-50">
+                  <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-end gap-2 bg-gray-50">
+                    <div ref={firstColFilterRef} className="relative">
+                      <button
+                        onClick={() => setShowFirstColFilter(!showFirstColFilter)}
+                        className="px-2 py-0.5 text-[10px] border border-gray-300 rounded bg-white text-gray-600 hover:bg-gray-50"
+                        title="Filter"
+                      >
+                        Filter{filterCount(firstColStatusFilter, firstColOwnerFilter, firstColAssigneeFilter, firstColPeriodFilter) > 0 ? ` (${filterCount(firstColStatusFilter, firstColOwnerFilter, firstColAssigneeFilter, firstColPeriodFilter)})` : ''}
+                      </button>
+                      {showFirstColFilter && (
+                        <div className="absolute right-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-md shadow-lg py-1 min-w-[200px] max-h-96 overflow-y-auto">
+                          {(['Status', 'Owner', 'Assignee', 'Period'] as const).map((section) => {
+                            const key = `first:${section}`;
+                            const collapsed = collapsedFilterSections.has(key);
+                            const count = section === 'Status' ? firstColStatusFilter.length : section === 'Owner' ? firstColOwnerFilter.length : section === 'Assignee' ? firstColAssigneeFilter.length : firstColPeriodFilter.length;
+                            return (
+                              <div key={section}>
+                                <button
+                                  onClick={() => toggleFilterSection(key)}
+                                  className="w-full flex items-center justify-between px-3 py-1 text-[10px] uppercase tracking-wider text-gray-500 bg-gray-50 hover:bg-gray-100 border-t border-gray-100"
+                                >
+                                  <span className="flex items-center gap-1">
+                                    <span>{collapsed ? '▸' : '▾'}</span>
+                                    {section}
+                                    {count > 0 && <span className="ml-1 text-blue-600 normal-case">({count})</span>}
+                                  </span>
+                                </button>
+                                {!collapsed && section === 'Status' && WORKFLOW_STATUS_OPTIONS.map((opt) => (
+                                  <label key={opt.value} className="flex items-center gap-2 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={firstColStatusFilter.includes(opt.value)}
+                                      onChange={() => setFirstColStatusFilter(firstColStatusFilter.includes(opt.value) ? firstColStatusFilter.filter(s => s !== opt.value) : [...firstColStatusFilter, opt.value])}
+                                      className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                    {opt.label}
+                                  </label>
+                                ))}
+                                {!collapsed && section === 'Owner' && [...orgUsers].sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email)).map(u => (
+                                  <label key={u.id} className="flex items-center gap-2 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={firstColOwnerFilter.includes(u.id)}
+                                      onChange={() => setFirstColOwnerFilter(firstColOwnerFilter.includes(u.id) ? firstColOwnerFilter.filter(x => x !== u.id) : [...firstColOwnerFilter, u.id])}
+                                      className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                    {u.name || u.email}
+                                  </label>
+                                ))}
+                                {!collapsed && section === 'Assignee' && [...orgUsers].sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email)).map(u => (
+                                  <label key={u.id} className="flex items-center gap-2 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={firstColAssigneeFilter.includes(u.id)}
+                                      onChange={() => setFirstColAssigneeFilter(firstColAssigneeFilter.includes(u.id) ? firstColAssigneeFilter.filter(x => x !== u.id) : [...firstColAssigneeFilter, u.id])}
+                                      className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                    {u.name || u.email}
+                                  </label>
+                                ))}
+                                {!collapsed && section === 'Period' && [...periods].sort((a, b) => a.startDate.localeCompare(b.startDate)).map((p: Period) => (
+                                  <label key={p.id} className="flex items-center gap-2 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={firstColPeriodFilter.includes(p.id)}
+                                      onChange={() => setFirstColPeriodFilter(firstColPeriodFilter.includes(p.id) ? firstColPeriodFilter.filter(x => x !== p.id) : [...firstColPeriodFilter, p.id])}
+                                      className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                    {p.name}
+                                  </label>
+                                ))}
+                              </div>
+                            );
+                          })}
+                          {filterCount(firstColStatusFilter, firstColOwnerFilter, firstColAssigneeFilter, firstColPeriodFilter) > 0 && (
+                            <button
+                              onClick={() => { setFirstColStatusFilter([]); setFirstColOwnerFilter([]); setFirstColAssigneeFilter([]); setFirstColPeriodFilter([]); }}
+                              className="w-full text-left px-3 py-1 text-xs text-blue-600 hover:bg-gray-50 border-t border-gray-100 sticky bottom-0 bg-white"
+                            >
+                              Clear all
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
                     <div className="inline-flex border border-gray-300 rounded overflow-hidden">
                       <button
                         onClick={() => setListPlanCurrentView('table')}
@@ -905,12 +1106,24 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                       {sortedItems.map((item) => {
                         const obj = getObjective(item.objectiveId);
                         if (!obj) return null;
+                        if (!passesFilters(obj, firstColStatusFilter, firstColOwnerFilter, firstColAssigneeFilter, firstColPeriodFilter)) return null;
                         const selected = planSelectedObjective?.id === obj.id;
                         return (
                           <button
                             key={item.objectiveId}
                             onClick={() => setPlanSelectedObjective(obj)}
-                            className={`w-full text-left border rounded p-2 ${selected ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
+                            draggable
+                            onDragStart={(e) => { e.dataTransfer.setData('text/plain', `${selectedList.id}|${obj.id}`); e.dataTransfer.effectAllowed = 'move'; }}
+                            onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              const data = e.dataTransfer.getData('text/plain');
+                              const [listId, draggedId] = data.split('|');
+                              if (listId === selectedList.id && draggedId) {
+                                reorderItemsInList(selectedList.id, draggedId, obj.id);
+                              }
+                            }}
+                            className={`w-full text-left border rounded p-2 cursor-grab active:cursor-grabbing ${selected ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
                           >
                             <div className="text-sm font-medium text-gray-900 truncate" title={obj.title}>{obj.title}</div>
                             {listPlanColumns.length > 0 && (
@@ -931,6 +1144,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                     sortedItems.map((item) => {
                       const obj = getObjective(item.objectiveId);
                       if (!obj) return null;
+                      if (!passesFilters(obj, firstColStatusFilter, firstColOwnerFilter, firstColAssigneeFilter, firstColPeriodFilter)) return null;
                       const selected = planSelectedObjective?.id === obj.id;
                       return (
                         <div key={item.objectiveId} className={selected ? 'bg-blue-50' : ''}>
@@ -1162,6 +1376,90 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                         <div className="px-3 py-2 border-b border-gray-100 flex items-center gap-2 bg-gray-50">
                           <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: child.color || '#6b7280' }} />
                           <span className="text-sm font-medium text-gray-700 truncate flex-1">{child.name}</span>
+                          <div ref={thirdColFilterRef} className="relative">
+                            <button
+                              onClick={() => setShowThirdColFilter(!showThirdColFilter)}
+                              className="px-2 py-0.5 text-[10px] border border-gray-300 rounded bg-white text-gray-600 hover:bg-gray-50"
+                              title="Filter"
+                            >
+                              Filter{filterCount(thirdColStatusFilter, thirdColOwnerFilter, thirdColAssigneeFilter, thirdColPeriodFilter) > 0 ? ` (${filterCount(thirdColStatusFilter, thirdColOwnerFilter, thirdColAssigneeFilter, thirdColPeriodFilter)})` : ''}
+                            </button>
+                            {showThirdColFilter && (
+                              <div className="absolute right-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-md shadow-lg py-1 min-w-[200px] max-h-96 overflow-y-auto">
+                                {(['Status', 'Owner', 'Assignee', 'Period'] as const).map((section) => {
+                                  const key = `third:${section}`;
+                                  const collapsed = collapsedFilterSections.has(key);
+                                  const count = section === 'Status' ? thirdColStatusFilter.length : section === 'Owner' ? thirdColOwnerFilter.length : section === 'Assignee' ? thirdColAssigneeFilter.length : thirdColPeriodFilter.length;
+                                  return (
+                                    <div key={section}>
+                                      <button
+                                        onClick={() => toggleFilterSection(key)}
+                                        className="w-full flex items-center justify-between px-3 py-1 text-[10px] uppercase tracking-wider text-gray-500 bg-gray-50 hover:bg-gray-100 border-t border-gray-100"
+                                      >
+                                        <span className="flex items-center gap-1">
+                                          <span>{collapsed ? '▸' : '▾'}</span>
+                                          {section}
+                                          {count > 0 && <span className="ml-1 text-blue-600 normal-case">({count})</span>}
+                                        </span>
+                                      </button>
+                                      {!collapsed && section === 'Status' && WORKFLOW_STATUS_OPTIONS.map((opt) => (
+                                        <label key={opt.value} className="flex items-center gap-2 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
+                                          <input
+                                            type="checkbox"
+                                            checked={thirdColStatusFilter.includes(opt.value)}
+                                            onChange={() => setThirdColStatusFilter(thirdColStatusFilter.includes(opt.value) ? thirdColStatusFilter.filter(s => s !== opt.value) : [...thirdColStatusFilter, opt.value])}
+                                            className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                          />
+                                          {opt.label}
+                                        </label>
+                                      ))}
+                                      {!collapsed && section === 'Owner' && [...orgUsers].sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email)).map(u => (
+                                        <label key={u.id} className="flex items-center gap-2 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
+                                          <input
+                                            type="checkbox"
+                                            checked={thirdColOwnerFilter.includes(u.id)}
+                                            onChange={() => setThirdColOwnerFilter(thirdColOwnerFilter.includes(u.id) ? thirdColOwnerFilter.filter(x => x !== u.id) : [...thirdColOwnerFilter, u.id])}
+                                            className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                          />
+                                          {u.name || u.email}
+                                        </label>
+                                      ))}
+                                      {!collapsed && section === 'Assignee' && [...orgUsers].sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email)).map(u => (
+                                        <label key={u.id} className="flex items-center gap-2 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
+                                          <input
+                                            type="checkbox"
+                                            checked={thirdColAssigneeFilter.includes(u.id)}
+                                            onChange={() => setThirdColAssigneeFilter(thirdColAssigneeFilter.includes(u.id) ? thirdColAssigneeFilter.filter(x => x !== u.id) : [...thirdColAssigneeFilter, u.id])}
+                                            className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                          />
+                                          {u.name || u.email}
+                                        </label>
+                                      ))}
+                                      {!collapsed && section === 'Period' && [...periods].sort((a, b) => a.startDate.localeCompare(b.startDate)).map((p: Period) => (
+                                        <label key={p.id} className="flex items-center gap-2 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
+                                          <input
+                                            type="checkbox"
+                                            checked={thirdColPeriodFilter.includes(p.id)}
+                                            onChange={() => setThirdColPeriodFilter(thirdColPeriodFilter.includes(p.id) ? thirdColPeriodFilter.filter(x => x !== p.id) : [...thirdColPeriodFilter, p.id])}
+                                            className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                          />
+                                          {p.name}
+                                        </label>
+                                      ))}
+                                    </div>
+                                  );
+                                })}
+                                {filterCount(thirdColStatusFilter, thirdColOwnerFilter, thirdColAssigneeFilter, thirdColPeriodFilter) > 0 && (
+                                  <button
+                                    onClick={() => { setThirdColStatusFilter([]); setThirdColOwnerFilter([]); setThirdColAssigneeFilter([]); setThirdColPeriodFilter([]); }}
+                                    className="w-full text-left px-3 py-1 text-xs text-blue-600 hover:bg-gray-50 border-t border-gray-100 sticky bottom-0 bg-white"
+                                  >
+                                    Clear all
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
                           <div className="inline-flex border border-gray-300 rounded overflow-hidden">
                             <button
                               onClick={() => setListPlanChildView('table')}
@@ -1184,10 +1482,23 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                             {child.items.slice().sort((a, b) => a.order - b.order).map(item => {
                               const obj = getObjective(item.objectiveId);
                               if (!obj) return null;
+                              if (!passesFilters(obj, thirdColStatusFilter, thirdColOwnerFilter, thirdColAssigneeFilter, thirdColPeriodFilter)) return null;
                               return (
                                 <div
                                   key={item.objectiveId}
-                                  className="group relative border border-gray-200 rounded p-2 bg-white hover:bg-gray-50"
+                                  draggable
+                                  onClick={() => showPathInTree(obj.id)}
+                                  onDragStart={(e) => { e.dataTransfer.setData('text/plain', `${child.id}|${obj.id}`); e.dataTransfer.effectAllowed = 'move'; }}
+                                  onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
+                                  onDrop={(e) => {
+                                    e.preventDefault();
+                                    const data = e.dataTransfer.getData('text/plain');
+                                    const [listId, draggedId] = data.split('|');
+                                    if (listId === child.id && draggedId) {
+                                      reorderItemsInList(child.id, draggedId, obj.id);
+                                    }
+                                  }}
+                                  className="group relative border border-gray-200 rounded p-2 bg-white hover:bg-gray-50 cursor-pointer"
                                 >
                                   <div className="flex items-center gap-1">
                                     <button
@@ -1197,7 +1508,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                     >
                                       {obj.title}
                                     </button>
-                                    <div className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                                       {obj.link?.url && (
                                         <a
                                           href={obj.link.url}
@@ -1259,6 +1570,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                             {child.items.slice().sort((a, b) => a.order - b.order).map(item => {
                               const obj = getObjective(item.objectiveId);
                               if (!obj) return null;
+                              if (!passesFilters(obj, thirdColStatusFilter, thirdColOwnerFilter, thirdColAssigneeFilter, thirdColPeriodFilter)) return null;
                               return (
                                 <CompactObjectiveCard
                                   key={item.objectiveId}
