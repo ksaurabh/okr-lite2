@@ -207,6 +207,8 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
     if (selectedListId) setListViewMode(selectedListId, v ? 'plan' : 'list');
   };
   const [planSelectedObjective, setPlanSelectedObjective] = useState<Objective | null>(null);
+  const [planTopLevel, setPlanTopLevel] = useState(false);
+  const [topLevelFilterOn, setTopLevelFilterOn] = useState(false);
   const [planSelectedChildListId, setPlanSelectedChildListId] = useState<string | null>(null);
 
   const [listPlanLeftWidth, setListPlanLeftWidth] = useState<number>(() => {
@@ -867,7 +869,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                 <h2 className="text-xl font-semibold text-gray-900">{selectedList.name}</h2>
               ) : <span />}
               <div className="flex items-center gap-2">
-                {isListPlanMode && (
+                {isListPlanMode && !planTopLevel && (
                   <>
                     <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">Child list</label>
                     <select
@@ -895,6 +897,10 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                       </svg>
                       Create child list
                     </button>
+                  </>
+                )}
+                {isListPlanMode && (
+                  <>
                     <div ref={listPlanColumnMenuRef} className="relative">
                       <button
                         onClick={() => setShowListPlanColumnMenu(!showListPlanColumnMenu)}
@@ -924,6 +930,10 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                         </div>
                       )}
                     </div>
+                  </>
+                )}
+                {isListPlanMode && !planTopLevel && (
+                  <>
                     <select
                       value=""
                       onChange={async (e) => {
@@ -954,6 +964,17 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                       })()}
                     </select>
                   </>
+                )}
+                {isListPlanMode && (
+                  <label className="inline-flex items-center gap-1 text-xs text-gray-600 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={planTopLevel}
+                      onChange={(e) => setPlanTopLevel(e.target.checked)}
+                      className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    Top Level
+                  </label>
                 )}
                 <div className="inline-flex border border-gray-300 rounded overflow-hidden">
                   <button
@@ -1000,6 +1021,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
 
             {isListPlanMode ? (
               <div ref={listPlanSplitRef} className="flex relative" style={{ minHeight: 600 }}>
+                {!planTopLevel && (
                 <div className="border border-gray-200 rounded-lg overflow-y-auto bg-white" style={{ width: `${listPlanLeftWidth}%` }}>
                   <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-end gap-2 bg-gray-50">
                     <div ref={firstColFilterRef} className="relative">
@@ -1162,6 +1184,8 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                     })
                   )}
                 </div>
+                )}
+                {!planTopLevel && (
                 <div
                   onMouseDown={() => {
                     draggingListPlanSep.current = 'left';
@@ -1171,8 +1195,131 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                   className="w-1 cursor-col-resize bg-gray-200 hover:bg-blue-400 active:bg-blue-500 flex-shrink-0 mx-1"
                   title="Drag to resize"
                 />
-                <div className="min-w-0 border border-gray-200 rounded-lg overflow-auto bg-white" style={{ width: `${100 - listPlanLeftWidth - listPlanRightWidth}%` }}>
-                  {planSelectedObjective ? (
+                )}
+                <div className="min-w-0 border border-gray-200 rounded-lg overflow-auto bg-white" style={{ width: `${planTopLevel ? 100 - listPlanRightWidth : 100 - listPlanLeftWidth - listPlanRightWidth}%` }}>
+                  {planTopLevel ? (
+                    (() => {
+                      const allRoots = orgObjectives.filter(o => !o.parentId).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.title.localeCompare(b.title));
+                      const fc = filterCount(firstColStatusFilter, firstColOwnerFilter, firstColAssigneeFilter, firstColPeriodFilter);
+                      const roots = topLevelFilterOn && fc > 0
+                        ? allRoots.filter(o => passesFilters(o, firstColStatusFilter, firstColOwnerFilter, firstColAssigneeFilter, firstColPeriodFilter))
+                        : allRoots;
+                      return (
+                        <>
+                          <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-end gap-2 bg-gray-50">
+                            <button
+                              onClick={() => setTopLevelFilterOn(!topLevelFilterOn)}
+                              className={`px-2 py-0.5 text-[10px] border rounded ${topLevelFilterOn ? 'bg-blue-50 border-blue-300 text-blue-700' : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'}`}
+                              title="Toggle filter"
+                            >
+                              Filter{topLevelFilterOn ? ' on' : ' off'}{fc > 0 ? ` (${fc})` : ''}
+                            </button>
+                            {topLevelFilterOn && (
+                              <div ref={firstColFilterRef} className="relative">
+                                <button
+                                  onClick={() => setShowFirstColFilter(!showFirstColFilter)}
+                                  className="px-2 py-0.5 text-[10px] border border-gray-300 rounded bg-white text-gray-600 hover:bg-gray-50"
+                                  title="Edit filter"
+                                >
+                                  Edit
+                                </button>
+                                {showFirstColFilter && (
+                                  <div className="absolute right-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-md shadow-lg py-1 min-w-[200px] max-h-96 overflow-y-auto">
+                                    {(['Status', 'Owner', 'Assignee', 'Period'] as const).map((section) => {
+                                      const key = `first:${section}`;
+                                      const collapsed = collapsedFilterSections.has(key);
+                                      const count = section === 'Status' ? firstColStatusFilter.length : section === 'Owner' ? firstColOwnerFilter.length : section === 'Assignee' ? firstColAssigneeFilter.length : firstColPeriodFilter.length;
+                                      return (
+                                        <div key={section}>
+                                          <button
+                                            onClick={() => toggleFilterSection(key)}
+                                            className="w-full flex items-center justify-between px-3 py-1 text-[10px] uppercase tracking-wider text-gray-500 bg-gray-50 hover:bg-gray-100 border-t border-gray-100"
+                                          >
+                                            <span className="flex items-center gap-1">
+                                              <span>{collapsed ? '▸' : '▾'}</span>
+                                              {section}
+                                              {count > 0 && <span className="ml-1 text-blue-600 normal-case">({count})</span>}
+                                            </span>
+                                          </button>
+                                          {!collapsed && section === 'Status' && WORKFLOW_STATUS_OPTIONS.map((opt) => (
+                                            <label key={opt.value} className="flex items-center gap-2 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
+                                              <input
+                                                type="checkbox"
+                                                checked={firstColStatusFilter.includes(opt.value)}
+                                                onChange={() => setFirstColStatusFilter(firstColStatusFilter.includes(opt.value) ? firstColStatusFilter.filter(s => s !== opt.value) : [...firstColStatusFilter, opt.value])}
+                                                className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                              />
+                                              {opt.label}
+                                            </label>
+                                          ))}
+                                          {!collapsed && section === 'Owner' && [...orgUsers].sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email)).map(u => (
+                                            <label key={u.id} className="flex items-center gap-2 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
+                                              <input
+                                                type="checkbox"
+                                                checked={firstColOwnerFilter.includes(u.id)}
+                                                onChange={() => setFirstColOwnerFilter(firstColOwnerFilter.includes(u.id) ? firstColOwnerFilter.filter(x => x !== u.id) : [...firstColOwnerFilter, u.id])}
+                                                className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                              />
+                                              {u.name || u.email}
+                                            </label>
+                                          ))}
+                                          {!collapsed && section === 'Assignee' && [...orgUsers].sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email)).map(u => (
+                                            <label key={u.id} className="flex items-center gap-2 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
+                                              <input
+                                                type="checkbox"
+                                                checked={firstColAssigneeFilter.includes(u.id)}
+                                                onChange={() => setFirstColAssigneeFilter(firstColAssigneeFilter.includes(u.id) ? firstColAssigneeFilter.filter(x => x !== u.id) : [...firstColAssigneeFilter, u.id])}
+                                                className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                              />
+                                              {u.name || u.email}
+                                            </label>
+                                          ))}
+                                          {!collapsed && section === 'Period' && [...periods].sort((a, b) => a.startDate.localeCompare(b.startDate)).map((p: Period) => (
+                                            <label key={p.id} className="flex items-center gap-2 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
+                                              <input
+                                                type="checkbox"
+                                                checked={firstColPeriodFilter.includes(p.id)}
+                                                onChange={() => setFirstColPeriodFilter(firstColPeriodFilter.includes(p.id) ? firstColPeriodFilter.filter(x => x !== p.id) : [...firstColPeriodFilter, p.id])}
+                                                className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                              />
+                                              {p.name}
+                                            </label>
+                                          ))}
+                                        </div>
+                                      );
+                                    })}
+                                    {fc > 0 && (
+                                      <button
+                                        onClick={() => { setFirstColStatusFilter([]); setFirstColOwnerFilter([]); setFirstColAssigneeFilter([]); setFirstColPeriodFilter([]); }}
+                                        className="w-full text-left px-3 py-1 text-xs text-blue-600 hover:bg-gray-50 border-t border-gray-100 sticky bottom-0 bg-white"
+                                      >
+                                        Clear all
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          {roots.length === 0 ? (
+                            <div className="p-6 text-center text-sm text-gray-400">No top-level objectives match the filter.</div>
+                          ) : (
+                            <div>
+                              {roots.map(root => (
+                                <CompactObjectiveCard
+                                  key={root.id}
+                                  objective={root}
+                                  depth={0}
+                                  visibleColumnsOverride={listPlanColumns}
+                                  quickAddToListId={(planTopLevel ? selectedList.id : planSelectedChildListId) || undefined}
+                                />
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()
+                  ) : planSelectedObjective ? (
                     <>
                       <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-end bg-gray-50">
                         <div className="inline-flex border border-gray-300 rounded overflow-hidden">
@@ -1216,11 +1363,11 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                   )}
                                   <div className="text-sm font-medium text-gray-900 truncate flex-1 min-w-0" title={obj.title}>{obj.title}</div>
                                   <div className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    {planSelectedChildListId && (
+                                    {(planTopLevel ? selectedList.id : planSelectedChildListId) && (
                                       <button
-                                        onClick={() => addItemToList(planSelectedChildListId, obj.id)}
+                                        onClick={() => addItemToList((planTopLevel ? selectedList.id : planSelectedChildListId) as string, obj.id)}
                                         className="p-0.5 text-gray-400 hover:text-blue-600 rounded"
-                                        title="Add to Child List"
+                                        title={planTopLevel ? 'Add to List' : 'Add to Child List'}
                                       >
                                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
@@ -1346,7 +1493,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                           objective={planSelectedObjective}
                           depth={0}
                           visibleColumnsOverride={listPlanColumns}
-                          quickAddToListId={planSelectedChildListId || undefined}
+                          quickAddToListId={(planTopLevel ? selectedList.id : planSelectedChildListId) || undefined}
                         />
                       )}
                     </>
@@ -1366,10 +1513,10 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                   title="Drag to resize"
                 />
                 <div className="border border-gray-200 rounded-lg overflow-y-auto bg-white flex flex-col" style={{ width: `${listPlanRightWidth}%` }}>
-                  {planSelectedChildListId ? (() => {
-                    const child = lists.find(l => l.id === planSelectedChildListId);
+                  {(planTopLevel || planSelectedChildListId) ? (() => {
+                    const child = planTopLevel ? selectedList : lists.find(l => l.id === planSelectedChildListId);
                     if (!child) {
-                      return <div className="p-3 text-xs text-gray-400 italic">Child list not found.</div>;
+                      return <div className="p-3 text-xs text-gray-400 italic">List not found.</div>;
                     }
                     return (
                       <>
