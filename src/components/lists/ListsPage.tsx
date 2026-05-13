@@ -1147,7 +1147,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                             }}
                             className={`w-full text-left border rounded p-2 cursor-grab active:cursor-grabbing ${selected ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
                           >
-                            <div className="text-sm font-medium text-gray-900 truncate" title={obj.title}>{obj.title}</div>
+                            <div className="text-sm font-medium text-gray-900 break-words" title={obj.title}>{obj.title}</div>
                             {listPlanColumns.length > 0 && (
                               <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5">
                                 {listPlanColumns.map(col => (
@@ -1361,7 +1361,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                   ) : (
                                     <span className="w-3 flex-shrink-0" />
                                   )}
-                                  <div className="text-sm font-medium text-gray-900 truncate flex-1 min-w-0" title={obj.title}>{obj.title}</div>
+                                  <div className="text-sm font-medium text-gray-900 break-words flex-1 min-w-0" title={obj.title}>{obj.title}</div>
                                   <div className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                                     {(planTopLevel ? selectedList.id : planSelectedChildListId) && (
                                       <button
@@ -1650,7 +1650,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                   <div className="flex items-center gap-1">
                                     <button
                                       onClick={() => showPathInTree(obj.id)}
-                                      className="flex-1 min-w-0 text-left text-sm font-medium text-gray-900 truncate"
+                                      className="flex-1 min-w-0 text-left text-sm font-medium text-gray-900 break-words whitespace-normal"
                                       title="Show path in the middle pane"
                                     >
                                       {obj.title}

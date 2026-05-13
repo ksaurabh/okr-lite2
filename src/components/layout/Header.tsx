@@ -1,7 +1,10 @@
+import { useEffect, useState } from 'react';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
-import type { Period } from '../../types';
+import type { Period, User } from '../../types';
 import { APP_VERSION } from '../../version';
+
+const API_URL = import.meta.env.VITE_API_URL || '';
 
 interface HeaderProps {
   onAddObjective: () => void;
@@ -12,6 +15,24 @@ export function Header({ onAddObjective }: HeaderProps) {
   const activePeriodId = useOKRStore((state: OKRStore) => state.activePeriodId);
   const setActivePeriod = useOKRStore((state: OKRStore) => state.setActivePeriod);
   const { user, logout, organization } = useAuth();
+  const [storedName, setStoredName] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user?.email) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/users`, { credentials: 'include' });
+        if (!res.ok) return;
+        const data = await res.json();
+        const me = (data.users as User[] | undefined)?.find(u => u.email === user.email);
+        if (!cancelled && me?.name) setStoredName(me.name);
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user?.email]);
 
   return (
     <header className="bg-white border-b border-gray-200 px-6 py-4">
@@ -46,7 +67,7 @@ export function Header({ onAddObjective }: HeaderProps) {
           {user && (
             <div className="flex items-center gap-3 pl-4 border-l border-gray-200">
               <div className="text-sm">
-                <p className="font-medium text-gray-700">{user.name}</p>
+                <p className="font-medium text-gray-700">{storedName || user.name}</p>
                 {organization && (
                   <p className="text-xs text-gray-500">({organization.name})</p>
                 )}

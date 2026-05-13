@@ -377,7 +377,8 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
 
   const hasChildren = childObjectives.length > 0;
   const badge = levelBadges[objective.level];
-  const canAddChild = true; // All objectives can have children (stories, tasks, subtasks)
+  const isOwnerOrAssignee = !!currentUserId && (objective.ownerId === currentUserId || objective.assigneeId === currentUserId);
+  const canAddChild = !objective.readOnly || objective.createdBy === userEmail || isOwnerOrAssignee || isAdmin;
 
   const levelOptions: { value: ObjectiveLevel; label: string }[] = [
     { value: 'company', label: 'Company' },

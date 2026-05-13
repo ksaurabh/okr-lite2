@@ -37,6 +37,7 @@ export interface Objective {
   orgId: string;
   createdBy: string;
   shared: boolean;
+  readOnly?: boolean;
   title: string;
   description?: string;
   level: ObjectiveLevel;

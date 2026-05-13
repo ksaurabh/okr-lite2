@@ -252,11 +252,9 @@ export function SettingsPage() {
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Last Login
                   </th>
-                  {canManageRoles && (
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Actions
-                    </th>
-                  )}
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -302,18 +300,21 @@ export function SettingsPage() {
                     <td className="px-4 py-4 text-sm text-gray-500">
                       {formatDate(user.lastLoginAt)}
                     </td>
-                    {canManageRoles && (
+                    {(canManageRoles || user.email.toLowerCase() === currentUser?.email?.toLowerCase()) && (
                       <td className="px-4 py-4">
                         <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => startEditingUser(user)}
-                            className="p-1 text-gray-400 hover:text-blue-600 rounded"
-                            title="Edit name"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                            </svg>
-                          </button>
+                          {(canManageRoles || user.email.toLowerCase() === currentUser?.email?.toLowerCase()) && (
+                            <button
+                              onClick={() => startEditingUser(user)}
+                              className="p-1 text-gray-400 hover:text-blue-600 rounded"
+                              title="Edit name"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
+                            </button>
+                          )}
+                          {canManageRoles && (
                           <select
                             value={user.role}
                             onChange={(e) => updateRole(user.email, e.target.value as 'admin' | 'user')}
@@ -323,6 +324,7 @@ export function SettingsPage() {
                             <option value="user">User</option>
                             <option value="admin">Admin</option>
                           </select>
+                          )}
                           {user.email.toLowerCase() !== currentUser?.email?.toLowerCase() && (
                             <button
                               onClick={() => deleteUser(user.email)}

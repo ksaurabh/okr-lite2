@@ -36,6 +36,7 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
   const [periodId, setPeriodId] = useState(objective?.periodId || parentObjective?.periodId || '');
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>(objective?.tagIds || []);
   const [isPrivate, setIsPrivate] = useState(objective?.shared === false);
+  const [isReadOnly, setIsReadOnly] = useState(objective?.readOnly === true);
   const [ownerId, setOwnerId] = useState(objective?.ownerId || parentObjective?.ownerId || '');
   const [assigneeId, setAssigneeId] = useState(objective?.assigneeId || parentObjective?.assigneeId || '');
   const [storyPoints, setStoryPoints] = useState(objective?.storyPoints?.toString() || '');
@@ -178,6 +179,7 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
           tagIds: selectedTagIds.length > 0 ? selectedTagIds : undefined,
           periodId,
           shared: !isPrivate,
+          readOnly: isReadOnly,
           link: linkObj,
           resolvedAt: resolvedAt || undefined,
         };
@@ -204,6 +206,7 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
           valuePoints: parsedValuePoints !== undefined && !isNaN(parsedValuePoints) && parsedValuePoints >= 0 ? parsedValuePoints : undefined,
           link: linkObj,
           workflowStatus: 'todo',
+          readOnly: isReadOnly,
         }, { orgId, userEmail, shared: !isPrivate });
       }
       onClose();
@@ -464,6 +467,19 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
         />
         <label htmlFor="isPrivate" className="text-sm text-gray-600">
           Private (only visible to me)
+        </label>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          id="isReadOnly"
+          checked={isReadOnly}
+          onChange={(e) => setIsReadOnly(e.target.checked)}
+          className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+        />
+        <label htmlFor="isReadOnly" className="text-sm text-gray-600">
+          Read only (only the owner or assignee can add children)
         </label>
       </div>
 

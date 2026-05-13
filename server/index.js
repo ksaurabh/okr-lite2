@@ -127,10 +127,12 @@ function upsertUser(userData) {
   const now = new Date().toISOString();
 
   if (existingIndex >= 0) {
-    // Update existing user
+    // Update existing user. Preserve a name that was explicitly edited
+    // in-app (nameOverride) so subsequent Google logins don't reset it.
+    const existing = users[existingIndex];
     users[existingIndex] = {
-      ...users[existingIndex],
-      name: userData.name,
+      ...existing,
+      name: existing.nameOverride ? existing.name : userData.name,
       picture: userData.picture,
       lastLoginAt: now,
     };
@@ -180,6 +182,7 @@ function updateUserName(email, name) {
   }
 
   users[userIndex].name = name;
+  users[userIndex].nameOverride = true;
   saveUsers(users);
   return users[userIndex];
 }
@@ -413,8 +416,9 @@ app.get('/auth/user', (req, res) => {
     : false;
 
   // Track user login
+  let storedUser = null;
   if (isAllowed && org) {
-    upsertUser({
+    storedUser = upsertUser({
       email: req.user.email,
       name: req.user.name,
       picture: req.user.picture,
@@ -428,6 +432,7 @@ app.get('/auth/user', (req, res) => {
     allowed: isAllowed,
     user: {
       ...req.user,
+      name: storedUser?.name || req.user.name,
       organizationId: org?.id || null,
     },
     isSuperAdmin: isSuperAdminUser,
@@ -804,7 +809,7 @@ app.delete('/api/users/:email', requireOrgAdminOrSuperAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
-app.put('/api/users/:email/name', requireOrgAdminOrSuperAdmin, (req, res) => {
+app.put('/api/users/:email/name', requireAuth, (req, res) => {
   const { email } = req.params;
   const { name } = req.body;
 
@@ -813,10 +818,20 @@ app.put('/api/users/:email/name', requireOrgAdminOrSuperAdmin, (req, res) => {
   }
 
   const decodedEmail = decodeURIComponent(email).toLowerCase();
+  const callerEmail = req.user.email?.toLowerCase();
+  const isSelf = callerEmail === decodedEmail;
+  const org = getOrganizationByDomain(req.user.domain);
+  const isOrgAdminUser = org
+    ? org.admins?.some(a => a.email === callerEmail && a.status === 'accepted')
+    : false;
+  const isSuperAdminUser = isSuperAdmin(req.user.email);
+
+  if (!isSelf && !isOrgAdminUser && !isSuperAdminUser) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
 
   // Verify user belongs to same org (unless super admin)
-  if (!isSuperAdmin(req.user.email)) {
-    const org = getOrganizationByDomain(req.user.domain);
+  if (!isSuperAdminUser) {
     const users = getUsersByOrganization(org?.id);
     if (!users.some(u => u.email === decodedEmail)) {
       return res.status(403).json({ error: 'Cannot modify users from other organizations' });
@@ -1397,9 +1412,22 @@ app.get('/api/okr-data', requireAuth, (req, res) => {
   const data = getOKRData();
   const orgId = org.id;
 
-  // Filter data by organization
+  // Filter data by organization. Private objectives (shared === false) are
+  // visible only to creator, owner, assignee, or admins.
+  const userEmail = req.user.email;
+  const isAdmin = org.admins.some(a => a.email === userEmail);
+  const users = getUsers();
+  const me = users.find(u => u.email === userEmail);
+  const myUserId = me?.id;
+  const canSeeObjective = (o) => {
+    if (o.shared !== false) return true;
+    if (isAdmin) return true;
+    if (o.createdBy === userEmail) return true;
+    if (myUserId && (o.ownerId === myUserId || o.assigneeId === myUserId)) return true;
+    return false;
+  };
   res.json({
-    objectives: data.objectives.filter(o => o.orgId === orgId),
+    objectives: data.objectives.filter(o => o.orgId === orgId && canSeeObjective(o)),
     keyResults: data.keyResults.filter(kr => kr.orgId === orgId),
     teams: data.teams.filter(t => t.orgId === orgId),
     periods: data.periods.filter(p => p.orgId === orgId),
