@@ -20,7 +20,7 @@ export function Header({ onAddObjective }: HeaderProps) {
   useEffect(() => {
     if (!user?.email) return;
     let cancelled = false;
-    (async () => {
+    const load = async () => {
       try {
         const res = await fetch(`${API_URL}/api/users`, { credentials: 'include' });
         if (!res.ok) return;
@@ -30,8 +30,18 @@ export function Header({ onAddObjective }: HeaderProps) {
       } catch {
         /* ignore */
       }
-    })();
-    return () => { cancelled = true; };
+    };
+    load();
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ email?: string; name?: string }>).detail;
+      if (detail?.email && detail.email.toLowerCase() === user.email.toLowerCase() && detail.name) {
+        setStoredName(detail.name);
+      } else {
+        load();
+      }
+    };
+    window.addEventListener('user-name-updated', handler);
+    return () => { cancelled = true; window.removeEventListener('user-name-updated', handler); };
   }, [user?.email]);
 
   return (

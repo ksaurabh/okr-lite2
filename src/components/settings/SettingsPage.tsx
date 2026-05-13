@@ -28,6 +28,9 @@ export function SettingsPage() {
   const [creating, setCreating] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editName, setEditName] = useState('');
+  const [myName, setMyName] = useState('');
+  const [savingMyName, setSavingMyName] = useState(false);
+  const [myNameSaved, setMyNameSaved] = useState(false);
 
   const { isSuperAdmin, isOrgAdmin, user: currentUser } = useAuth();
   const canManageRoles = isSuperAdmin || isOrgAdmin;
@@ -35,6 +38,36 @@ export function SettingsPage() {
   useEffect(() => {
     fetchUsers();
   }, []);
+
+  useEffect(() => {
+    const me = users.find(u => u.email.toLowerCase() === currentUser?.email?.toLowerCase());
+    if (me?.name) setMyName(me.name);
+    else if (currentUser?.name) setMyName(currentUser.name);
+  }, [users, currentUser?.email, currentUser?.name]);
+
+  const saveMyName = async () => {
+    if (!currentUser?.email || !myName.trim()) return;
+    try {
+      setSavingMyName(true);
+      setError(null);
+      const response = await fetch(`${API_URL}/api/users/${encodeURIComponent(currentUser.email)}/name`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: myName.trim() }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to update name');
+      setUsers(users.map(u => u.email.toLowerCase() === currentUser.email!.toLowerCase() ? { ...u, name: data.user.name } : u));
+      window.dispatchEvent(new CustomEvent('user-name-updated', { detail: { email: currentUser.email, name: data.user.name } }));
+      setMyNameSaved(true);
+      setTimeout(() => setMyNameSaved(false), 2000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update name');
+    } finally {
+      setSavingMyName(false);
+    }
+  };
 
   const fetchUsers = async () => {
     try {
@@ -163,6 +196,7 @@ export function SettingsPage() {
       }
 
       setUsers(users.map(u => u.email === editingUser.email ? { ...u, name: data.user.name } : u));
+      window.dispatchEvent(new CustomEvent('user-name-updated', { detail: { email: editingUser.email, name: data.user.name } }));
       setEditingUser(null);
       setEditName('');
     } catch (err) {
@@ -195,7 +229,50 @@ export function SettingsPage() {
         <p className="text-gray-500">Manage your organization settings</p>
       </div>
 
+      {/* Your Profile */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+        <div className="p-4 border-b border-gray-200">
+          <h2 className="text-lg font-semibold text-gray-900">Your Profile</h2>
+          <p className="text-sm text-gray-500">Update the name shown to others in your organization.</p>
+        </div>
+        <div className="p-4 space-y-3">
+          <div className="max-w-md">
+            <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Email (login)</label>
+            <input
+              type="text"
+              value={currentUser?.email || ''}
+              readOnly
+              disabled
+              className="w-full border border-gray-200 bg-gray-50 text-gray-500 rounded-md px-3 py-2 text-sm cursor-not-allowed"
+            />
+            <p className="text-xs text-gray-400 mt-1">Email is tied to your Google login and cannot be changed.</p>
+          </div>
+          <div className="flex items-end gap-3">
+          <div className="flex-1 max-w-md">
+            <label htmlFor="myName" className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Display name</label>
+            <input
+              id="myName"
+              type="text"
+              value={myName}
+              onChange={(e) => setMyName(e.target.value)}
+              placeholder="Your display name"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <button
+            onClick={saveMyName}
+            disabled={savingMyName || !myName.trim()}
+            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+          >
+            {savingMyName ? 'Saving…' : 'Save'}
+          </button>
+          {myNameSaved && <span className="text-sm text-green-600">Saved</span>}
+          </div>
+        </div>
+      </div>
+
       {/* Users Section */}
+      {canManageRoles && (
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
         <div className="p-4 border-b border-gray-200 flex items-center justify-between">
           <div>
@@ -350,6 +427,7 @@ export function SettingsPage() {
           </div>
         )}
       </div>
+      )}
 
       {/* Add User Modal */}
       {showAddUser && (

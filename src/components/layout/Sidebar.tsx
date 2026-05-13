@@ -408,7 +408,7 @@ export function Sidebar({ currentView, onViewChange, collapsed = false, onToggle
         <ul className="space-y-1">
           {navItems.filter(item => {
             if (item.id === 'admin') return isSuperAdmin;
-            if (item.id === 'settings') return isAdmin;
+            if (item.id === 'settings') return true;
             return true;
           }).map((item) => (
             <li key={item.id}>
