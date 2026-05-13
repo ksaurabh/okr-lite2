@@ -31,6 +31,8 @@ export function SettingsPage() {
   const [myName, setMyName] = useState('');
   const [savingMyName, setSavingMyName] = useState(false);
   const [myNameSaved, setMyNameSaved] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(true);
+  const [usersOpen, setUsersOpen] = useState(true);
 
   const { isSuperAdmin, isOrgAdmin, user: currentUser } = useAuth();
   const canManageRoles = isSuperAdmin || isOrgAdmin;
@@ -231,10 +233,20 @@ export function SettingsPage() {
 
       {/* Your Profile */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div className="p-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">Your Profile</h2>
-          <p className="text-sm text-gray-500">Update the name shown to others in your organization.</p>
-        </div>
+        <button
+          type="button"
+          onClick={() => setProfileOpen(!profileOpen)}
+          className={`w-full p-4 flex items-center justify-between text-left hover:bg-gray-50 ${profileOpen ? 'border-b border-gray-200' : ''}`}
+        >
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Your Profile</h2>
+            <p className="text-sm text-gray-500">Update the name shown to others in your organization.</p>
+          </div>
+          <svg className={`w-5 h-5 text-gray-400 transition-transform ${profileOpen ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+        {profileOpen && (
         <div className="p-4 space-y-3">
           <div className="max-w-md">
             <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Email (login)</label>
@@ -269,19 +281,29 @@ export function SettingsPage() {
           {myNameSaved && <span className="text-sm text-green-600">Saved</span>}
           </div>
         </div>
+        )}
       </div>
 
       {/* Users Section */}
       {canManageRoles && (
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">Users</h2>
-            <p className="text-sm text-gray-500">
-              {showAllOrgs ? 'All users across all organizations' : 'Members of your organization'}
-            </p>
-          </div>
-          {canManageRoles && (
+        <div className={`p-4 ${usersOpen ? 'border-b border-gray-200' : ''} flex items-center justify-between gap-3`}>
+          <button
+            type="button"
+            onClick={() => setUsersOpen(!usersOpen)}
+            className="flex-1 flex items-center justify-between text-left hover:bg-gray-50 -m-4 p-4 rounded"
+          >
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Users</h2>
+              <p className="text-sm text-gray-500">
+                {showAllOrgs ? 'All users across all organizations' : 'Members of your organization'}
+              </p>
+            </div>
+            <svg className={`w-5 h-5 text-gray-400 transition-transform ${usersOpen ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+          {usersOpen && canManageRoles && (
             <button
               onClick={() => setShowAddUser(true)}
               className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -291,7 +313,7 @@ export function SettingsPage() {
           )}
         </div>
 
-        {loading ? (
+        {usersOpen && (loading ? (
           <div className="p-8 text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
             <p className="mt-2 text-gray-500">Loading users...</p>
@@ -425,7 +447,7 @@ export function SettingsPage() {
               </tbody>
             </table>
           </div>
-        )}
+        ))}
       </div>
       )}
 
