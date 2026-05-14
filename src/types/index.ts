@@ -251,4 +251,6 @@ export interface List {
   parentId?: string;
   ownerId?: string;
   periodId?: string;
+  shared?: boolean;
+  createdByEmail?: string;
 }

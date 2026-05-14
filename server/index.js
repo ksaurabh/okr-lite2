@@ -994,6 +994,26 @@ app.get('/api/users/me/lists', requireAuth, (req, res) => {
   res.json({ lists });
 });
 
+// Get shared plans (lists with ownerId+periodId+shared=true) from other users
+// in the same organization
+app.get('/api/org/shared-plans', requireAuth, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.json({ lists: [] });
+  const users = getUsersByOrganization(org.id);
+  const callerEmail = req.user.email?.toLowerCase();
+  const out = [];
+  for (const u of users) {
+    if (!u.email || u.email.toLowerCase() === callerEmail) continue;
+    const userLists = u.lists || [];
+    for (const l of userLists) {
+      if (l.shared === true && l.ownerId && l.periodId) {
+        out.push({ ...l, createdByEmail: u.email });
+      }
+    }
+  }
+  res.json({ lists: out });
+});
+
 // Bulk replace all lists (for import)
 app.put('/api/users/me/lists', requireAuth, (req, res) => {
   const { lists } = req.body;
@@ -1008,7 +1028,7 @@ app.put('/api/users/me/lists', requireAuth, (req, res) => {
 
 // Create a new list
 app.post('/api/users/me/lists', requireAuth, (req, res) => {
-  const { name, color, parentId, ownerId, periodId } = req.body;
+  const { name, color, parentId, ownerId, periodId, shared } = req.body;
 
   if (!name || !name.trim()) {
     return res.status(400).json({ error: 'List name is required' });
@@ -1030,6 +1050,7 @@ app.post('/api/users/me/lists', requireAuth, (req, res) => {
     ...(parentId ? { parentId } : {}),
     ...(ownerId ? { ownerId } : {}),
     ...(periodId ? { periodId } : {}),
+    ...(shared === true ? { shared: true } : {}),
   };
 
   const lists = getUserLists(req.user.email);
@@ -1068,6 +1089,10 @@ app.put('/api/users/me/lists/:listId', requireAuth, (req, res) => {
   if ('periodId' in req.body) {
     if (req.body.periodId) lists[listIndex].periodId = req.body.periodId;
     else delete lists[listIndex].periodId;
+  }
+  if ('shared' in req.body) {
+    if (req.body.shared === true) lists[listIndex].shared = true;
+    else delete lists[listIndex].shared;
   }
   lists[listIndex].updatedAt = new Date().toISOString();
 
@@ -1496,6 +1521,15 @@ app.delete('/api/objectives/:id', requireAuth, (req, res) => {
 
   if (index === -1) {
     return res.status(404).json({ error: 'Objective not found' });
+  }
+
+  // Only the creator or an org/super admin can delete an objective.
+  const callerEmail = req.user.email?.toLowerCase();
+  const isOrgAdminUser = org.admins?.some(a => a.email === callerEmail && a.status === 'accepted');
+  const isSuperAdminUser = isSuperAdmin(req.user.email);
+  const objective = data.objectives[index];
+  if (!isOrgAdminUser && !isSuperAdminUser && objective.createdBy?.toLowerCase() !== callerEmail) {
+    return res.status(403).json({ error: 'Only the creator or an admin can delete this objective.' });
   }
 
   // Also delete associated key results

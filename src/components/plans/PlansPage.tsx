@@ -15,14 +15,17 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
   const periods = useOKRStore((s: OKRStore) => s.periods);
   const createList = useOKRStore((s: OKRStore) => s.createList);
   const updateListParent = useOKRStore((s: OKRStore) => s.updateListParent);
+  const setListShared = useOKRStore((s: OKRStore) => s.setListShared);
   const setListViewMode = useOKRStore((s: OKRStore) => s.setListViewMode);
   const setPlanFocusListId = useOKRStore((s: OKRStore) => s.setPlanFocusListId);
 
   const [orgUsers, setOrgUsers] = useState<User[]>([]);
+  const [sharedFromOthers, setSharedFromOthers] = useState<List[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
   const [newOwnerId, setNewOwnerId] = useState('');
   const [newPeriodId, setNewPeriodId] = useState('');
+  const [newShared, setNewShared] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [promoteListId, setPromoteListId] = useState<string | null>(null);
@@ -42,7 +45,19 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
       }
     };
     fetchUsers();
-  }, []);
+    const fetchShared = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/org/shared-plans`, { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          setSharedFromOthers(data.lists || []);
+        }
+      } catch (err) {
+        console.error('Failed to fetch shared plans:', err);
+      }
+    };
+    fetchShared();
+  }, [lists]);
 
   const planLists = useMemo(
     () => lists.filter(l => l.ownerId && l.periodId).sort((a, b) => a.name.localeCompare(b.name)),
@@ -72,7 +87,7 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
     }
     setCreating(true);
     try {
-      const result = await createList(name, undefined, undefined, { ownerId: newOwnerId, periodId: newPeriodId });
+      const result = await createList(name, undefined, undefined, { ownerId: newOwnerId, periodId: newPeriodId, shared: newShared });
       if (result && typeof result === 'object' && 'error' in result) {
         setCreateError(result.error);
         return;
@@ -81,6 +96,7 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
       setNewName('');
       setNewOwnerId('');
       setNewPeriodId('');
+      setNewShared(false);
     } finally {
       setCreating(false);
     }
@@ -144,6 +160,7 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Owner</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Period</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Items</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sharing</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-100">
@@ -161,12 +178,55 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
                   <td className="px-4 py-3 text-sm text-gray-600">{ownerName(list.ownerId)}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">{periodName(list.periodId)}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">{list.items.length}</td>
+                  <td className="px-4 py-3 text-sm">
+                    <button
+                      onClick={() => setListShared(list.id, !list.shared)}
+                      className={`px-2 py-0.5 text-xs rounded border ${list.shared ? 'bg-green-50 border-green-300 text-green-700 hover:bg-green-100' : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'}`}
+                      title={list.shared ? 'Click to make private' : 'Click to share with org'}
+                    >
+                      {list.shared ? 'Shared' : 'Private'}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
       </div>
+
+      {sharedFromOthers.length > 0 && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+          <div className="p-4 border-b border-gray-200">
+            <h3 className="text-base font-semibold text-gray-900">Shared plans from others</h3>
+            <p className="text-xs text-gray-500 mt-1">Plans your teammates have shared with the org. View-only here.</p>
+          </div>
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Owner</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Period</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Items</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Shared by</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-100">
+              {sharedFromOthers.map(list => (
+                <tr key={list.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-3 text-sm flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: list.color || '#6b7280' }} />
+                    {list.name}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{ownerName(list.ownerId)}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{periodName(list.periodId)}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{list.items.length}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{list.createdByEmail || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {nonPlanLists.length > 0 && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200">
@@ -246,6 +306,15 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
                   ))}
                 </select>
               </div>
+              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={newShared}
+                  onChange={(e) => setNewShared(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span>Shared with the org <span className="text-xs text-gray-400">(default: private)</span></span>
+              </label>
               {createError && (
                 <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded p-2">{createError}</div>
               )}

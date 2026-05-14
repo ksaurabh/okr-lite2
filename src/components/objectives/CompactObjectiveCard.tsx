@@ -378,7 +378,10 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   const hasChildren = childObjectives.length > 0;
   const badge = levelBadges[objective.level];
   const isOwnerOrAssignee = !!currentUserId && (objective.ownerId === currentUserId || objective.assigneeId === currentUserId);
-  const canAddChild = !objective.readOnly || objective.createdBy === userEmail || isOwnerOrAssignee || isAdmin;
+  // Adding a child requires edit rights on the parent (creator/admin) or being
+  // its owner/assignee. Read-only objectives narrow this to owner/assignee
+  // (plus the creator and admins).
+  const canAddChild = canModify || isOwnerOrAssignee;
 
   const levelOptions: { value: ObjectiveLevel; label: string }[] = [
     { value: 'company', label: 'Company' },

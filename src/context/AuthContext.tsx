@@ -49,6 +49,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       const data = await response.json();
 
+      // Legacy: filters used to be cached in localStorage. They are now
+      // server-side under user preferences. Wipe any stale local copy.
+      try {
+        localStorage.removeItem('okr-lite-filters');
+        localStorage.removeItem('okr-lite-filter-owner');
+      } catch { /* ignore */ }
+
       setState({
         isLoading: false,
         isAuthenticated: data.authenticated,

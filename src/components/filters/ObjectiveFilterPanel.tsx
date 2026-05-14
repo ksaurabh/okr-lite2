@@ -167,7 +167,7 @@ export function ObjectiveFilterPanel({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const hasActiveFilters = filterPeriodIds.length > 0 || filterTagIds.length > 0 || filterTeamIds.length > 0 || filterTypes.length > 0 || filterTypeNotSet || filterOwnerIds.length > 0 || filterAssigneeIds.length > 0 || filterAssigneeNotSet || filterNextStepDate || filterLastUpdated || filterLevels.length > 0 || filterWorkflowStatuses.length > 0 || filterKeyResultsOnly || filterObjectiveId || filterRootObjectiveId || filterListIds.length > 0 || searchQuery.trim();
+  const hasActiveFilters = filterPeriodIds.length > 0 || filterTagIds.length > 0 || filterTeamIds.length > 0 || filterTypes.length > 0 || filterTypeNotSet || filterOwnerIds.length > 0 || filterAssigneeIds.length > 0 || filterAssigneeNotSet || filterNextStepDate || filterLastUpdated || filterLevels.length > 0 || filterWorkflowStatuses.length > 0 || filterKeyResultsOnly || filterObjectiveId || filterRootObjectiveId || filterListIds.length > 0 || openChildrenOnly || searchQuery.trim();
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200">

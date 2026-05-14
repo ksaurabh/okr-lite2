@@ -5,36 +5,29 @@ import { generateId, calculateObjectiveProgress, determineStatus, calculateKeyRe
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
-// Local storage for filter state only
-const FILTER_STORAGE_KEY = 'okr-lite-filters';
-
+// Filter state is persisted on the server via user preferences. The store
+// initializes filters to defaults; fetchUserPreferences then hydrates them
+// from the server once auth resolves.
 function loadFilterState() {
-  try {
-    const data = localStorage.getItem(FILTER_STORAGE_KEY);
-    if (!data) return { filterPeriodIds: [], filterTagIds: [], filterTeamIds: [], filterTypes: [] as ObjectiveType[], filterTypeNotSet: false, filterOwnerIds: [], filterOwnerOperator: 'equals' as FilterOperator, filterAssigneeIds: [], filterAssigneeOperator: 'equals' as FilterOperator, filterAssigneeNotSet: false, filterNextStepDate: null as NextStepDateFilter | null, filterLevels: [] as ObjectiveLevel[], filterObjectiveId: null as string | null, filterWorkflowStatuses: [] as WorkflowStatus[], filterKeyResultsOnly: false, filterListIds: [] as string[], filterListShowChildren: false };
-    const parsed = JSON.parse(data);
-    return {
-      filterPeriodIds: parsed.filterPeriodIds || (parsed.activePeriodId ? [parsed.activePeriodId] : []),
-      filterTagIds: parsed.filterTagIds || [],
-      filterTeamIds: parsed.filterTeamIds || [],
-      filterTypes: (parsed.filterTypes || []) as ObjectiveType[],
-      filterTypeNotSet: parsed.filterTypeNotSet || false,
-      filterOwnerIds: parsed.filterOwnerIds || [],
-      filterOwnerOperator: (parsed.filterOwnerOperator || 'equals') as FilterOperator,
-      filterAssigneeIds: parsed.filterAssigneeIds || [],
-      filterAssigneeOperator: (parsed.filterAssigneeOperator || 'equals') as FilterOperator,
-      filterAssigneeNotSet: parsed.filterAssigneeNotSet || false,
-      filterNextStepDate: (parsed.filterNextStepDate || null) as NextStepDateFilter | null,
-      filterLevels: (parsed.filterLevels || []) as ObjectiveLevel[],
-      filterObjectiveId: (parsed.filterObjectiveId || null) as string | null,
-      filterWorkflowStatuses: (parsed.filterWorkflowStatuses || []) as WorkflowStatus[],
-      filterKeyResultsOnly: parsed.filterKeyResultsOnly || false,
-      filterListIds: (parsed.filterListIds || parsed.filterListId ? [parsed.filterListId] : []) as string[],
-      filterListShowChildren: parsed.filterListShowChildren || false,
-    };
-  } catch {
-    return { filterPeriodIds: [], filterTagIds: [], filterTeamIds: [], filterTypes: [] as ObjectiveType[], filterTypeNotSet: false, filterOwnerIds: [], filterOwnerOperator: 'equals' as FilterOperator, filterAssigneeIds: [], filterAssigneeOperator: 'equals' as FilterOperator, filterAssigneeNotSet: false, filterNextStepDate: null as NextStepDateFilter | null, filterLevels: [] as ObjectiveLevel[], filterObjectiveId: null as string | null, filterWorkflowStatuses: [] as WorkflowStatus[], filterKeyResultsOnly: false, filterListIds: [] as string[], filterListShowChildren: false };
-  }
+  return {
+    filterPeriodIds: [] as string[],
+    filterTagIds: [] as string[],
+    filterTeamIds: [] as string[],
+    filterTypes: [] as ObjectiveType[],
+    filterTypeNotSet: false,
+    filterOwnerIds: [] as string[],
+    filterOwnerOperator: 'equals' as FilterOperator,
+    filterAssigneeIds: [] as string[],
+    filterAssigneeOperator: 'equals' as FilterOperator,
+    filterAssigneeNotSet: false,
+    filterNextStepDate: null as NextStepDateFilter | null,
+    filterLevels: [] as ObjectiveLevel[],
+    filterObjectiveId: null as string | null,
+    filterWorkflowStatuses: [] as WorkflowStatus[],
+    filterKeyResultsOnly: false,
+    filterListIds: [] as string[],
+    filterListShowChildren: false,
+  };
 }
 
 interface FilterState {
@@ -57,12 +50,17 @@ interface FilterState {
   filterListShowChildren: boolean;
 }
 
+let filterSaveTimer: ReturnType<typeof setTimeout> | null = null;
 function saveFilterState(state: FilterState) {
-  try {
-    localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(state));
-  } catch (error) {
-    console.error('Failed to save filter state:', error);
-  }
+  if (filterSaveTimer) clearTimeout(filterSaveTimer);
+  filterSaveTimer = setTimeout(() => {
+    fetch(`${API_URL}/api/users/me/preferences`, {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ preferences: { filters: state } }),
+    }).catch((err) => console.error('Failed to save filter state:', err));
+  }, 250);
 }
 
 interface CreateContext {
@@ -229,7 +227,8 @@ interface OKRActions {
   // Lists
   lists: List[];
   fetchLists: () => Promise<void>;
-  createList: (name: string, color?: string, parentId?: string, meta?: { ownerId?: string; periodId?: string }) => Promise<List | { error: string } | null>;
+  createList: (name: string, color?: string, parentId?: string, meta?: { ownerId?: string; periodId?: string; shared?: boolean }) => Promise<List | { error: string } | null>;
+  setListShared: (listId: string, shared: boolean) => Promise<void>;
   deleteList: (listId: string) => Promise<void>;
   renameList: (listId: string, newName: string) => Promise<void>;
   updateListColor: (listId: string, color: string) => Promise<void>;
@@ -1233,6 +1232,26 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
         if (typeof data.preferences?.lastSelectedPlanId === 'string' || data.preferences?.lastSelectedPlanId === null) {
           updates.lastSelectedPlanId = data.preferences.lastSelectedPlanId;
         }
+        const savedFilters = data.preferences?.filters;
+        if (savedFilters && typeof savedFilters === 'object') {
+          if (Array.isArray(savedFilters.filterPeriodIds)) updates.filterPeriodIds = savedFilters.filterPeriodIds;
+          if (Array.isArray(savedFilters.filterTagIds)) updates.filterTagIds = savedFilters.filterTagIds;
+          if (Array.isArray(savedFilters.filterTeamIds)) updates.filterTeamIds = savedFilters.filterTeamIds;
+          if (Array.isArray(savedFilters.filterTypes)) updates.filterTypes = savedFilters.filterTypes;
+          if (typeof savedFilters.filterTypeNotSet === 'boolean') updates.filterTypeNotSet = savedFilters.filterTypeNotSet;
+          if (Array.isArray(savedFilters.filterOwnerIds)) updates.filterOwnerIds = savedFilters.filterOwnerIds;
+          if (savedFilters.filterOwnerOperator === 'equals' || savedFilters.filterOwnerOperator === 'not_equals') updates.filterOwnerOperator = savedFilters.filterOwnerOperator;
+          if (Array.isArray(savedFilters.filterAssigneeIds)) updates.filterAssigneeIds = savedFilters.filterAssigneeIds;
+          if (savedFilters.filterAssigneeOperator === 'equals' || savedFilters.filterAssigneeOperator === 'not_equals') updates.filterAssigneeOperator = savedFilters.filterAssigneeOperator;
+          if (typeof savedFilters.filterAssigneeNotSet === 'boolean') updates.filterAssigneeNotSet = savedFilters.filterAssigneeNotSet;
+          if (savedFilters.filterNextStepDate === null || typeof savedFilters.filterNextStepDate === 'string') updates.filterNextStepDate = savedFilters.filterNextStepDate;
+          if (Array.isArray(savedFilters.filterLevels)) updates.filterLevels = savedFilters.filterLevels;
+          if (savedFilters.filterObjectiveId === null || typeof savedFilters.filterObjectiveId === 'string') updates.filterObjectiveId = savedFilters.filterObjectiveId;
+          if (Array.isArray(savedFilters.filterWorkflowStatuses)) updates.filterWorkflowStatuses = savedFilters.filterWorkflowStatuses;
+          if (typeof savedFilters.filterKeyResultsOnly === 'boolean') updates.filterKeyResultsOnly = savedFilters.filterKeyResultsOnly;
+          if (Array.isArray(savedFilters.filterListIds)) updates.filterListIds = savedFilters.filterListIds;
+          if (typeof savedFilters.filterListShowChildren === 'boolean') updates.filterListShowChildren = savedFilters.filterListShowChildren;
+        }
         if (Object.keys(updates).length > 0) {
           set(updates);
         }
@@ -2038,7 +2057,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     }
   },
 
-  createList: async (name: string, color?: string, parentId?: string, meta?: { ownerId?: string; periodId?: string }) => {
+  createList: async (name: string, color?: string, parentId?: string, meta?: { ownerId?: string; periodId?: string; shared?: boolean }) => {
     try {
       const response = await fetch(`${API_URL}/api/users/me/lists`, {
         method: 'POST',
@@ -2046,7 +2065,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name, color: color || '#6b7280', parentId, ownerId: meta?.ownerId, periodId: meta?.periodId }),
+        body: JSON.stringify({ name, color: color || '#6b7280', parentId, ownerId: meta?.ownerId, periodId: meta?.periodId, shared: meta?.shared === true ? true : undefined }),
       });
 
       if (response.ok) {
@@ -2142,6 +2161,29 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       }
     } catch (err) {
       console.error('Failed to update list color:', err);
+    }
+  },
+
+  setListShared: async (listId, shared) => {
+    const state = get();
+    const lists = state.lists.map(l => l.id === listId
+      ? (shared ? { ...l, shared: true } : (() => { const { shared: _drop, ...rest } = l as List & { shared?: boolean }; void _drop; return rest as List; })())
+      : l
+    );
+    set({ lists });
+    try {
+      const response = await fetch(`${API_URL}/api/users/me/lists/${listId}`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shared }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.lists) set({ lists: data.lists });
+      }
+    } catch (err) {
+      console.error('Failed to update list sharing:', err);
     }
   },
 
