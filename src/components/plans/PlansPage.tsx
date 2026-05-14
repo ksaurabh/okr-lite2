@@ -14,13 +14,15 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
   const lists = useOKRStore((s: OKRStore) => s.lists);
   const periods = useOKRStore((s: OKRStore) => s.periods);
   const createList = useOKRStore((s: OKRStore) => s.createList);
+  const deleteList = useOKRStore((s: OKRStore) => s.deleteList);
   const updateListParent = useOKRStore((s: OKRStore) => s.updateListParent);
   const setListShared = useOKRStore((s: OKRStore) => s.setListShared);
   const setListViewMode = useOKRStore((s: OKRStore) => s.setListViewMode);
   const setPlanFocusListId = useOKRStore((s: OKRStore) => s.setPlanFocusListId);
 
+  const sharedPlans = useOKRStore((s: OKRStore) => s.sharedPlans);
+  const fetchSharedPlans = useOKRStore((s: OKRStore) => s.fetchSharedPlans);
   const [orgUsers, setOrgUsers] = useState<User[]>([]);
-  const [sharedFromOthers, setSharedFromOthers] = useState<List[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
   const [newOwnerId, setNewOwnerId] = useState('');
@@ -45,19 +47,8 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
       }
     };
     fetchUsers();
-    const fetchShared = async () => {
-      try {
-        const res = await fetch(`${API_URL}/api/org/shared-plans`, { credentials: 'include' });
-        if (res.ok) {
-          const data = await res.json();
-          setSharedFromOthers(data.lists || []);
-        }
-      } catch (err) {
-        console.error('Failed to fetch shared plans:', err);
-      }
-    };
-    fetchShared();
-  }, [lists]);
+    fetchSharedPlans();
+  }, [lists, fetchSharedPlans]);
 
   const planLists = useMemo(
     () => lists.filter(l => l.ownerId && l.periodId).sort((a, b) => a.name.localeCompare(b.name)),
@@ -71,10 +62,11 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
   const ownerName = (id?: string) => id ? (orgUsers.find(u => u.id === id)?.name || orgUsers.find(u => u.id === id)?.email || id) : '—';
   const periodName = (id?: string) => id ? (periods.find((p: Period) => p.id === id)?.name || id) : '—';
 
-  const openPlan = async (list: List) => {
-    await setListViewMode(list.id, 'plan');
+  const openPlan = (list: List) => {
+    // Fire-and-forget so navigation isn't blocked on the preference PUT.
+    setListViewMode(list.id, 'plan');
     setPlanFocusListId(list.id);
-    window.localStorage.setItem('okr-lists-pending-selection', list.id);
+    try { window.localStorage.setItem('okr-lists-pending-selection', list.id); } catch { /* ignore */ }
     onViewChange('lists');
   };
 
@@ -161,6 +153,7 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Period</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Items</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sharing</th>
+                <th className="px-4 py-3"></th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-100">
@@ -187,6 +180,17 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
                       {list.shared ? 'Shared' : 'Private'}
                     </button>
                   </td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      onClick={() => { if (window.confirm(`Delete plan "${list.name}"? This removes the list and its items.`)) deleteList(list.id); }}
+                      className="p-1 text-gray-400 hover:text-red-600 rounded"
+                      title="Delete plan"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -194,7 +198,7 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
         )}
       </div>
 
-      {sharedFromOthers.length > 0 && (
+      {sharedPlans.length > 0 && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200">
           <div className="p-4 border-b border-gray-200">
             <h3 className="text-base font-semibold text-gray-900">Shared plans from others</h3>
@@ -211,11 +215,16 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-100">
-              {sharedFromOthers.map(list => (
+              {sharedPlans.map(list => (
                 <tr key={list.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 text-sm flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: list.color || '#6b7280' }} />
-                    {list.name}
+                  <td className="px-4 py-3 text-sm">
+                    <button
+                      onClick={() => { setPlanFocusListId(list.id); window.localStorage.setItem('okr-lists-pending-selection', list.id); onViewChange('lists'); }}
+                      className="text-blue-600 hover:text-blue-800 hover:underline font-medium text-left flex items-center gap-2"
+                    >
+                      <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: list.color || '#6b7280' }} />
+                      {list.name}
+                    </button>
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">{ownerName(list.ownerId)}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">{periodName(list.periodId)}</td>

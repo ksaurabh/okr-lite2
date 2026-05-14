@@ -65,6 +65,7 @@ function AppContent() {
   const fetchUserPreferences = useOKRStore((state) => state.fetchUserPreferences);
   const fetchViews = useOKRStore((state) => state.fetchViews);
   const fetchLists = useOKRStore((state) => state.fetchLists);
+  const fetchSharedPlans = useOKRStore((state) => state.fetchSharedPlans);
   const isDataLoading = useOKRStore((state) => state.isLoading);
 
   // Fetch OKR data, user preferences, views, and lists when authenticated
@@ -74,8 +75,9 @@ function AppContent() {
       fetchUserPreferences();
       fetchViews();
       fetchLists();
+      fetchSharedPlans();
     }
-  }, [isAuthenticated, isAllowed, fetchData, fetchUserPreferences, fetchViews, fetchLists]);
+  }, [isAuthenticated, isAllowed, fetchData, fetchUserPreferences, fetchViews, fetchLists, fetchSharedPlans]);
 
   // Handle OAuth callback
   if (window.location.pathname === '/auth/callback') {

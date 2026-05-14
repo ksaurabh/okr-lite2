@@ -202,9 +202,13 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
     document.addEventListener('mousedown', onClick);
     return () => document.removeEventListener('mousedown', onClick);
   }, [showListPlanColumnMenu]);
-  const isListPlanMode = selectedListId ? listViewModes[selectedListId] === 'plan' : false;
+  const listsEarly = useOKRStore((state: OKRStore) => state.lists);
+  const sharedPlansEarly = useOKRStore((state: OKRStore) => state.sharedPlans);
+  const selectedListEarly = listsEarly.find(l => l.id === selectedListId) || sharedPlansEarly.find(l => l.id === selectedListId);
+  const isReadOnlyListEarly = !!(selectedListEarly && (selectedListEarly as List & { createdByEmail?: string }).createdByEmail);
+  const isListPlanMode = selectedListId ? (isReadOnlyListEarly ? true : listViewModes[selectedListId] === 'plan') : false;
   const setIsListPlanMode = (v: boolean) => {
-    if (selectedListId) setListViewMode(selectedListId, v ? 'plan' : 'list');
+    if (selectedListId && !isReadOnlyListEarly) setListViewMode(selectedListId, v ? 'plan' : 'list');
   };
   const [planSelectedObjective, setPlanSelectedObjective] = useState<Objective | null>(null);
   const [planTopLevel, setPlanTopLevel] = useState(false);
@@ -448,10 +452,10 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
   }, [lists]);
 
   useEffect(() => {
-    if (planFocusListId && lists.some(l => l.id === planFocusListId)) {
+    if (planFocusListId && (lists.some(l => l.id === planFocusListId) || sharedPlansEarly.some(l => l.id === planFocusListId))) {
       setSelectedListId(planFocusListId);
     }
-  }, [planFocusListId, lists]);
+  }, [planFocusListId, lists, sharedPlansEarly]);
 
   // Fetch users for owner/assignee display
   useEffect(() => {
@@ -502,7 +506,9 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
     };
   }, [resizingColumn]);
 
-  const selectedList = lists.find(l => l.id === selectedListId);
+  const sharedPlans = sharedPlansEarly;
+  const selectedList = selectedListEarly;
+  const isReadOnlyList = isReadOnlyListEarly;
 
   const showPathInTree = (targetId: string) => {
     const byId = new Map(objectives.map(o => [o.id, o]));
@@ -641,7 +647,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
     ? [...selectedList.items].sort((a, b) => a.order - b.order)
     : [];
 
-  const planFocus = planFocusListId ? lists.find(l => l.id === planFocusListId) : null;
+  const planFocus = planFocusListId ? (lists.find(l => l.id === planFocusListId) || sharedPlans.find(l => l.id === planFocusListId)) : null;
   const planFocusEffective = planFocus && planFocus.id === selectedListId ? planFocus : null;
 
   return (
@@ -869,7 +875,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                 <h2 className="text-xl font-semibold text-gray-900">{selectedList.name}</h2>
               ) : <span />}
               <div className="flex items-center gap-2">
-                {isListPlanMode && !planTopLevel && (
+                {isListPlanMode && !planTopLevel && !isReadOnlyList && (
                   <>
                     <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">Child list</label>
                     <select
@@ -932,7 +938,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                     </div>
                   </>
                 )}
-                {isListPlanMode && !planTopLevel && (
+                {isListPlanMode && !planTopLevel && !isReadOnlyList && (
                   <>
                     <select
                       value=""
@@ -976,6 +982,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                     Top Level
                   </label>
                 )}
+                {!isReadOnlyList && (
                 <div className="inline-flex border border-gray-300 rounded overflow-hidden">
                   <button
                     onClick={() => setIsListPlanMode(false)}
@@ -990,6 +997,10 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                     Plan
                   </button>
                 </div>
+                )}
+                {isReadOnlyList && (
+                  <span className="px-2 py-0.5 text-xs rounded bg-amber-50 border border-amber-300 text-amber-700">Read-only · shared by {((selectedList as List & { createdByEmail?: string }).createdByEmail) || 'another user'}</span>
+                )}
               </div>
             </div>
 
@@ -1311,7 +1322,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                   objective={root}
                                   depth={0}
                                   visibleColumnsOverride={listPlanColumns}
-                                  quickAddToListId={(planTopLevel ? selectedList.id : planSelectedChildListId) || undefined}
+                                  quickAddToListId={isReadOnlyList ? undefined : ((planTopLevel ? selectedList.id : planSelectedChildListId) || undefined)}
                                 />
                               ))}
                             </div>
@@ -1493,7 +1504,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                           objective={planSelectedObjective}
                           depth={0}
                           visibleColumnsOverride={listPlanColumns}
-                          quickAddToListId={(planTopLevel ? selectedList.id : planSelectedChildListId) || undefined}
+                          quickAddToListId={isReadOnlyList ? undefined : ((planTopLevel ? selectedList.id : planSelectedChildListId) || undefined)}
                         />
                       )}
                     </>

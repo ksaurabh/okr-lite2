@@ -226,6 +226,8 @@ interface OKRActions {
 
   // Lists
   lists: List[];
+  sharedPlans: List[];
+  fetchSharedPlans: () => Promise<void>;
   fetchLists: () => Promise<void>;
   createList: (name: string, color?: string, parentId?: string, meta?: { ownerId?: string; periodId?: string; shared?: boolean }) => Promise<List | { error: string } | null>;
   setListShared: (listId: string, shared: boolean) => Promise<void>;
@@ -427,6 +429,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
   savedViews: [],
   activeViewId: null,
   lists: [],
+  sharedPlans: [],
 
   fetchData: async () => {
     set({ isLoading: true, error: null });
@@ -2054,6 +2057,20 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       }
     } catch (err) {
       console.error('Failed to fetch lists:', err);
+    }
+  },
+
+  fetchSharedPlans: async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/org/shared-plans`, {
+        credentials: 'include',
+      });
+      if (response.ok) {
+        const data = await response.json();
+        set({ sharedPlans: data.lists || [] });
+      }
+    } catch (err) {
+      console.error('Failed to fetch shared plans:', err);
     }
   },
 
