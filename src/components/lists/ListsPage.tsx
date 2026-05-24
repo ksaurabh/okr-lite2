@@ -648,6 +648,73 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
     : [];
 
   const planFocus = planFocusListId ? (lists.find(l => l.id === planFocusListId) || sharedPlans.find(l => l.id === planFocusListId)) : null;
+
+  const renderObjectiveCard = (obj: Objective, depth: number): React.ReactNode => {
+    const children = orgObjectives.filter(o => o.parentId === obj.id);
+    const hasChildren = children.length > 0;
+    const isCollapsed = depth === 0 ? collapsedCardIds.has(obj.id) : !collapsedCardIds.has(obj.id);
+    const targetListId = planTopLevel ? selectedList?.id : planSelectedChildListId;
+    return (
+      <div key={obj.id} style={{ marginLeft: depth * 16 }}>
+        <div className="group border border-gray-200 rounded p-2 bg-white">
+          <div className="flex items-center gap-1">
+            {hasChildren ? (
+              <button
+                onClick={() => toggleCardCollapsed(obj.id)}
+                className="text-gray-400 hover:text-gray-700 flex-shrink-0"
+                title={isCollapsed ? 'Show children' : 'Hide children'}
+              >
+                <svg className={`w-3 h-3 transition-transform ${isCollapsed ? '' : 'rotate-90'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            ) : (
+              <span className="w-3 flex-shrink-0" />
+            )}
+            <div className="text-sm font-medium text-gray-900 break-words flex-1 min-w-0" title={obj.title}>{obj.title}</div>
+            <div className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+              {!isReadOnlyList && targetListId && (
+                <button
+                  onClick={() => addItemToList(targetListId, obj.id)}
+                  className="p-0.5 text-gray-400 hover:text-blue-600 rounded"
+                  title={planTopLevel ? 'Add to List' : 'Add to Child List'}
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                  </svg>
+                </button>
+              )}
+              <button
+                onClick={() => setPlanSelectedObjective(obj)}
+                className="p-0.5 text-gray-400 hover:text-blue-600 rounded"
+                title="Focus on this objective"
+              >
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" />
+                  <circle cx="12" cy="12" r="5" fill="currentColor" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          {listPlanColumns.length > 0 && (
+            <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5 pl-4">
+              {listPlanColumns.map(col => (
+                <div key={col} className="text-xs text-gray-600">
+                  <span className="text-gray-400">{COLUMN_LABELS[col]}=</span>
+                  <span className="text-gray-700">{cellValueForCard(obj, col)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        {hasChildren && !isCollapsed && (
+          <div className="mt-1 space-y-1">
+            {children.map(child => renderObjectiveCard(child, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
+  };
   const planFocusEffective = planFocus && planFocus.id === selectedListId ? planFocus : null;
 
   return (
@@ -1218,6 +1285,20 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                       return (
                         <>
                           <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-end gap-2 bg-gray-50">
+                            <div className="inline-flex border border-gray-300 rounded overflow-hidden">
+                              <button
+                                onClick={() => setListPlanTreeView('table')}
+                                className={`px-2 py-0.5 text-[10px] ${listPlanTreeView === 'table' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                              >
+                                Table
+                              </button>
+                              <button
+                                onClick={() => setListPlanTreeView('cards')}
+                                className={`px-2 py-0.5 text-[10px] border-l border-gray-300 ${listPlanTreeView === 'cards' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                              >
+                                Cards
+                              </button>
+                            </div>
                             <button
                               onClick={() => setTopLevelFilterOn(!topLevelFilterOn)}
                               className={`px-2 py-0.5 text-[10px] border rounded ${topLevelFilterOn ? 'bg-blue-50 border-blue-300 text-blue-700' : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'}`}
@@ -1314,6 +1395,10 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                           </div>
                           {roots.length === 0 ? (
                             <div className="p-6 text-center text-sm text-gray-400">No top-level objectives match the filter.</div>
+                          ) : listPlanTreeView === 'cards' ? (
+                            <div className="p-2 space-y-1">
+                              {roots.map(root => renderObjectiveCard(root, 0))}
+                            </div>
                           ) : (
                             <div>
                               {roots.map(root => (
