@@ -1028,7 +1028,7 @@ app.put('/api/users/me/lists', requireAuth, (req, res) => {
 
 // Create a new list
 app.post('/api/users/me/lists', requireAuth, (req, res) => {
-  const { name, color, parentId, ownerId, periodId, shared } = req.body;
+  const { name, color, parentId, ownerId, periodId, level, shared } = req.body;
 
   if (!name || !name.trim()) {
     return res.status(400).json({ error: 'List name is required' });
@@ -1050,6 +1050,7 @@ app.post('/api/users/me/lists', requireAuth, (req, res) => {
     ...(parentId ? { parentId } : {}),
     ...(ownerId ? { ownerId } : {}),
     ...(periodId ? { periodId } : {}),
+    ...(level ? { level } : {}),
     ...(shared === true ? { shared: true } : {}),
   };
 
@@ -1089,6 +1090,10 @@ app.put('/api/users/me/lists/:listId', requireAuth, (req, res) => {
   if ('periodId' in req.body) {
     if (req.body.periodId) lists[listIndex].periodId = req.body.periodId;
     else delete lists[listIndex].periodId;
+  }
+  if ('level' in req.body) {
+    if (req.body.level) lists[listIndex].level = req.body.level;
+    else delete lists[listIndex].level;
   }
   if ('shared' in req.body) {
     if (req.body.shared === true) lists[listIndex].shared = true;

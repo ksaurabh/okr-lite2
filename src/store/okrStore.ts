@@ -229,8 +229,9 @@ interface OKRActions {
   sharedPlans: List[];
   fetchSharedPlans: () => Promise<void>;
   fetchLists: () => Promise<void>;
-  createList: (name: string, color?: string, parentId?: string, meta?: { ownerId?: string; periodId?: string; shared?: boolean }) => Promise<List | { error: string } | null>;
+  createList: (name: string, color?: string, parentId?: string, meta?: { ownerId?: string; periodId?: string; level?: import('../types').ObjectiveLevel; shared?: boolean }) => Promise<List | { error: string } | null>;
   setListShared: (listId: string, shared: boolean) => Promise<void>;
+  setListLevel: (listId: string, level: import('../types').ObjectiveLevel | '') => Promise<void>;
   deleteList: (listId: string) => Promise<void>;
   renameList: (listId: string, newName: string) => Promise<void>;
   updateListColor: (listId: string, color: string) => Promise<void>;
@@ -2074,7 +2075,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     }
   },
 
-  createList: async (name: string, color?: string, parentId?: string, meta?: { ownerId?: string; periodId?: string; shared?: boolean }) => {
+  createList: async (name: string, color?: string, parentId?: string, meta?: { ownerId?: string; periodId?: string; level?: import('../types').ObjectiveLevel; shared?: boolean }) => {
     try {
       const response = await fetch(`${API_URL}/api/users/me/lists`, {
         method: 'POST',
@@ -2082,7 +2083,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name, color: color || '#6b7280', parentId, ownerId: meta?.ownerId, periodId: meta?.periodId, shared: meta?.shared === true ? true : undefined }),
+        body: JSON.stringify({ name, color: color || '#6b7280', parentId, ownerId: meta?.ownerId, periodId: meta?.periodId, level: meta?.level || undefined, shared: meta?.shared === true ? true : undefined }),
       });
 
       if (response.ok) {
@@ -2201,6 +2202,29 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       }
     } catch (err) {
       console.error('Failed to update list sharing:', err);
+    }
+  },
+
+  setListLevel: async (listId, level) => {
+    const state = get();
+    const lists = state.lists.map(l => l.id === listId
+      ? (level ? { ...l, level } : (() => { const { level: _drop, ...rest } = l as List & { level?: import('../types').ObjectiveLevel }; void _drop; return rest as List; })())
+      : l
+    );
+    set({ lists });
+    try {
+      const response = await fetch(`${API_URL}/api/users/me/lists/${listId}`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ level: level || null }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.lists) set({ lists: data.lists });
+      }
+    } catch (err) {
+      console.error('Failed to update list level:', err);
     }
   },
 

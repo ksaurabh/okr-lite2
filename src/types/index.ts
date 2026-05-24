@@ -251,6 +251,7 @@ export interface List {
   parentId?: string;
   ownerId?: string;
   periodId?: string;
+  level?: ObjectiveLevel;
   shared?: boolean;
   createdByEmail?: string;
 }

@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
-import type { List, Period, User } from '../../types';
+import type { List, ObjectiveLevel, Period, User } from '../../types';
+
+const LEVELS: ObjectiveLevel[] = ['company', 'team', 'individual'];
+const LEVEL_LABEL: Record<ObjectiveLevel, string> = { company: 'Company', team: 'Team', individual: 'Individual' };
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -17,6 +20,7 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
   const deleteList = useOKRStore((s: OKRStore) => s.deleteList);
   const updateListParent = useOKRStore((s: OKRStore) => s.updateListParent);
   const setListShared = useOKRStore((s: OKRStore) => s.setListShared);
+  const setListLevel = useOKRStore((s: OKRStore) => s.setListLevel);
   const setListViewMode = useOKRStore((s: OKRStore) => s.setListViewMode);
   const setPlanFocusListId = useOKRStore((s: OKRStore) => s.setPlanFocusListId);
 
@@ -27,7 +31,9 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
   const [newName, setNewName] = useState('');
   const [newOwnerId, setNewOwnerId] = useState('');
   const [newPeriodId, setNewPeriodId] = useState('');
+  const [newLevel, setNewLevel] = useState<ObjectiveLevel | ''>('');
   const [newShared, setNewShared] = useState(false);
+  const [filterLevel, setFilterLevel] = useState<ObjectiveLevel | ''>('');
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [promoteListId, setPromoteListId] = useState<string | null>(null);
@@ -51,8 +57,15 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
   }, [lists, fetchSharedPlans]);
 
   const planLists = useMemo(
-    () => lists.filter(l => l.ownerId && l.periodId).sort((a, b) => a.name.localeCompare(b.name)),
-    [lists]
+    () => lists
+      .filter(l => l.ownerId && l.periodId)
+      .filter(l => filterLevel ? l.level === filterLevel : true)
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    [lists, filterLevel]
+  );
+  const filteredSharedPlans = useMemo(
+    () => sharedPlans.filter(l => filterLevel ? l.level === filterLevel : true),
+    [sharedPlans, filterLevel]
   );
   const nonPlanLists = useMemo(
     () => lists.filter(l => !(l.ownerId && l.periodId)).sort((a, b) => a.name.localeCompare(b.name)),
@@ -79,7 +92,7 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
     }
     setCreating(true);
     try {
-      const result = await createList(name, undefined, undefined, { ownerId: newOwnerId, periodId: newPeriodId, shared: newShared });
+      const result = await createList(name, undefined, undefined, { ownerId: newOwnerId, periodId: newPeriodId, level: newLevel || undefined, shared: newShared });
       if (result && typeof result === 'object' && 'error' in result) {
         setCreateError(result.error);
         return;
@@ -88,6 +101,7 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
       setNewName('');
       setNewOwnerId('');
       setNewPeriodId('');
+      setNewLevel('');
       setNewShared(false);
     } finally {
       setCreating(false);
@@ -133,16 +147,38 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
             </p>
           </div>
           <button
-            onClick={() => { setNewName(''); setNewOwnerId(''); setNewPeriodId(''); setCreateError(null); setShowCreate(true); }}
+            onClick={() => { setNewName(''); setNewOwnerId(''); setNewPeriodId(''); setNewLevel(''); setCreateError(null); setShowCreate(true); }}
             className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
           >
             + Create plan
           </button>
         </div>
 
+        <div className="px-4 py-2 border-b border-gray-200 flex items-center gap-2 bg-gray-50">
+          <label className="text-xs text-gray-500">Level</label>
+          <select
+            value={filterLevel}
+            onChange={(e) => setFilterLevel(e.target.value as ObjectiveLevel | '')}
+            className="border border-gray-300 rounded px-2 py-1 text-xs bg-white"
+          >
+            <option value="">Any level</option>
+            {LEVELS.map(lv => <option key={lv} value={lv}>{LEVEL_LABEL[lv]}</option>)}
+          </select>
+          {filterLevel && (
+            <button
+              onClick={() => setFilterLevel('')}
+              className="text-xs text-gray-500 hover:text-gray-700 underline"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+
         {planLists.length === 0 ? (
           <div className="p-8 text-center text-sm text-gray-500">
-            No plans yet. Click "Create plan" to make one.
+            {lists.some(l => l.ownerId && l.periodId)
+              ? 'No plans match the current filter.'
+              : 'No plans yet. Click "Create plan" to make one.'}
           </div>
         ) : (
           <table className="min-w-full divide-y divide-gray-200">
@@ -151,6 +187,7 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Owner</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Period</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Level</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Items</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sharing</th>
                 <th className="px-4 py-3"></th>
@@ -170,6 +207,16 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">{ownerName(list.ownerId)}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">{periodName(list.periodId)}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">
+                    <select
+                      value={list.level || ''}
+                      onChange={(e) => setListLevel(list.id, e.target.value as ObjectiveLevel | '')}
+                      className="border border-gray-300 rounded px-1.5 py-0.5 text-xs bg-white"
+                    >
+                      <option value="">—</option>
+                      {LEVELS.map(lv => <option key={lv} value={lv}>{LEVEL_LABEL[lv]}</option>)}
+                    </select>
+                  </td>
                   <td className="px-4 py-3 text-sm text-gray-600">{list.items.length}</td>
                   <td className="px-4 py-3 text-sm">
                     <button
@@ -198,7 +245,7 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
         )}
       </div>
 
-      {sharedPlans.length > 0 && (
+      {filteredSharedPlans.length > 0 && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200">
           <div className="p-4 border-b border-gray-200">
             <h3 className="text-base font-semibold text-gray-900">Shared plans from others</h3>
@@ -210,12 +257,13 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Owner</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Period</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Level</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Items</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Shared by</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-100">
-              {sharedPlans.map(list => (
+              {filteredSharedPlans.map(list => (
                 <tr key={list.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 text-sm">
                     <button
@@ -228,6 +276,7 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">{ownerName(list.ownerId)}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">{periodName(list.periodId)}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{list.level ? LEVEL_LABEL[list.level] : '—'}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">{list.items.length}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">{list.createdByEmail || '—'}</td>
                 </tr>
@@ -313,6 +362,17 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
                   {[...periods].sort((a, b) => a.startDate.localeCompare(b.startDate)).map((p: Period) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Level</label>
+                <select
+                  value={newLevel}
+                  onChange={(e) => setNewLevel(e.target.value as ObjectiveLevel | '')}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white"
+                >
+                  <option value="">— Optional —</option>
+                  {LEVELS.map(lv => <option key={lv} value={lv}>{LEVEL_LABEL[lv]}</option>)}
                 </select>
               </div>
               <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
