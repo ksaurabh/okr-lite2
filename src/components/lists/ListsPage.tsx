@@ -12,7 +12,7 @@ import {
   buildObjectiveDescendantLookup,
   filterObjectives,
 } from '../../utils/objectiveFilters';
-import type { Objective, Period, Team, Tag, User, WorkflowStatus } from '../../types';
+import type { Objective, ObjectiveLevel, Period, Team, Tag, User, WorkflowStatus } from '../../types';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -160,6 +160,13 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
   const [treeAssigneeFilter, setTreeAssigneeFilter] = useState<string[]>([]);
   const [treePeriodFilter, setTreePeriodFilter] = useState<string[]>([]);
   const [treeShowDoneArchived, setTreeShowDoneArchived] = useState(false);
+  const [showCreateChildPlan, setShowCreateChildPlan] = useState(false);
+  const [newChildPlanName, setNewChildPlanName] = useState('');
+  const [newChildPlanOwnerId, setNewChildPlanOwnerId] = useState('');
+  const [newChildPlanPeriodId, setNewChildPlanPeriodId] = useState('');
+  const [newChildPlanLevel, setNewChildPlanLevel] = useState<ObjectiveLevel | ''>('');
+  const [newChildPlanError, setNewChildPlanError] = useState<string | null>(null);
+  const [creatingChildPlan, setCreatingChildPlan] = useState(false);
   const [showTreeFilter, setShowTreeFilter] = useState(false);
   const treeFilterRef = useRef<HTMLDivElement>(null);
   const [collapsedFilterSections, setCollapsedFilterSections] = useState<Set<string>>(new Set(['first:Owner', 'first:Assignee', 'first:Period', 'third:Owner', 'third:Assignee', 'third:Period', 'tree:Owner', 'tree:Assignee', 'tree:Period']));
@@ -969,6 +976,24 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
             </button>
             <div className="flex items-center gap-3 flex-wrap">
               <h2 className="text-xl font-semibold text-gray-900">{planFocusEffective.name}</h2>
+              {(() => {
+                const parent = planFocusEffective.parentId
+                  ? (lists.find(l => l.id === planFocusEffective.parentId) || sharedPlans.find(l => l.id === planFocusEffective.parentId))
+                  : null;
+                if (!parent) return null;
+                return (
+                  <span className="text-xs text-gray-500">
+                    <span className="text-gray-400">Parent:</span>{' '}
+                    <button
+                      onClick={() => { setPlanFocusListId(parent.id); setSelectedListId(parent.id); }}
+                      className="text-blue-600 hover:text-blue-700 hover:underline"
+                      title="Open parent plan"
+                    >
+                      {parent.name}
+                    </button>
+                  </span>
+                );
+              })()}
               <span className="text-xs text-gray-500">
                 <span className="text-gray-400">Owner:</span> <span className="text-gray-700">{orgUsers.find(u => u.id === planFocusEffective.ownerId)?.name || orgUsers.find(u => u.id === planFocusEffective.ownerId)?.email || planFocusEffective.ownerId || '—'}</span>
               </span>
@@ -978,6 +1003,27 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
               <span className="text-xs text-gray-500">
                 <span className="text-gray-400">Level:</span> <span className="text-gray-700 capitalize">{planFocusEffective.level || '—'}</span>
               </span>
+              {(() => {
+                const children = lists.filter(l => l.parentId === planFocusEffective.id && l.ownerId && l.periodId);
+                if (children.length === 0) return null;
+                return (
+                  <span className="text-xs text-gray-500 flex items-center gap-1 flex-wrap">
+                    <span className="text-gray-400">Children:</span>
+                    {children.map((c, i) => (
+                      <span key={c.id} className="flex items-center">
+                        <button
+                          onClick={() => { setPlanFocusListId(c.id); setSelectedListId(c.id); }}
+                          className="text-blue-600 hover:text-blue-700 hover:underline"
+                          title="Open child plan"
+                        >
+                          {c.name}
+                        </button>
+                        {i < children.length - 1 && <span className="text-gray-300 ml-1">,</span>}
+                      </span>
+                    ))}
+                  </span>
+                );
+              })()}
             </div>
           </div>
         )}
@@ -1022,6 +1068,22 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                       </svg>
                       Create child list
+                    </button>
+                    <button
+                      onClick={() => {
+                        setNewChildPlanName('');
+                        setNewChildPlanOwnerId(selectedList.ownerId || '');
+                        setNewChildPlanPeriodId(selectedList.periodId || '');
+                        setNewChildPlanLevel(selectedList.level || '');
+                        setNewChildPlanError(null);
+                        setShowCreateChildPlan(true);
+                      }}
+                      className="flex items-center gap-1 px-3 py-1 text-sm text-blue-700 border border-blue-300 rounded bg-blue-50 hover:bg-blue-100"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                      Create child plan
                     </button>
                   </>
                 )}
@@ -2282,6 +2344,129 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
           />
         )}
       </SlidePane>
+      {showCreateChildPlan && selectedList && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full p-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-3">Create child plan</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="border border-gray-200 rounded-md p-3 bg-gray-50 space-y-2">
+                <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Parent plan</div>
+                <div>
+                  <div className="text-[10px] text-gray-400 uppercase">Name</div>
+                  <div className="text-sm text-gray-800 break-words">{selectedList.name}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-gray-400 uppercase">Owner</div>
+                  <div className="text-sm text-gray-800">{orgUsers.find(u => u.id === selectedList.ownerId)?.name || orgUsers.find(u => u.id === selectedList.ownerId)?.email || selectedList.ownerId || '—'}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-gray-400 uppercase">Period</div>
+                  <div className="text-sm text-gray-800">{periods.find(p => p.id === selectedList.periodId)?.name || '—'}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-gray-400 uppercase">Level</div>
+                  <div className="text-sm text-gray-800 capitalize">{selectedList.level || '—'}</div>
+                </div>
+              </div>
+              <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Name</label>
+                <input
+                  type="text"
+                  value={newChildPlanName}
+                  onChange={(e) => setNewChildPlanName(e.target.value)}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Owner</label>
+                <select
+                  value={newChildPlanOwnerId}
+                  onChange={(e) => setNewChildPlanOwnerId(e.target.value)}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white"
+                >
+                  <option value="">— Pick an owner —</option>
+                  {[...orgUsers].sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email)).map(u => (
+                    <option key={u.id} value={u.id}>{u.name || u.email}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Period</label>
+                <select
+                  value={newChildPlanPeriodId}
+                  onChange={(e) => setNewChildPlanPeriodId(e.target.value)}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white"
+                >
+                  <option value="">— Pick a period —</option>
+                  {[...periods].sort((a, b) => a.startDate.localeCompare(b.startDate)).map((p: Period) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Level</label>
+                <select
+                  value={newChildPlanLevel}
+                  onChange={(e) => setNewChildPlanLevel(e.target.value as ObjectiveLevel | '')}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white"
+                >
+                  <option value="">— Optional —</option>
+                  <option value="company">Company</option>
+                  <option value="team">Team</option>
+                  <option value="individual">Individual</option>
+                </select>
+              </div>
+              {newChildPlanError && (
+                <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded p-2">{newChildPlanError}</div>
+              )}
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setShowCreateChildPlan(false)}
+                disabled={creatingChildPlan}
+                className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  const name = newChildPlanName.trim();
+                  if (!name || !newChildPlanOwnerId || !newChildPlanPeriodId) {
+                    setNewChildPlanError('Name, Owner, and Period are required.');
+                    return;
+                  }
+                  setCreatingChildPlan(true);
+                  setNewChildPlanError(null);
+                  try {
+                    const result = await createList(name, undefined, selectedList.id, {
+                      ownerId: newChildPlanOwnerId,
+                      periodId: newChildPlanPeriodId,
+                      level: newChildPlanLevel || undefined,
+                    });
+                    if (result && typeof result === 'object' && 'error' in result) {
+                      setNewChildPlanError(result.error);
+                      return;
+                    }
+                    if (result && typeof result === 'object' && 'id' in result) {
+                      setPlanSelectedChildListId(result.id);
+                    }
+                    setShowCreateChildPlan(false);
+                  } finally {
+                    setCreatingChildPlan(false);
+                  }
+                }}
+                disabled={creatingChildPlan || !newChildPlanName.trim() || !newChildPlanOwnerId || !newChildPlanPeriodId}
+                className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+              >
+                {creatingChildPlan ? 'Creating…' : 'Create'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

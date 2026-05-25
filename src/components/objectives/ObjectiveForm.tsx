@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import type { Objective, ObjectiveLevel, ObjectiveLink, ProgressUpdate, Period, Team, Tag, User, ObjectiveHistoryEntry } from '../../types';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
@@ -42,6 +42,10 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
   const [storyPoints, setStoryPoints] = useState(objective?.storyPoints?.toString() || '');
   const [valuePoints, setValuePoints] = useState(objective?.valuePoints?.toString() || '');
   const [resolvedAt, setResolvedAt] = useState(objective?.resolvedAt || '');
+  const [parentObjectiveId, setParentObjectiveId] = useState(objective?.parentId || parentId || '');
+  const [parentSearch, setParentSearch] = useState('');
+  const [showParentMenu, setShowParentMenu] = useState(false);
+  const parentMenuRef = useRef<HTMLDivElement>(null);
   const [linkUrl, setLinkUrl] = useState(objective?.link?.url || '');
   const [linkDescription, setLinkDescription] = useState(objective?.link?.description || '');
   const [orgUsers, setOrgUsers] = useState<User[]>([]);
@@ -50,6 +54,7 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
   const [newProgressUpdate, setNewProgressUpdate] = useState('');
 
   const { organization, user, isSuperAdmin, isOrgAdmin } = useAuth();
+  const allObjectives = useOKRStore((state: OKRStore) => state.objectives);
   const teams = useOKRStore((state: OKRStore) => state.teams);
   const periods = useOKRStore((state: OKRStore) => state.periods);
   const tags = useOKRStore((state: OKRStore) => state.tags);
@@ -84,12 +89,40 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
     ),
     [periods, orgId, userEmail, isAdmin]
   );
+  const validParentOptions = useMemo(() => {
+    if (!objective) return [] as Objective[];
+    const excluded = new Set<string>([objective.id]);
+    let added = true;
+    while (added) {
+      added = false;
+      for (const o of allObjectives) {
+        if (o.parentId && excluded.has(o.parentId) && !excluded.has(o.id)) {
+          excluded.add(o.id);
+          added = true;
+        }
+      }
+    }
+    return allObjectives
+      .filter(o => (!o.orgId || o.orgId === orgId) && (isAdmin || o.shared !== false || o.createdBy === userEmail))
+      .filter(o => !excluded.has(o.id))
+      .sort((a, b) => a.title.localeCompare(b.title));
+  }, [allObjectives, objective, orgId, isAdmin, userEmail]);
+
   const orgTags = useMemo(
     () => tags.filter((t: Tag) =>
       (!t.orgId || t.orgId === orgId) && (isAdmin || t.shared !== false || t.createdBy === userEmail)
     ),
     [tags, orgId, userEmail, isAdmin]
   );
+
+  useEffect(() => {
+    if (!showParentMenu) return;
+    const onClick = (e: MouseEvent) => {
+      if (parentMenuRef.current && !parentMenuRef.current.contains(e.target as Node)) setShowParentMenu(false);
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [showParentMenu]);
 
   useEffect(() => {
     if (!periodId && activePeriodId) {
@@ -173,6 +206,7 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
           title: title.trim(),
           description: description.trim() || undefined,
           level,
+          parentId: parentObjectiveId || undefined,
           teamId: teamId || undefined,
           ownerId: ownerId || undefined,
           assigneeId: assigneeId || undefined,
@@ -287,6 +321,72 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
           </select>
         </div>
       </div>
+
+      {objective && (() => {
+        const selected = parentObjectiveId ? validParentOptions.find(o => o.id === parentObjectiveId) : null;
+        const q = parentSearch.trim().toLowerCase();
+        const matches = q
+          ? validParentOptions.filter(o => o.title.toLowerCase().includes(q))
+          : validParentOptions;
+        const visible = matches.slice(0, 10);
+        return (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Parent objective
+            </label>
+            <div ref={parentMenuRef} className="relative">
+              <input
+                type="text"
+                value={showParentMenu ? parentSearch : (selected ? selected.title : '')}
+                placeholder="— None (top-level) —"
+                onFocus={() => { setShowParentMenu(true); setParentSearch(''); }}
+                onChange={(e) => { setParentSearch(e.target.value); setShowParentMenu(true); }}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              {parentObjectiveId && !showParentMenu && (
+                <button
+                  type="button"
+                  onClick={() => setParentObjectiveId('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 text-xs"
+                  title="Clear parent"
+                >
+                  ✕
+                </button>
+              )}
+              {showParentMenu && (
+                <div className="absolute left-0 right-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-md shadow-lg py-1 max-h-72 overflow-y-auto">
+                  <button
+                    type="button"
+                    onClick={() => { setParentObjectiveId(''); setShowParentMenu(false); }}
+                    className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    — None (top-level) —
+                  </button>
+                  {visible.length === 0 ? (
+                    <div className="px-3 py-2 text-xs text-gray-400">No matches</div>
+                  ) : (
+                    visible.map((o: Objective) => (
+                      <button
+                        key={o.id}
+                        type="button"
+                        onClick={() => { setParentObjectiveId(o.id); setShowParentMenu(false); }}
+                        className={`w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 ${o.id === parentObjectiveId ? 'bg-blue-50 text-blue-700' : 'text-gray-700'}`}
+                      >
+                        {o.title}
+                      </button>
+                    ))
+                  )}
+                  {matches.length > visible.length && (
+                    <div className="px-3 py-1 text-xs text-gray-400 border-t border-gray-100">
+                      Showing 10 of {matches.length} — type to narrow
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {(level === 'team' || level === 'individual') && (
         <div>
