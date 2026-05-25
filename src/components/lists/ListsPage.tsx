@@ -160,6 +160,9 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
   const [treeAssigneeFilter, setTreeAssigneeFilter] = useState<string[]>([]);
   const [treePeriodFilter, setTreePeriodFilter] = useState<string[]>([]);
   const [treeShowDoneArchived, setTreeShowDoneArchived] = useState(false);
+  const togglePlanSelectedObjective = (obj: Objective) => {
+    setPlanSelectedObjective(prev => prev?.id === obj.id ? null : obj);
+  };
   const [expandedListRowIds, setExpandedListRowIds] = useState<Set<string>>(new Set());
   const toggleListRowExpanded = (id: string) => {
     setExpandedListRowIds(prev => {
@@ -1347,7 +1350,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                         return (
                           <div key={item.objectiveId}>
                             <div
-                              onClick={() => setPlanSelectedObjective(obj)}
+                              onClick={() => togglePlanSelectedObjective(obj)}
                               className={`flex items-center gap-1 px-3 py-1 text-sm cursor-pointer border-b border-gray-100 ${selected ? 'bg-blue-50 text-blue-900' : 'hover:bg-gray-50 text-gray-800'}`}
                               title={obj.title}
                             >
@@ -1392,7 +1395,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                         return (
                           <button
                             key={item.objectiveId}
-                            onClick={() => setPlanSelectedObjective(obj)}
+                            onClick={() => togglePlanSelectedObjective(obj)}
                             draggable
                             onDragStart={(e) => { e.dataTransfer.setData('text/plain', `${selectedList.id}|${obj.id}`); e.dataTransfer.effectAllowed = 'move'; }}
                             onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
@@ -1452,7 +1455,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                 defaultCollapsed
                                 hideRowActions
                                 filteredObjectiveIds={NO_CHILDREN_PLAN_LIST}
-                                onTitleClick={() => setPlanSelectedObjective(obj)}
+                                onTitleClick={() => togglePlanSelectedObjective(obj)}
                               />
                             </div>
                           );
@@ -1656,16 +1659,32 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                               {roots.map(root => renderObjectiveCard(root, 0))}
                             </div>
                           ) : (
-                            <div>
-                              {roots.map(root => (
-                                <CompactObjectiveCard
-                                  key={root.id}
-                                  objective={root}
-                                  depth={0}
-                                  visibleColumnsOverride={listPlanColumns}
-                                  quickAddToListId={isReadOnlyList ? undefined : ((planTopLevel ? selectedList.id : planSelectedChildListId) || undefined)}
-                                />
-                              ))}
+                            <div className={`overflow-x-auto ${resizingPlanCol ? 'select-none' : ''}`}>
+                              <div className="min-w-max">
+                                <div className="flex items-center bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                  <div className="relative flex items-center px-2 py-2 flex-shrink-0" style={{ width: planColumnWidths.title, minWidth: 150 }}>
+                                    <div className="flex-1">{COLUMN_LABELS.title}</div>
+                                    <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handlePlanResizeStart('title', e)} />
+                                  </div>
+                                  {(Object.keys(COLUMN_LABELS) as ColumnKey[])
+                                    .filter(col => col !== 'title' && listPlanColumns.includes(col))
+                                    .map(col => (
+                                      <div key={col} className="relative flex items-center" style={{ width: planColumnWidths[col] }}>
+                                        <div className="px-1 py-2 flex-1">{COLUMN_LABELS[col]}</div>
+                                        <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handlePlanResizeStart(col, e)} />
+                                      </div>
+                                    ))}
+                                </div>
+                                {roots.map(root => (
+                                  <CompactObjectiveCard
+                                    key={root.id}
+                                    objective={root}
+                                    depth={0}
+                                    visibleColumnsOverride={listPlanColumns}
+                                    quickAddToListId={isReadOnlyList ? undefined : ((planTopLevel ? selectedList.id : planSelectedChildListId) || undefined)}
+                                  />
+                                ))}
+                              </div>
                             </div>
                           )}
                         </>
@@ -2051,14 +2070,32 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                           </div>
                         );
                       })() : (
-                        <CompactObjectiveCard
-                          key={planSelectedObjective.id}
-                          objective={planSelectedObjective}
-                          depth={0}
-                          visibleColumnsOverride={listPlanColumns}
-                          quickAddToListId={isReadOnlyList ? undefined : ((planTopLevel ? selectedList.id : planSelectedChildListId) || undefined)}
-                          filteredObjectiveIds={treeFilteredIds || undefined}
-                        />
+                        <div className={`overflow-x-auto ${resizingPlanCol ? 'select-none' : ''}`}>
+                          <div className="min-w-max">
+                            <div className="flex items-center bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              <div className="relative flex items-center px-2 py-2 flex-shrink-0" style={{ width: planColumnWidths.title, minWidth: 150 }}>
+                                <div className="flex-1">{COLUMN_LABELS.title}</div>
+                                <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handlePlanResizeStart('title', e)} />
+                              </div>
+                              {(Object.keys(COLUMN_LABELS) as ColumnKey[])
+                                .filter(col => col !== 'title' && listPlanColumns.includes(col))
+                                .map(col => (
+                                  <div key={col} className="relative flex items-center" style={{ width: planColumnWidths[col] }}>
+                                    <div className="px-1 py-2 flex-1">{COLUMN_LABELS[col]}</div>
+                                    <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handlePlanResizeStart(col, e)} />
+                                  </div>
+                                ))}
+                            </div>
+                            <CompactObjectiveCard
+                              key={planSelectedObjective.id}
+                              objective={planSelectedObjective}
+                              depth={0}
+                              visibleColumnsOverride={listPlanColumns}
+                              quickAddToListId={isReadOnlyList ? undefined : ((planTopLevel ? selectedList.id : planSelectedChildListId) || undefined)}
+                              filteredObjectiveIds={treeFilteredIds || undefined}
+                            />
+                          </div>
+                        </div>
                       )}
                     </>
                     );
@@ -2083,6 +2120,21 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                     if (!child) {
                       return <div className="p-3 text-xs text-gray-400 italic">List not found.</div>;
                     }
+                    const selectedSubtreeIds: Set<string> | null = planSelectedObjective ? (() => {
+                      const ids = new Set<string>([planSelectedObjective.id]);
+                      let added = true;
+                      while (added) {
+                        added = false;
+                        for (const o of orgObjectives) {
+                          if (o.parentId && ids.has(o.parentId) && !ids.has(o.id)) {
+                            ids.add(o.id);
+                            added = true;
+                          }
+                        }
+                      }
+                      return ids;
+                    })() : null;
+                    const passesSelection = (objId: string) => !selectedSubtreeIds || selectedSubtreeIds.has(objId);
                     return (
                       <>
                         <div className="px-3 py-2 border-b border-gray-100 flex items-center gap-2 bg-gray-50">
@@ -2210,6 +2262,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                               const obj = getObjective(item.objectiveId);
                               if (!obj) return null;
                               if (!passesFilters(obj, thirdColStatusFilter, thirdColOwnerFilter, thirdColAssigneeFilter, thirdColPeriodFilter)) return null;
+                              if (!passesSelection(obj.id)) return null;
                               const isExpanded = expandedListRowIds.has(obj.id);
                               return (
                                 <div key={item.objectiveId}>
@@ -2255,6 +2308,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                               const obj = getObjective(item.objectiveId);
                               if (!obj) return null;
                               if (!passesFilters(obj, thirdColStatusFilter, thirdColOwnerFilter, thirdColAssigneeFilter, thirdColPeriodFilter)) return null;
+                              if (!passesSelection(obj.id)) return null;
                               return (
                                 <div
                                   key={item.objectiveId}
@@ -2343,6 +2397,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                               const obj = getObjective(item.objectiveId);
                               if (!obj) return null;
                               if (!passesFilters(obj, thirdColStatusFilter, thirdColOwnerFilter, thirdColAssigneeFilter, thirdColPeriodFilter)) return null;
+                              if (!passesSelection(obj.id)) return null;
                               return (
                                 <CompactObjectiveCard
                                   key={item.objectiveId}
