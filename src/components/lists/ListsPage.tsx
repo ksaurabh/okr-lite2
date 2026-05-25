@@ -128,7 +128,14 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
   const [thirdColOwnerFilter, setThirdColOwnerFilter] = useState<string[]>([]);
   const [thirdColAssigneeFilter, setThirdColAssigneeFilter] = useState<string[]>([]);
   const [thirdColPeriodFilter, setThirdColPeriodFilter] = useState<string[]>([]);
-  const [collapsedFilterSections, setCollapsedFilterSections] = useState<Set<string>>(new Set(['first:Owner', 'first:Assignee', 'first:Period', 'third:Owner', 'third:Assignee', 'third:Period']));
+  const [treeStatusFilter, setTreeStatusFilter] = useState<WorkflowStatus[]>([]);
+  const [treeOwnerFilter, setTreeOwnerFilter] = useState<string[]>([]);
+  const [treeAssigneeFilter, setTreeAssigneeFilter] = useState<string[]>([]);
+  const [treePeriodFilter, setTreePeriodFilter] = useState<string[]>([]);
+  const [treeShowDoneArchived, setTreeShowDoneArchived] = useState(false);
+  const [showTreeFilter, setShowTreeFilter] = useState(false);
+  const treeFilterRef = useRef<HTMLDivElement>(null);
+  const [collapsedFilterSections, setCollapsedFilterSections] = useState<Set<string>>(new Set(['first:Owner', 'first:Assignee', 'first:Period', 'third:Owner', 'third:Assignee', 'third:Period', 'tree:Owner', 'tree:Assignee', 'tree:Period']));
   const toggleFilterSection = (key: string) => {
     setCollapsedFilterSections(prev => {
       const next = new Set(prev);
@@ -180,6 +187,15 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
     document.addEventListener('mousedown', onClick);
     return () => document.removeEventListener('mousedown', onClick);
   }, [showThirdColFilter]);
+
+  useEffect(() => {
+    if (!showTreeFilter) return;
+    const onClick = (e: MouseEvent) => {
+      if (treeFilterRef.current && !treeFilterRef.current.contains(e.target as Node)) setShowTreeFilter(false);
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [showTreeFilter]);
 
   const toggleCardCollapsed = (id: string) => {
     setCollapsedCardIds(prev => {
@@ -932,6 +948,9 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
               <span className="text-xs text-gray-500">
                 <span className="text-gray-400">Period:</span> <span className="text-gray-700">{periods.find(p => p.id === planFocusEffective.periodId)?.name || '—'}</span>
               </span>
+              <span className="text-xs text-gray-500">
+                <span className="text-gray-400">Level:</span> <span className="text-gray-700 capitalize">{planFocusEffective.level || '—'}</span>
+              </span>
             </div>
           </div>
         )}
@@ -939,7 +958,14 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
           <div className="p-4">
             <div className="flex items-center justify-between mb-4">
               {!planFocusEffective ? (
-                <h2 className="text-xl font-semibold text-gray-900">{selectedList.name}</h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-xl font-semibold text-gray-900">{selectedList.name}</h2>
+                  {isListPlanMode && selectedList.level && (
+                    <span className="px-2 py-0.5 text-xs rounded border border-gray-300 bg-gray-50 text-gray-700 capitalize" title="Plan level">
+                      {selectedList.level}
+                    </span>
+                  )}
+                </div>
               ) : <span />}
               <div className="flex items-center gap-2">
                 {isListPlanMode && !planTopLevel && !isReadOnlyList && (
@@ -1415,9 +1441,18 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                         </>
                       );
                     })()
-                  ) : planSelectedObjective ? (
+                  ) : planSelectedObjective ? (() => {
+                    const treeFc = filterCount(treeStatusFilter, treeOwnerFilter, treeAssigneeFilter, treePeriodFilter) + (treeShowDoneArchived ? 0 : 1);
+                    const doneArchivedSet: Set<WorkflowStatus> = new Set(['done', 'archived']);
+                    const treeFilteredIds = (!treeShowDoneArchived || filterCount(treeStatusFilter, treeOwnerFilter, treeAssigneeFilter, treePeriodFilter) > 0)
+                      ? new Set(orgObjectives.filter(o => {
+                          if (!treeShowDoneArchived && doneArchivedSet.has(o.workflowStatus || 'todo')) return false;
+                          return passesFilters(o, treeStatusFilter, treeOwnerFilter, treeAssigneeFilter, treePeriodFilter);
+                        }).map(o => o.id))
+                      : null;
+                    return (
                     <>
-                      <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-end bg-gray-50">
+                      <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-end gap-2 bg-gray-50">
                         <div className="inline-flex border border-gray-300 rounded overflow-hidden">
                           <button
                             onClick={() => setListPlanTreeView('table')}
@@ -1432,10 +1467,103 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                             Cards
                           </button>
                         </div>
+                        <div ref={treeFilterRef} className="relative">
+                          <button
+                            onClick={() => setShowTreeFilter(!showTreeFilter)}
+                            className="px-2 py-0.5 text-[10px] border border-gray-300 rounded bg-white text-gray-600 hover:bg-gray-50"
+                            title="Filter the objective tree"
+                          >
+                            Filter{treeFc > 0 ? ` (${treeFc})` : ''}
+                          </button>
+                          {showTreeFilter && (
+                            <div className="absolute right-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-md shadow-lg py-1 min-w-[200px] max-h-96 overflow-y-auto">
+                              <label className="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer border-b border-gray-100">
+                                <input
+                                  type="checkbox"
+                                  checked={treeShowDoneArchived}
+                                  onChange={() => setTreeShowDoneArchived(!treeShowDoneArchived)}
+                                  className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                />
+                                Show Done / Archived
+                              </label>
+                              {(['Status', 'Owner', 'Assignee', 'Period'] as const).map((section) => {
+                                const key = `tree:${section}`;
+                                const collapsed = collapsedFilterSections.has(key);
+                                const count = section === 'Status' ? treeStatusFilter.length : section === 'Owner' ? treeOwnerFilter.length : section === 'Assignee' ? treeAssigneeFilter.length : treePeriodFilter.length;
+                                return (
+                                  <div key={section}>
+                                    <button
+                                      onClick={() => toggleFilterSection(key)}
+                                      className="w-full flex items-center justify-between px-3 py-1 text-[10px] uppercase tracking-wider text-gray-500 bg-gray-50 hover:bg-gray-100 border-t border-gray-100"
+                                    >
+                                      <span className="flex items-center gap-1">
+                                        <span>{collapsed ? '▸' : '▾'}</span>
+                                        {section}
+                                        {count > 0 && <span className="ml-1 text-blue-600 normal-case">({count})</span>}
+                                      </span>
+                                    </button>
+                                    {!collapsed && section === 'Status' && WORKFLOW_STATUS_OPTIONS.map((opt) => (
+                                      <label key={opt.value} className="flex items-center gap-2 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          checked={treeStatusFilter.includes(opt.value)}
+                                          onChange={() => setTreeStatusFilter(treeStatusFilter.includes(opt.value) ? treeStatusFilter.filter(s => s !== opt.value) : [...treeStatusFilter, opt.value])}
+                                          className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                        />
+                                        {opt.label}
+                                      </label>
+                                    ))}
+                                    {!collapsed && section === 'Owner' && [...orgUsers].sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email)).map(u => (
+                                      <label key={u.id} className="flex items-center gap-2 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          checked={treeOwnerFilter.includes(u.id)}
+                                          onChange={() => setTreeOwnerFilter(treeOwnerFilter.includes(u.id) ? treeOwnerFilter.filter(x => x !== u.id) : [...treeOwnerFilter, u.id])}
+                                          className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                        />
+                                        {u.name || u.email}
+                                      </label>
+                                    ))}
+                                    {!collapsed && section === 'Assignee' && [...orgUsers].sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email)).map(u => (
+                                      <label key={u.id} className="flex items-center gap-2 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          checked={treeAssigneeFilter.includes(u.id)}
+                                          onChange={() => setTreeAssigneeFilter(treeAssigneeFilter.includes(u.id) ? treeAssigneeFilter.filter(x => x !== u.id) : [...treeAssigneeFilter, u.id])}
+                                          className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                        />
+                                        {u.name || u.email}
+                                      </label>
+                                    ))}
+                                    {!collapsed && section === 'Period' && [...periods].sort((a, b) => a.startDate.localeCompare(b.startDate)).map((p: Period) => (
+                                      <label key={p.id} className="flex items-center gap-2 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          checked={treePeriodFilter.includes(p.id)}
+                                          onChange={() => setTreePeriodFilter(treePeriodFilter.includes(p.id) ? treePeriodFilter.filter(x => x !== p.id) : [...treePeriodFilter, p.id])}
+                                          className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                        />
+                                        {p.name}
+                                      </label>
+                                    ))}
+                                  </div>
+                                );
+                              })}
+                              {treeFc > 0 && (
+                                <button
+                                  onClick={() => { setTreeStatusFilter([]); setTreeOwnerFilter([]); setTreeAssigneeFilter([]); setTreePeriodFilter([]); setTreeShowDoneArchived(false); }}
+                                  className="w-full text-left px-3 py-1 text-xs text-blue-600 hover:bg-gray-50 border-t border-gray-100 sticky bottom-0 bg-white"
+                                >
+                                  Reset to defaults
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
                       {listPlanTreeView === 'cards' ? (() => {
                         const renderCard = (obj: Objective, depth: number): React.ReactNode => {
-                          const children = orgObjectives.filter(o => o.parentId === obj.id);
+                          const children = orgObjectives.filter(o => o.parentId === obj.id && (!treeFilteredIds || treeFilteredIds.has(o.id)));
                           const hasChildren = children.length > 0;
                           const isCollapsed = depth === 0 ? collapsedCardIds.has(obj.id) : !collapsedCardIds.has(obj.id);
                           // depth 0 expanded by default; deeper levels collapsed by default;
@@ -1590,10 +1718,12 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                           depth={0}
                           visibleColumnsOverride={listPlanColumns}
                           quickAddToListId={isReadOnlyList ? undefined : ((planTopLevel ? selectedList.id : planSelectedChildListId) || undefined)}
+                          filteredObjectiveIds={treeFilteredIds || undefined}
                         />
                       )}
                     </>
-                  ) : (
+                    );
+                  })() : (
                     <div className="p-6 text-center text-sm text-gray-400">
                       Pick an item on the left to see its objective tree.
                     </div>

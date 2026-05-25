@@ -1,9 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
-import type { List, ObjectiveLevel, Period, User } from '../../types';
+import type { List, ObjectiveLevel, Period, PeriodType, User } from '../../types';
 
 const LEVELS: ObjectiveLevel[] = ['company', 'team', 'individual'];
 const LEVEL_LABEL: Record<ObjectiveLevel, string> = { company: 'Company', team: 'Team', individual: 'Individual' };
+
+type DurationType = 'evergreen' | 'quarter' | 'month' | 'week';
+const DURATION_TYPES: DurationType[] = ['evergreen', 'quarter', 'month', 'week'];
+const DURATION_TYPE_LABEL: Record<DurationType, string> = { evergreen: 'Evergreen', quarter: 'Quarterly', month: 'Monthly', week: 'Weekly' };
+const periodDurationType = (p: Period): DurationType => {
+  const t = p.type as PeriodType | undefined;
+  return t === 'quarter' || t === 'month' || t === 'week' ? t : 'evergreen';
+};
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -33,7 +41,10 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
   const [newPeriodId, setNewPeriodId] = useState('');
   const [newLevel, setNewLevel] = useState<ObjectiveLevel | ''>('');
   const [newShared, setNewShared] = useState(false);
+  const [filterOwnerId, setFilterOwnerId] = useState('');
   const [filterLevel, setFilterLevel] = useState<ObjectiveLevel | ''>('');
+  const [filterPeriodId, setFilterPeriodId] = useState('');
+  const [filterDurationType, setFilterDurationType] = useState<DurationType | ''>('');
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [promoteListId, setPromoteListId] = useState<string | null>(null);
@@ -56,16 +67,58 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
     fetchSharedPlans();
   }, [lists, fetchSharedPlans]);
 
+  const allPlansForCount = useMemo(() => {
+    const own = lists.filter(l => l.ownerId && l.periodId);
+    const byId = new Map<string, List>();
+    for (const l of own) byId.set(l.id, l);
+    for (const l of sharedPlans) if (!byId.has(l.id)) byId.set(l.id, l);
+    return Array.from(byId.values());
+  }, [lists, sharedPlans]);
+
+  const periodDurationTypeById = (periodId?: string): DurationType | null => {
+    const p = periods.find((pp: Period) => pp.id === periodId);
+    return p ? periodDurationType(p) : null;
+  };
+
+  const countPlans = (criteria: { ownerId?: string; level?: ObjectiveLevel | ''; periodId?: string; durationType?: DurationType | '' }) => {
+    const c = {
+      ownerId: criteria.ownerId ?? filterOwnerId,
+      level: criteria.level ?? filterLevel,
+      periodId: criteria.periodId ?? filterPeriodId,
+      durationType: criteria.durationType ?? filterDurationType,
+    };
+    return allPlansForCount.filter(l =>
+      (c.ownerId ? l.ownerId === c.ownerId : true) &&
+      (c.level ? l.level === c.level : true) &&
+      (c.periodId ? l.periodId === c.periodId : true) &&
+      (c.durationType ? periodDurationTypeById(l.periodId) === c.durationType : true)
+    ).length;
+  };
+
+  const periodMatchesDurationType = (periodId?: string) => {
+    if (!filterDurationType) return true;
+    const p = periods.find((pp: Period) => pp.id === periodId);
+    if (!p) return false;
+    return periodDurationType(p) === filterDurationType;
+  };
+  const matchesFilters = (l: List) =>
+    (filterOwnerId ? l.ownerId === filterOwnerId : true) &&
+    (filterLevel ? l.level === filterLevel : true) &&
+    (filterPeriodId ? l.periodId === filterPeriodId : true) &&
+    periodMatchesDurationType(l.periodId);
+
   const planLists = useMemo(
     () => lists
       .filter(l => l.ownerId && l.periodId)
-      .filter(l => filterLevel ? l.level === filterLevel : true)
+      .filter(matchesFilters)
       .sort((a, b) => a.name.localeCompare(b.name)),
-    [lists, filterLevel]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [lists, filterOwnerId, filterLevel, filterPeriodId, filterDurationType, periods]
   );
   const filteredSharedPlans = useMemo(
-    () => sharedPlans.filter(l => filterLevel ? l.level === filterLevel : true),
-    [sharedPlans, filterLevel]
+    () => sharedPlans.filter(matchesFilters),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sharedPlans, filterOwnerId, filterLevel, filterPeriodId, filterDurationType, periods]
   );
   const nonPlanLists = useMemo(
     () => lists.filter(l => !(l.ownerId && l.periodId)).sort((a, b) => a.name.localeCompare(b.name)),
@@ -154,19 +207,68 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
           </button>
         </div>
 
-        <div className="px-4 py-2 border-b border-gray-200 flex items-center gap-2 bg-gray-50">
-          <label className="text-xs text-gray-500">Level</label>
-          <select
-            value={filterLevel}
-            onChange={(e) => setFilterLevel(e.target.value as ObjectiveLevel | '')}
-            className="border border-gray-300 rounded px-2 py-1 text-xs bg-white"
-          >
-            <option value="">Any level</option>
-            {LEVELS.map(lv => <option key={lv} value={lv}>{LEVEL_LABEL[lv]}</option>)}
-          </select>
-          {filterLevel && (
+        <div className="px-4 py-2 border-b border-gray-200 flex items-center gap-3 bg-gray-50 flex-wrap">
+          <div className="flex items-center gap-1">
+            <label className="text-xs text-gray-500">Duration Type</label>
+            <select
+              value={filterDurationType}
+              onChange={(e) => {
+                const next = e.target.value as DurationType | '';
+                setFilterDurationType(next);
+                if (next && filterPeriodId) {
+                  const p = periods.find((pp: Period) => pp.id === filterPeriodId);
+                  if (!p || periodDurationType(p) !== next) setFilterPeriodId('');
+                }
+              }}
+              className="border border-gray-300 rounded px-2 py-1 text-xs bg-white"
+            >
+              <option value="">Any type ({countPlans({ durationType: '' })})</option>
+              {DURATION_TYPES.map(dt => <option key={dt} value={dt}>{DURATION_TYPE_LABEL[dt]} ({countPlans({ durationType: dt })})</option>)}
+            </select>
+          </div>
+          <div className="flex items-center gap-1">
+            <label className="text-xs text-gray-500">Duration</label>
+            <select
+              value={filterPeriodId}
+              onChange={(e) => setFilterPeriodId(e.target.value)}
+              className="border border-gray-300 rounded px-2 py-1 text-xs bg-white"
+            >
+              <option value="">Any duration ({countPlans({ periodId: '' })})</option>
+              {[...periods]
+                .filter((p: Period) => !filterDurationType || periodDurationType(p) === filterDurationType)
+                .sort((a, b) => a.startDate.localeCompare(b.startDate))
+                .map((p: Period) => (
+                  <option key={p.id} value={p.id}>{p.name} ({countPlans({ periodId: p.id })})</option>
+                ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-1">
+            <label className="text-xs text-gray-500">Level</label>
+            <select
+              value={filterLevel}
+              onChange={(e) => setFilterLevel(e.target.value as ObjectiveLevel | '')}
+              className="border border-gray-300 rounded px-2 py-1 text-xs bg-white"
+            >
+              <option value="">Any level ({countPlans({ level: '' })})</option>
+              {LEVELS.map(lv => <option key={lv} value={lv}>{LEVEL_LABEL[lv]} ({countPlans({ level: lv })})</option>)}
+            </select>
+          </div>
+          <div className="flex items-center gap-1">
+            <label className="text-xs text-gray-500">Owner</label>
+            <select
+              value={filterOwnerId}
+              onChange={(e) => setFilterOwnerId(e.target.value)}
+              className="border border-gray-300 rounded px-2 py-1 text-xs bg-white"
+            >
+              <option value="">Any owner ({countPlans({ ownerId: '' })})</option>
+              {[...orgUsers].sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email)).map(u => (
+                <option key={u.id} value={u.id}>{u.name || u.email} ({countPlans({ ownerId: u.id })})</option>
+              ))}
+            </select>
+          </div>
+          {(filterOwnerId || filterLevel || filterPeriodId || filterDurationType) && (
             <button
-              onClick={() => setFilterLevel('')}
+              onClick={() => { setFilterOwnerId(''); setFilterLevel(''); setFilterPeriodId(''); setFilterDurationType(''); }}
               className="text-xs text-gray-500 hover:text-gray-700 underline"
             >
               Clear
