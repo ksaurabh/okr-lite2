@@ -265,6 +265,15 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
   const [topLevelFilterOn, setTopLevelFilterOn] = useState(false);
   const [planSelectedChildListId, setPlanSelectedChildListId] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!selectedListId) { setPlanSelectedChildListId(null); return; }
+    const currentChildIsValid = planSelectedChildListId && listsEarly.some(l => l.id === planSelectedChildListId && l.parentId === selectedListId);
+    if (currentChildIsValid) return;
+    const firstChildPlan = listsEarly.find(l => l.parentId === selectedListId && l.ownerId && l.periodId);
+    setPlanSelectedChildListId(firstChildPlan ? firstChildPlan.id : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedListId, listsEarly]);
+
   const [listPlanLeftWidth, setListPlanLeftWidth] = useState<number>(() => {
     try {
       const v = localStorage.getItem('okr-list-plan-left-width');
@@ -696,6 +705,12 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
   const sortedItems = selectedList?.items
     ? [...selectedList.items].sort((a, b) => a.order - b.order)
     : [];
+
+  const buildAssigneeCounts = (objs: Objective[]) => {
+    const m = new Map<string, number>();
+    for (const o of objs) if (o.assigneeId) m.set(o.assigneeId, (m.get(o.assigneeId) || 0) + 1);
+    return m;
+  };
 
   const planFocus = planFocusListId ? (lists.find(l => l.id === planFocusListId) || sharedPlans.find(l => l.id === planFocusListId)) : null;
 
@@ -1225,7 +1240,10 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                       >
                         Filter{filterCount(firstColStatusFilter, firstColOwnerFilter, firstColAssigneeFilter, firstColPeriodFilter) > 0 ? ` (${filterCount(firstColStatusFilter, firstColOwnerFilter, firstColAssigneeFilter, firstColPeriodFilter)})` : ''}
                       </button>
-                      {showFirstColFilter && (
+                      {showFirstColFilter && (() => {
+                        const panel1Objs = sortedItems.map(it => getObjective(it.objectiveId)).filter((o): o is Objective => !!o);
+                        const panel1AssigneeCounts = buildAssigneeCounts(panel1Objs);
+                        return (
                         <div className="absolute right-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-md shadow-lg py-1 min-w-[200px] max-h-96 overflow-y-auto">
                           {(['Status', 'Owner', 'Assignee', 'Period'] as const).map((section) => {
                             const key = `first:${section}`;
@@ -1265,17 +1283,22 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                     {u.name || u.email}
                                   </label>
                                 ))}
-                                {!collapsed && section === 'Assignee' && [...orgUsers].sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email)).map(u => (
-                                  <label key={u.id} className="flex items-center gap-2 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
-                                    <input
-                                      type="checkbox"
-                                      checked={firstColAssigneeFilter.includes(u.id)}
-                                      onChange={() => setFirstColAssigneeFilter(firstColAssigneeFilter.includes(u.id) ? firstColAssigneeFilter.filter(x => x !== u.id) : [...firstColAssigneeFilter, u.id])}
-                                      className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                    />
-                                    {u.name || u.email}
-                                  </label>
-                                ))}
+                                {!collapsed && section === 'Assignee' && [...orgUsers]
+                                  .map(u => ({ u, count: panel1AssigneeCounts.get(u.id) || 0 }))
+                                  .filter(({ u, count }) => count > 0 || firstColAssigneeFilter.includes(u.id))
+                                  .sort((a, b) => (a.u.name || a.u.email).localeCompare(b.u.name || b.u.email))
+                                  .map(({ u, count }) => (
+                                    <label key={u.id} className="flex items-center gap-2 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        checked={firstColAssigneeFilter.includes(u.id)}
+                                        onChange={() => setFirstColAssigneeFilter(firstColAssigneeFilter.includes(u.id) ? firstColAssigneeFilter.filter(x => x !== u.id) : [...firstColAssigneeFilter, u.id])}
+                                        className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                      />
+                                      <span className="flex-1">{u.name || u.email}</span>
+                                      <span className="text-gray-400">({count})</span>
+                                    </label>
+                                  ))}
                                 {!collapsed && section === 'Period' && [...periods].sort((a, b) => a.startDate.localeCompare(b.startDate)).map((p: Period) => (
                                   <label key={p.id} className="flex items-center gap-2 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
                                     <input
@@ -1299,7 +1322,8 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                             </button>
                           )}
                         </div>
-                      )}
+                        );
+                      })()}
                     </div>
                     <div className="inline-flex border border-gray-300 rounded overflow-hidden">
                       <button
@@ -1448,7 +1472,9 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                 >
                                   Edit
                                 </button>
-                                {showFirstColFilter && (
+                                {showFirstColFilter && (() => {
+                                  const panel2AssigneeCounts = buildAssigneeCounts(allRoots);
+                                  return (
                                   <div className="absolute right-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-md shadow-lg py-1 min-w-[200px] max-h-96 overflow-y-auto">
                                     {(['Status', 'Owner', 'Assignee', 'Period'] as const).map((section) => {
                                       const key = `first:${section}`;
@@ -1488,17 +1514,22 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                               {u.name || u.email}
                                             </label>
                                           ))}
-                                          {!collapsed && section === 'Assignee' && [...orgUsers].sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email)).map(u => (
-                                            <label key={u.id} className="flex items-center gap-2 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
-                                              <input
-                                                type="checkbox"
-                                                checked={firstColAssigneeFilter.includes(u.id)}
-                                                onChange={() => setFirstColAssigneeFilter(firstColAssigneeFilter.includes(u.id) ? firstColAssigneeFilter.filter(x => x !== u.id) : [...firstColAssigneeFilter, u.id])}
-                                                className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                              />
-                                              {u.name || u.email}
-                                            </label>
-                                          ))}
+                                          {!collapsed && section === 'Assignee' && [...orgUsers]
+                                            .map(u => ({ u, count: panel2AssigneeCounts.get(u.id) || 0 }))
+                                            .filter(({ u, count }) => count > 0 || firstColAssigneeFilter.includes(u.id))
+                                            .sort((a, b) => (a.u.name || a.u.email).localeCompare(b.u.name || b.u.email))
+                                            .map(({ u, count }) => (
+                                              <label key={u.id} className="flex items-center gap-2 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
+                                                <input
+                                                  type="checkbox"
+                                                  checked={firstColAssigneeFilter.includes(u.id)}
+                                                  onChange={() => setFirstColAssigneeFilter(firstColAssigneeFilter.includes(u.id) ? firstColAssigneeFilter.filter(x => x !== u.id) : [...firstColAssigneeFilter, u.id])}
+                                                  className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                />
+                                                <span className="flex-1">{u.name || u.email}</span>
+                                                <span className="text-gray-400">({count})</span>
+                                              </label>
+                                            ))}
                                           {!collapsed && section === 'Period' && [...periods].sort((a, b) => a.startDate.localeCompare(b.startDate)).map((p: Period) => (
                                             <label key={p.id} className="flex items-center gap-2 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
                                               <input
@@ -1522,7 +1553,8 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                       </button>
                                     )}
                                   </div>
-                                )}
+                                  );
+                                })()}
                               </div>
                             )}
                           </div>
@@ -1557,6 +1589,30 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                           return passesFilters(o, treeStatusFilter, treeOwnerFilter, treeAssigneeFilter, treePeriodFilter);
                         }).map(o => o.id))
                       : null;
+                    const treePool: Objective[] = (() => {
+                      const pool: Objective[] = [];
+                      const seen = new Set<string>();
+                      const walk = (id: string) => {
+                        if (seen.has(id)) return;
+                        seen.add(id);
+                        const o = orgObjectives.find(x => x.id === id);
+                        if (!o) return;
+                        if (treeShowDoneArchived || !doneArchivedSet.has(o.workflowStatus || 'todo')) {
+                          pool.push(o);
+                        }
+                        orgObjectives.filter(c => c.parentId === id).forEach(c => walk(c.id));
+                      };
+                      walk(planSelectedObjective.id);
+                      return pool;
+                    })();
+                    const assigneeCounts = new Map<string, number>();
+                    const ownerCounts = new Map<string, number>();
+                    const periodCounts = new Map<string, number>();
+                    for (const o of treePool) {
+                      if (o.assigneeId) assigneeCounts.set(o.assigneeId, (assigneeCounts.get(o.assigneeId) || 0) + 1);
+                      if (o.ownerId) ownerCounts.set(o.ownerId, (ownerCounts.get(o.ownerId) || 0) + 1);
+                      if (o.periodId) periodCounts.set(o.periodId, (periodCounts.get(o.periodId) || 0) + 1);
+                    }
                     return (
                     <>
                       <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-end gap-2 bg-gray-50">
@@ -1620,39 +1676,54 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                         {opt.label}
                                       </label>
                                     ))}
-                                    {!collapsed && section === 'Owner' && [...orgUsers].sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email)).map(u => (
-                                      <label key={u.id} className="flex items-center gap-2 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
-                                        <input
-                                          type="checkbox"
-                                          checked={treeOwnerFilter.includes(u.id)}
-                                          onChange={() => setTreeOwnerFilter(treeOwnerFilter.includes(u.id) ? treeOwnerFilter.filter(x => x !== u.id) : [...treeOwnerFilter, u.id])}
-                                          className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                        />
-                                        {u.name || u.email}
-                                      </label>
-                                    ))}
-                                    {!collapsed && section === 'Assignee' && [...orgUsers].sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email)).map(u => (
-                                      <label key={u.id} className="flex items-center gap-2 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
-                                        <input
-                                          type="checkbox"
-                                          checked={treeAssigneeFilter.includes(u.id)}
-                                          onChange={() => setTreeAssigneeFilter(treeAssigneeFilter.includes(u.id) ? treeAssigneeFilter.filter(x => x !== u.id) : [...treeAssigneeFilter, u.id])}
-                                          className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                        />
-                                        {u.name || u.email}
-                                      </label>
-                                    ))}
-                                    {!collapsed && section === 'Period' && [...periods].sort((a, b) => a.startDate.localeCompare(b.startDate)).map((p: Period) => (
-                                      <label key={p.id} className="flex items-center gap-2 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
-                                        <input
-                                          type="checkbox"
-                                          checked={treePeriodFilter.includes(p.id)}
-                                          onChange={() => setTreePeriodFilter(treePeriodFilter.includes(p.id) ? treePeriodFilter.filter(x => x !== p.id) : [...treePeriodFilter, p.id])}
-                                          className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                        />
-                                        {p.name}
-                                      </label>
-                                    ))}
+                                    {!collapsed && section === 'Owner' && [...orgUsers]
+                                      .map(u => ({ u, count: ownerCounts.get(u.id) || 0 }))
+                                      .filter(({ u, count }) => count > 0 || treeOwnerFilter.includes(u.id))
+                                      .sort((a, b) => (a.u.name || a.u.email).localeCompare(b.u.name || b.u.email))
+                                      .map(({ u, count }) => (
+                                        <label key={u.id} className="flex items-center gap-2 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
+                                          <input
+                                            type="checkbox"
+                                            checked={treeOwnerFilter.includes(u.id)}
+                                            onChange={() => setTreeOwnerFilter(treeOwnerFilter.includes(u.id) ? treeOwnerFilter.filter(x => x !== u.id) : [...treeOwnerFilter, u.id])}
+                                            className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                          />
+                                          <span className="flex-1">{u.name || u.email}</span>
+                                          <span className="text-gray-400">({count})</span>
+                                        </label>
+                                      ))}
+                                    {!collapsed && section === 'Assignee' && [...orgUsers]
+                                      .map(u => ({ u, count: assigneeCounts.get(u.id) || 0 }))
+                                      .filter(({ u, count }) => count > 0 || treeAssigneeFilter.includes(u.id))
+                                      .sort((a, b) => (a.u.name || a.u.email).localeCompare(b.u.name || b.u.email))
+                                      .map(({ u, count }) => (
+                                        <label key={u.id} className="flex items-center gap-2 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
+                                          <input
+                                            type="checkbox"
+                                            checked={treeAssigneeFilter.includes(u.id)}
+                                            onChange={() => setTreeAssigneeFilter(treeAssigneeFilter.includes(u.id) ? treeAssigneeFilter.filter(x => x !== u.id) : [...treeAssigneeFilter, u.id])}
+                                            className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                          />
+                                          <span className="flex-1">{u.name || u.email}</span>
+                                          <span className="text-gray-400">({count})</span>
+                                        </label>
+                                      ))}
+                                    {!collapsed && section === 'Period' && [...periods]
+                                      .map(p => ({ p, count: periodCounts.get(p.id) || 0 }))
+                                      .filter(({ p, count }) => count > 0 || treePeriodFilter.includes(p.id))
+                                      .sort((a, b) => a.p.startDate.localeCompare(b.p.startDate))
+                                      .map(({ p, count }) => (
+                                        <label key={p.id} className="flex items-center gap-2 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
+                                          <input
+                                            type="checkbox"
+                                            checked={treePeriodFilter.includes(p.id)}
+                                            onChange={() => setTreePeriodFilter(treePeriodFilter.includes(p.id) ? treePeriodFilter.filter(x => x !== p.id) : [...treePeriodFilter, p.id])}
+                                            className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                          />
+                                          <span className="flex-1">{p.name}</span>
+                                          <span className="text-gray-400">({count})</span>
+                                        </label>
+                                      ))}
                                   </div>
                                 );
                               })}
@@ -1864,7 +1935,10 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                             >
                               Filter{filterCount(thirdColStatusFilter, thirdColOwnerFilter, thirdColAssigneeFilter, thirdColPeriodFilter) > 0 ? ` (${filterCount(thirdColStatusFilter, thirdColOwnerFilter, thirdColAssigneeFilter, thirdColPeriodFilter)})` : ''}
                             </button>
-                            {showThirdColFilter && (
+                            {showThirdColFilter && (() => {
+                              const panel3Objs = child.items.map(it => getObjective(it.objectiveId)).filter((o): o is Objective => !!o);
+                              const panel3AssigneeCounts = buildAssigneeCounts(panel3Objs);
+                              return (
                               <div className="absolute right-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-md shadow-lg py-1 min-w-[200px] max-h-96 overflow-y-auto">
                                 {(['Status', 'Owner', 'Assignee', 'Period'] as const).map((section) => {
                                   const key = `third:${section}`;
@@ -1904,17 +1978,22 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                           {u.name || u.email}
                                         </label>
                                       ))}
-                                      {!collapsed && section === 'Assignee' && [...orgUsers].sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email)).map(u => (
-                                        <label key={u.id} className="flex items-center gap-2 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
-                                          <input
-                                            type="checkbox"
-                                            checked={thirdColAssigneeFilter.includes(u.id)}
-                                            onChange={() => setThirdColAssigneeFilter(thirdColAssigneeFilter.includes(u.id) ? thirdColAssigneeFilter.filter(x => x !== u.id) : [...thirdColAssigneeFilter, u.id])}
-                                            className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                          />
-                                          {u.name || u.email}
-                                        </label>
-                                      ))}
+                                      {!collapsed && section === 'Assignee' && [...orgUsers]
+                                        .map(u => ({ u, count: panel3AssigneeCounts.get(u.id) || 0 }))
+                                        .filter(({ u, count }) => count > 0 || thirdColAssigneeFilter.includes(u.id))
+                                        .sort((a, b) => (a.u.name || a.u.email).localeCompare(b.u.name || b.u.email))
+                                        .map(({ u, count }) => (
+                                          <label key={u.id} className="flex items-center gap-2 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
+                                            <input
+                                              type="checkbox"
+                                              checked={thirdColAssigneeFilter.includes(u.id)}
+                                              onChange={() => setThirdColAssigneeFilter(thirdColAssigneeFilter.includes(u.id) ? thirdColAssigneeFilter.filter(x => x !== u.id) : [...thirdColAssigneeFilter, u.id])}
+                                              className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                            />
+                                            <span className="flex-1">{u.name || u.email}</span>
+                                            <span className="text-gray-400">({count})</span>
+                                          </label>
+                                        ))}
                                       {!collapsed && section === 'Period' && [...periods].sort((a, b) => a.startDate.localeCompare(b.startDate)).map((p: Period) => (
                                         <label key={p.id} className="flex items-center gap-2 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
                                           <input
@@ -1938,7 +2017,8 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                   </button>
                                 )}
                               </div>
-                            )}
+                              );
+                            })()}
                           </div>
                           <div className="inline-flex border border-gray-300 rounded overflow-hidden">
                             <button
