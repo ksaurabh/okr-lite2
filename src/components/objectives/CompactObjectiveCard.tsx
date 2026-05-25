@@ -1116,8 +1116,8 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           </span>
           )}
 
-          {/* Add to list button */}
-          {!minimalActions && !kebabActions && (
+          {/* Add to list/plan button - only when bound to a specific list (i.e. plan context) */}
+          {!minimalActions && !kebabActions && quickAddToListId && (
           <div className="relative group/list">
             <button
               ref={listButtonRef}
@@ -1303,17 +1303,18 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
                   >
                     Filter to descendants
                   </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowKebabMenu(false);
-                      if (quickAddToListId) addItemToList(quickAddToListId, objective.id);
-                      else setShowListDropdown(true);
-                    }}
-                    className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
-                  >
-                    {quickAddToListId ? (quickAddTooltip || 'Add to Plan') : 'Add to list…'}
-                  </button>
+                  {quickAddToListId && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowKebabMenu(false);
+                        addItemToList(quickAddToListId, objective.id);
+                      }}
+                      className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                    >
+                      {quickAddTooltip || 'Add to Plan'}
+                    </button>
+                  )}
                   {canModify && (
                     <button
                       onClick={(e) => { e.stopPropagation(); setShowKebabMenu(false); cloneObjective(objective.id, { orgId: organization?.id || '', userEmail, shared: objective.shared }); }}

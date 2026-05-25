@@ -769,10 +769,10 @@ export function ObjectiveFilterPanel({
                 </div>
               </div>
 
-              {/* List Filter */}
-              {lists.length > 0 && (
+              {/* Plan Filter */}
+              {lists.filter(l => l.ownerId && l.periodId).length > 0 && (
                 <div className="flex items-center gap-3">
-                  <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0">List</label>
+                  <label className="text-xs font-medium text-gray-500 w-20 flex-shrink-0">Plan</label>
                   <div className="flex flex-wrap items-center gap-1.5">
                     <div className="relative" ref={listDropdownRef}>
                       <button
@@ -808,7 +808,7 @@ export function ObjectiveFilterPanel({
                       </button>
                       {showListDropdown && (
                         <div className="absolute z-50 mt-1 bg-white border border-gray-300 rounded-md shadow-lg min-w-[180px]">
-                          {lists.map((list: List) => {
+                          {lists.filter(l => l.ownerId && l.periodId).map((list: List) => {
                             const isSelected = filterListIds.includes(list.id);
                             return (
                               <button

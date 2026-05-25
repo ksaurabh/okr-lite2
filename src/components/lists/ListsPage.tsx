@@ -160,6 +160,8 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
   const [treeAssigneeFilter, setTreeAssigneeFilter] = useState<string[]>([]);
   const [treePeriodFilter, setTreePeriodFilter] = useState<string[]>([]);
   const [treeShowDoneArchived, setTreeShowDoneArchived] = useState(false);
+  const [editingPlanName, setEditingPlanName] = useState(false);
+  const [planNameDraft, setPlanNameDraft] = useState('');
   const togglePlanSelectedObjective = (obj: Objective) => {
     setPlanSelectedObjective(prev => prev?.id === obj.id ? null : obj);
   };
@@ -383,6 +385,9 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
   const createList = useOKRStore((state: OKRStore) => state.createList);
   const deleteList = useOKRStore((state: OKRStore) => state.deleteList);
   const renameList = useOKRStore((state: OKRStore) => state.renameList);
+  const setListOwner = useOKRStore((state: OKRStore) => state.setListOwner);
+  const setListPeriod = useOKRStore((state: OKRStore) => state.setListPeriod);
+  const setListLevel = useOKRStore((state: OKRStore) => state.setListLevel);
   const updateListColor = useOKRStore((state: OKRStore) => state.updateListColor);
   const removeItemFromList = useOKRStore((state: OKRStore) => state.removeItemFromList);
   const updateListParent = useOKRStore((state: OKRStore) => state.updateListParent);
@@ -998,7 +1003,37 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
               ← Back to Plans
             </button>
             <div className="flex items-center gap-3 flex-wrap">
-              <h2 className="text-xl font-semibold text-gray-900">{planFocusEffective.name}</h2>
+              {editingPlanName && !isReadOnlyList ? (
+                <input
+                  type="text"
+                  autoFocus
+                  value={planNameDraft}
+                  onChange={(e) => setPlanNameDraft(e.target.value)}
+                  onBlur={async () => {
+                    const n = planNameDraft.trim();
+                    if (n && n !== planFocusEffective.name) await renameList(planFocusEffective.id, n);
+                    setEditingPlanName(false);
+                  }}
+                  onKeyDown={async (e) => {
+                    if (e.key === 'Enter') {
+                      const n = planNameDraft.trim();
+                      if (n && n !== planFocusEffective.name) await renameList(planFocusEffective.id, n);
+                      setEditingPlanName(false);
+                    } else if (e.key === 'Escape') {
+                      setEditingPlanName(false);
+                    }
+                  }}
+                  className="text-xl font-semibold text-gray-900 border border-gray-300 rounded px-2 py-0.5"
+                />
+              ) : (
+                <h2
+                  onClick={() => { if (!isReadOnlyList) { setPlanNameDraft(planFocusEffective.name); setEditingPlanName(true); } }}
+                  className={`text-xl font-semibold text-gray-900 ${!isReadOnlyList ? 'cursor-text hover:bg-blue-100 px-1 -mx-1 rounded' : ''}`}
+                  title={!isReadOnlyList ? 'Click to rename' : undefined}
+                >
+                  {planFocusEffective.name}
+                </h2>
+              )}
               {!isReadOnlyList && (
                 <button
                   onClick={async () => {
@@ -1034,14 +1069,56 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                   </span>
                 );
               })()}
-              <span className="text-xs text-gray-500">
-                <span className="text-gray-400">Owner:</span> <span className="text-gray-700">{orgUsers.find(u => u.id === planFocusEffective.ownerId)?.name || orgUsers.find(u => u.id === planFocusEffective.ownerId)?.email || planFocusEffective.ownerId || '—'}</span>
+              <span className="text-xs text-gray-500 flex items-center gap-1">
+                <span className="text-gray-400">Owner:</span>
+                {isReadOnlyList ? (
+                  <span className="text-gray-700">{orgUsers.find(u => u.id === planFocusEffective.ownerId)?.name || orgUsers.find(u => u.id === planFocusEffective.ownerId)?.email || planFocusEffective.ownerId || '—'}</span>
+                ) : (
+                  <select
+                    value={planFocusEffective.ownerId || ''}
+                    onChange={(e) => setListOwner(planFocusEffective.id, e.target.value)}
+                    className="border border-gray-300 rounded px-1 py-0.5 text-xs bg-white"
+                  >
+                    <option value="">— None —</option>
+                    {[...orgUsers].sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email)).map(u => (
+                      <option key={u.id} value={u.id}>{u.name || u.email}</option>
+                    ))}
+                  </select>
+                )}
               </span>
-              <span className="text-xs text-gray-500">
-                <span className="text-gray-400">Period:</span> <span className="text-gray-700">{periods.find(p => p.id === planFocusEffective.periodId)?.name || '—'}</span>
+              <span className="text-xs text-gray-500 flex items-center gap-1">
+                <span className="text-gray-400">Period:</span>
+                {isReadOnlyList ? (
+                  <span className="text-gray-700">{periods.find(p => p.id === planFocusEffective.periodId)?.name || '—'}</span>
+                ) : (
+                  <select
+                    value={planFocusEffective.periodId || ''}
+                    onChange={(e) => setListPeriod(planFocusEffective.id, e.target.value)}
+                    className="border border-gray-300 rounded px-1 py-0.5 text-xs bg-white"
+                  >
+                    <option value="">— None —</option>
+                    {[...periods].sort((a, b) => a.startDate.localeCompare(b.startDate)).map((p: Period) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                )}
               </span>
-              <span className="text-xs text-gray-500">
-                <span className="text-gray-400">Level:</span> <span className="text-gray-700 capitalize">{planFocusEffective.level || '—'}</span>
+              <span className="text-xs text-gray-500 flex items-center gap-1">
+                <span className="text-gray-400">Level:</span>
+                {isReadOnlyList ? (
+                  <span className="text-gray-700 capitalize">{planFocusEffective.level || '—'}</span>
+                ) : (
+                  <select
+                    value={planFocusEffective.level || ''}
+                    onChange={(e) => setListLevel(planFocusEffective.id, e.target.value as ObjectiveLevel | '')}
+                    className="border border-gray-300 rounded px-1 py-0.5 text-xs bg-white capitalize"
+                  >
+                    <option value="">— None —</option>
+                    <option value="company">Company</option>
+                    <option value="team">Team</option>
+                    <option value="individual">Individual</option>
+                  </select>
+                )}
               </span>
               {(() => {
                 const children = lists.filter(l => l.parentId === planFocusEffective.id && l.ownerId && l.periodId);
