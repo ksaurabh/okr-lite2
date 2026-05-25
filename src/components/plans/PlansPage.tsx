@@ -180,13 +180,39 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
     (filterPeriodId ? l.periodId === filterPeriodId : true) &&
     periodMatchesDurationType(l.periodId);
 
+  const ownerSortKey = (id?: string) => {
+    if (!id) return '~';
+    const u = orgUsers.find(uu => uu.id === id);
+    return (u?.name || u?.email || id).toLowerCase();
+  };
+  const levelRank = (lv?: ObjectiveLevel) => {
+    if (lv === 'company') return 0;
+    if (lv === 'team') return 1;
+    if (lv === 'individual') return 2;
+    return 3;
+  };
+  const periodSortKey = (id?: string): [string, string] => {
+    if (!id) return ['~', '~'];
+    const p = periods.find(pp => pp.id === id);
+    return [p?.startDate || '~', p?.endDate || '~'];
+  };
   const planLists = useMemo(
     () => lists
       .filter(l => l.ownerId && l.periodId)
       .filter(matchesFilters)
-      .sort((a, b) => a.name.localeCompare(b.name)),
+      .sort((a, b) => {
+        const ao = ownerSortKey(a.ownerId), bo = ownerSortKey(b.ownerId);
+        if (ao !== bo) return ao.localeCompare(bo);
+        const al = levelRank(a.level), bl = levelRank(b.level);
+        if (al !== bl) return al - bl;
+        const [as, ae] = periodSortKey(a.periodId);
+        const [bs, be] = periodSortKey(b.periodId);
+        if (as !== bs) return as.localeCompare(bs);
+        if (ae !== be) return ae.localeCompare(be);
+        return a.name.localeCompare(b.name);
+      }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [lists, filterOwnerId, filterLevel, filterPeriodId, filterDurationType, periods]
+    [lists, filterOwnerId, filterLevel, filterPeriodId, filterDurationType, periods, orgUsers]
   );
   const filteredSharedPlans = useMemo(
     () => sharedPlans.filter(matchesFilters),
@@ -442,8 +468,8 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Owner</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Period</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Level</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Period</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Items</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sharing</th>
                 <th className="px-4 py-3"></th>
@@ -475,6 +501,16 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">
                     <select
+                      value={list.level || ''}
+                      onChange={(e) => setListLevel(list.id, e.target.value as ObjectiveLevel | '')}
+                      className="border border-gray-300 rounded px-1.5 py-0.5 text-xs bg-white"
+                    >
+                      <option value="">—</option>
+                      {LEVELS.map(lv => <option key={lv} value={lv}>{LEVEL_LABEL[lv]}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-600">
+                    <select
                       value={list.periodId || ''}
                       onChange={(e) => setListPeriod(list.id, e.target.value)}
                       className="border border-gray-300 rounded px-1.5 py-0.5 text-xs bg-white max-w-[160px]"
@@ -483,16 +519,6 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
                       {[...periods].sort((a, b) => a.startDate.localeCompare(b.startDate)).map((p: Period) => (
                         <option key={p.id} value={p.id}>{p.name}</option>
                       ))}
-                    </select>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-600">
-                    <select
-                      value={list.level || ''}
-                      onChange={(e) => setListLevel(list.id, e.target.value as ObjectiveLevel | '')}
-                      className="border border-gray-300 rounded px-1.5 py-0.5 text-xs bg-white"
-                    >
-                      <option value="">—</option>
-                      {LEVELS.map(lv => <option key={lv} value={lv}>{LEVEL_LABEL[lv]}</option>)}
                     </select>
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">{list.items.length}</td>
@@ -555,13 +581,13 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
         {viewMode === 'grouped' && (() => {
           const pool = lists.filter(l => l.ownerId && l.periodId);
           const ownerPool = pool;
-          const periodPool = pool.filter(l => !groupedOwnerId || l.ownerId === groupedOwnerId);
-          const levelPool = periodPool.filter(l => !groupedPeriodId || l.periodId === groupedPeriodId);
-          const finalPool = levelPool.filter(l => {
+          const levelPool = pool.filter(l => !groupedOwnerId || l.ownerId === groupedOwnerId);
+          const periodPool = levelPool.filter(l => {
             if (!groupedLevel) return true;
             if (groupedLevel === '__none__') return !l.level;
             return l.level === groupedLevel;
           });
+          const finalPool = periodPool.filter(l => !groupedPeriodId || l.periodId === groupedPeriodId);
 
           const ownerCounts = new Map<string, number>();
           ownerPool.forEach(l => { if (l.ownerId) ownerCounts.set(l.ownerId, (ownerCounts.get(l.ownerId) || 0) + 1); });
@@ -569,19 +595,19 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
             .map(id => ({ id, name: orgUsers.find(u => u.id === id)?.name || orgUsers.find(u => u.id === id)?.email || id, count: ownerCounts.get(id) || 0 }))
             .sort((a, b) => a.name.localeCompare(b.name));
 
-          const periodCounts = new Map<string, number>();
-          periodPool.forEach(l => { if (l.periodId) periodCounts.set(l.periodId, (periodCounts.get(l.periodId) || 0) + 1); });
-          const periodList = Array.from(periodCounts.keys())
-            .map(id => ({ id, p: periods.find(pp => pp.id === id), count: periodCounts.get(id) || 0 }))
-            .filter(x => !!x.p)
-            .sort((a, b) => (a.p!.startDate || '').localeCompare(b.p!.startDate || ''));
-
           const levelCounts = new Map<string, number>();
           levelPool.forEach(l => { const k = l.level || '__none__'; levelCounts.set(k, (levelCounts.get(k) || 0) + 1); });
           const levelKeys: (ObjectiveLevel | '__none__')[] = ['company', 'team', 'individual', '__none__'];
           const levelList = levelKeys
             .filter(k => (levelCounts.get(k) || 0) > 0)
             .map(k => ({ key: k, label: k === '__none__' ? '— No level —' : LEVEL_LABEL[k as ObjectiveLevel], count: levelCounts.get(k) || 0 }));
+
+          const periodCounts = new Map<string, number>();
+          periodPool.forEach(l => { if (l.periodId) periodCounts.set(l.periodId, (periodCounts.get(l.periodId) || 0) + 1); });
+          const periodList = Array.from(periodCounts.keys())
+            .map(id => ({ id, p: periods.find(pp => pp.id === id), count: periodCounts.get(id) || 0 }))
+            .filter(x => !!x.p)
+            .sort((a, b) => (a.p!.startDate || '').localeCompare(b.p!.startDate || ''));
 
           const colClass = (sel: boolean) => `w-full text-left px-3 py-2 text-sm border-b border-gray-100 flex items-center justify-between ${sel ? 'bg-blue-50 text-blue-800 font-medium' : 'text-gray-700 hover:bg-gray-50'}`;
 
@@ -618,23 +644,6 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
               {splitter(1)}
               <div className="overflow-y-auto" style={{ width: `${groupedCol2Width}%` }}>
                 <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 text-[10px] font-semibold text-gray-500 uppercase tracking-wider flex items-center justify-between">
-                  <span>Period ({periodList.length})</span>
-                  {groupedPeriodId && (
-                    <button onClick={() => setGroupedPeriodId('')} className="text-blue-600 hover:underline normal-case font-normal">Clear</button>
-                  )}
-                </div>
-                {periodList.length === 0 ? (
-                  <div className="p-4 text-xs text-gray-400 italic">No periods.</div>
-                ) : periodList.map(({ id, p, count }) => (
-                  <button key={id} onClick={() => setGroupedPeriodId(groupedPeriodId === id ? '' : id)} className={colClass(groupedPeriodId === id)}>
-                    <span className="truncate">{p!.name}</span>
-                    <span className="text-xs text-gray-400 ml-2">{count}</span>
-                  </button>
-                ))}
-              </div>
-              {splitter(2)}
-              <div className="overflow-y-auto" style={{ width: `${groupedCol3Width}%` }}>
-                <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 text-[10px] font-semibold text-gray-500 uppercase tracking-wider flex items-center justify-between">
                   <span>Level ({levelList.length})</span>
                   {groupedLevel && (
                     <button onClick={() => setGroupedLevel('')} className="text-blue-600 hover:underline normal-case font-normal">Clear</button>
@@ -649,6 +658,23 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
                     className={colClass(groupedLevel === key)}
                   >
                     <span className="truncate">{label}</span>
+                    <span className="text-xs text-gray-400 ml-2">{count}</span>
+                  </button>
+                ))}
+              </div>
+              {splitter(2)}
+              <div className="overflow-y-auto" style={{ width: `${groupedCol3Width}%` }}>
+                <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 text-[10px] font-semibold text-gray-500 uppercase tracking-wider flex items-center justify-between">
+                  <span>Period ({periodList.length})</span>
+                  {groupedPeriodId && (
+                    <button onClick={() => setGroupedPeriodId('')} className="text-blue-600 hover:underline normal-case font-normal">Clear</button>
+                  )}
+                </div>
+                {periodList.length === 0 ? (
+                  <div className="p-4 text-xs text-gray-400 italic">No periods.</div>
+                ) : periodList.map(({ id, p, count }) => (
+                  <button key={id} onClick={() => setGroupedPeriodId(groupedPeriodId === id ? '' : id)} className={colClass(groupedPeriodId === id)}>
+                    <span className="truncate">{p!.name}</span>
                     <span className="text-xs text-gray-400 ml-2">{count}</span>
                   </button>
                 ))}
@@ -755,8 +781,8 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Owner</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Period</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Level</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Period</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Items</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Shared by</th>
               </tr>
@@ -774,8 +800,8 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
                     </button>
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">{ownerName(list.ownerId)}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{periodName(list.periodId)}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">{list.level ? LEVEL_LABEL[list.level] : '—'}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{periodName(list.periodId)}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">{list.items.length}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">{list.createdByEmail || '—'}</td>
                 </tr>
