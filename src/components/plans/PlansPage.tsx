@@ -31,6 +31,8 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
   const setListLevel = useOKRStore((s: OKRStore) => s.setListLevel);
   const setListOwner = useOKRStore((s: OKRStore) => s.setListOwner);
   const setListPeriod = useOKRStore((s: OKRStore) => s.setListPeriod);
+  const renameList = useOKRStore((s: OKRStore) => s.renameList);
+  const addItemToList = useOKRStore((s: OKRStore) => s.addItemToList);
   const setListViewMode = useOKRStore((s: OKRStore) => s.setListViewMode);
   const setPlanFocusListId = useOKRStore((s: OKRStore) => s.setPlanFocusListId);
 
@@ -52,6 +54,11 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
   const [promoteListId, setPromoteListId] = useState<string | null>(null);
   const [promoteOwnerId, setPromoteOwnerId] = useState('');
   const [promotePeriodId, setPromotePeriodId] = useState('');
+  const [editListId, setEditListId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
+  const [cloningListId, setCloningListId] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -160,6 +167,51 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
       setNewShared(false);
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleClone = async (list: List) => {
+    if (cloningListId) return;
+    setCloningListId(list.id);
+    try {
+      const existingNames = new Set(lists.map(l => l.name));
+      let candidate = `${list.name} (cloned)`;
+      let i = 2;
+      while (existingNames.has(candidate)) {
+        candidate = `${list.name} (cloned ${i++})`;
+      }
+      const result = await createList(candidate, list.color, list.parentId, {
+        ownerId: list.ownerId,
+        periodId: list.periodId,
+        level: list.level,
+        shared: list.shared,
+      });
+      if (result && typeof result === 'object' && 'id' in result) {
+        for (const item of list.items) {
+          await addItemToList(result.id, item.objectiveId);
+        }
+      }
+    } finally {
+      setCloningListId(null);
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editListId) return;
+    const name = editName.trim();
+    if (!name) { setEditError('Name is required.'); return; }
+    const list = lists.find(l => l.id === editListId);
+    if (!list) { setEditError('Plan not found.'); return; }
+    if (name !== list.name && lists.some(l => l.id !== editListId && l.name === name)) {
+      setEditError(`A list named "${name}" already exists.`);
+      return;
+    }
+    setEditSaving(true);
+    try {
+      if (name !== list.name) await renameList(editListId, name);
+      setEditListId(null);
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -354,15 +406,36 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
                     </button>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <button
-                      onClick={() => { if (window.confirm(`Delete plan "${list.name}"? This removes the list and its items.`)) deleteList(list.id); }}
-                      className="p-1 text-gray-400 hover:text-red-600 rounded"
-                      title="Delete plan"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
+                    <div className="inline-flex items-center gap-1">
+                      <button
+                        onClick={() => { setEditListId(list.id); setEditName(list.name); setEditError(null); }}
+                        className="p-1 text-gray-400 hover:text-blue-600 rounded"
+                        title="Edit plan"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => handleClone(list)}
+                        disabled={cloningListId === list.id}
+                        className="p-1 text-gray-400 hover:text-blue-600 rounded disabled:opacity-50"
+                        title="Clone plan"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => { if (window.confirm(`Delete plan "${list.name}"? This removes the list and its items.`)) deleteList(list.id); }}
+                        className="p-1 text-gray-400 hover:text-red-600 rounded"
+                        title="Delete plan"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -582,6 +655,47 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
                 className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
               >
                 Convert
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editListId && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-3">Edit plan</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Name</label>
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  autoFocus
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleSaveEdit(); }}
+                />
+              </div>
+              <p className="text-xs text-gray-500">Owner, Period, Level, and Sharing can be changed inline on the Plans list.</p>
+              {editError && (
+                <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded p-2">{editError}</div>
+              )}
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setEditListId(null)}
+                disabled={editSaving}
+                className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveEdit}
+                disabled={editSaving || !editName.trim()}
+                className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+              >
+                {editSaving ? 'Saving…' : 'Save'}
               </button>
             </div>
           </div>
