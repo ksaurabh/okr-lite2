@@ -97,6 +97,7 @@ export interface Team {
   name: string;
   parentId?: string;
   leadEmail?: string;
+  memberEmails?: string[];
 }
 
 export type PeriodType = 'quarter' | 'month' | 'week';

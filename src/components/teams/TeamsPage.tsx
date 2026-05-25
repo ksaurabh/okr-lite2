@@ -12,13 +12,15 @@ interface TeamRowProps {
   depth: number;
   isAdmin: boolean;
   leadName: string | null;
+  memberNames: string[];
   onAddChild: (parentId: string) => void;
   onEdit: (team: Team) => void;
   onDelete: (id: string) => void;
   getLeadName: (email?: string) => string | null;
+  getMemberNames: (emails?: string[]) => string[];
 }
 
-function TeamRow({ team, teams, depth, isAdmin, leadName, onAddChild, onEdit, onDelete, getLeadName }: TeamRowProps) {
+function TeamRow({ team, teams, depth, isAdmin, leadName, memberNames, onAddChild, onEdit, onDelete, getLeadName, getMemberNames }: TeamRowProps) {
   const [isExpanded, setIsExpanded] = useState(true);
   const childTeams = teams.filter(t => t.parentId === team.id).sort((a, b) => a.name.localeCompare(b.name));
   const hasChildren = childTeams.length > 0;
@@ -45,6 +47,9 @@ function TeamRow({ team, teams, depth, isAdmin, leadName, onAddChild, onEdit, on
           <span className="text-sm text-gray-900 truncate">{team.name}</span>
           {leadName && (
             <span className="text-xs text-gray-500 truncate">· Lead: {leadName}</span>
+          )}
+          {memberNames.length > 0 && (
+            <span className="text-xs text-gray-500 truncate" title={memberNames.join(', ')}>· {memberNames.length} {memberNames.length === 1 ? 'member' : 'members'}: {memberNames.slice(0, 3).join(', ')}{memberNames.length > 3 ? ` +${memberNames.length - 3}` : ''}</span>
           )}
           {team.shared === false && (
             <span className="text-[10px] uppercase tracking-wide text-gray-400 ml-2">private</span>
@@ -92,10 +97,12 @@ function TeamRow({ team, teams, depth, isAdmin, leadName, onAddChild, onEdit, on
               depth={depth + 1}
               isAdmin={isAdmin}
               leadName={getLeadName(child.leadEmail)}
+              memberNames={getMemberNames(child.memberEmails)}
               onAddChild={onAddChild}
               onEdit={onEdit}
               onDelete={onDelete}
               getLeadName={getLeadName}
+              getMemberNames={getMemberNames}
             />
           ))}
         </div>
@@ -133,6 +140,8 @@ export function TeamsPage() {
   const [editName, setEditName] = useState('');
   const [editLeadEmail, setEditLeadEmail] = useState<string>('');
   const [editParentId, setEditParentId] = useState<string>('');
+  const [editMemberEmails, setEditMemberEmails] = useState<string[]>([]);
+  const [memberSearch, setMemberSearch] = useState('');
   const [orgUsers, setOrgUsers] = useState<User[]>([]);
 
   useEffect(() => {
@@ -156,6 +165,11 @@ export function TeamsPage() {
     return u?.name || email;
   };
 
+  const getMemberNames = (emails?: string[]): string[] => {
+    if (!emails || emails.length === 0) return [];
+    return emails.map(e => orgUsers.find(u => u.email === e)?.name || e);
+  };
+
   const openAdd = (parentId?: string) => {
     setParentTeamId(parentId);
     setNewTeamName('');
@@ -174,6 +188,8 @@ export function TeamsPage() {
     setEditName(team.name);
     setEditLeadEmail(team.leadEmail || '');
     setEditParentId(team.parentId || '');
+    setEditMemberEmails(team.memberEmails || []);
+    setMemberSearch('');
   };
 
   const validParentOptions = useMemo(() => {
@@ -202,6 +218,11 @@ export function TeamsPage() {
     if (newLead !== editTarget.leadEmail) updates.leadEmail = newLead;
     const newParent = editParentId || undefined;
     if (newParent !== editTarget.parentId) updates.parentId = newParent;
+    const prevMembers = [...(editTarget.memberEmails || [])].sort();
+    const nextMembers = [...editMemberEmails].sort();
+    if (prevMembers.length !== nextMembers.length || prevMembers.some((e, i) => e !== nextMembers[i])) {
+      updates.memberEmails = editMemberEmails;
+    }
     if (Object.keys(updates).length > 0) {
       await updateTeam(editTarget.id, updates);
     }
@@ -245,10 +266,12 @@ export function TeamsPage() {
                 depth={0}
                 isAdmin={isAdmin}
                 leadName={getLeadName(team.leadEmail)}
+                memberNames={getMemberNames(team.memberEmails)}
                 onAddChild={(pid) => openAdd(pid)}
                 onEdit={openEdit}
                 onDelete={handleDelete}
                 getLeadName={getLeadName}
+                getMemberNames={getMemberNames}
               />
             ))}
           </div>
@@ -323,6 +346,60 @@ export function TeamsPage() {
                 <option key={t.id} value={t.id}>{t.name}</option>
               ))}
             </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Members ({editMemberEmails.length})</label>
+            {editMemberEmails.length > 0 && (
+              <div className="flex flex-wrap gap-1 mb-2">
+                {editMemberEmails.map(email => {
+                  const u = orgUsers.find(uu => uu.email === email);
+                  return (
+                    <span key={email} className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-blue-50 border border-blue-200 text-blue-700 rounded">
+                      {u?.name || email}
+                      <button
+                        type="button"
+                        onClick={() => setEditMemberEmails(prev => prev.filter(e => e !== email))}
+                        className="text-blue-500 hover:text-blue-700"
+                        title="Remove"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+            <input
+              type="text"
+              value={memberSearch}
+              onChange={(e) => setMemberSearch(e.target.value)}
+              placeholder="Search to add a member…"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <div className="mt-1 max-h-40 overflow-y-auto border border-gray-200 rounded-md">
+              {[...orgUsers]
+                .filter(u => !editMemberEmails.includes(u.email))
+                .filter(u => {
+                  const q = memberSearch.trim().toLowerCase();
+                  if (!q) return true;
+                  return (u.name || '').toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
+                })
+                .sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email))
+                .slice(0, 30)
+                .map(u => (
+                  <button
+                    key={u.email}
+                    type="button"
+                    onClick={() => { setEditMemberEmails(prev => [...prev, u.email]); setMemberSearch(''); }}
+                    className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                  >
+                    {u.name || u.email} <span className="text-gray-400 text-xs">{u.email}</span>
+                  </button>
+                ))}
+              {orgUsers.filter(u => !editMemberEmails.includes(u.email)).length === 0 && (
+                <div className="px-3 py-2 text-xs text-gray-400">All users are already members.</div>
+              )}
+            </div>
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setEditTarget(null)}>Cancel</Button>
