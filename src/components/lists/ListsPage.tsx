@@ -106,6 +106,33 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
   const [isListsCollapsed, setIsListsCollapsed] = useState(false);
   const [columnWidths, setColumnWidths] = useState<ListColumnWidths>(loadListColumnWidths);
   const [resizingColumn, setResizingColumn] = useState<keyof ListColumnWidths | null>(null);
+  const planColumnWidths = useOKRStore((state: OKRStore) => state.columnWidths);
+  const setPlanColumnWidths = useOKRStore((state: OKRStore) => state.setColumnWidths);
+  const [resizingPlanCol, setResizingPlanCol] = useState<ColumnKey | null>(null);
+  const planResizeStartX = useRef(0);
+  const planResizeStartWidth = useRef(0);
+  const handlePlanResizeStart = useCallback((col: ColumnKey, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setResizingPlanCol(col);
+    planResizeStartX.current = e.clientX;
+    planResizeStartWidth.current = planColumnWidths[col];
+  }, [planColumnWidths]);
+  useEffect(() => {
+    if (!resizingPlanCol) return;
+    const onMove = (e: MouseEvent) => {
+      const delta = e.clientX - planResizeStartX.current;
+      const newWidth = Math.max(48, planResizeStartWidth.current + delta);
+      setPlanColumnWidths({ [resizingPlanCol]: newWidth });
+    };
+    const onUp = () => setResizingPlanCol(null);
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    return () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+  }, [resizingPlanCol, setPlanColumnWidths]);
   const [orgUsers, setOrgUsers] = useState<User[]>([]);
   const planFocusListId = useOKRStore((state: OKRStore) => state.planFocusListId);
   const setPlanFocusListId = useOKRStore((state: OKRStore) => state.setPlanFocusListId);
@@ -1267,25 +1294,43 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                       })}
                     </div>
                   ) : (
-                    sortedItems.map((item) => {
-                      const obj = getObjective(item.objectiveId);
-                      if (!obj) return null;
-                      if (!passesFilters(obj, firstColStatusFilter, firstColOwnerFilter, firstColAssigneeFilter, firstColPeriodFilter)) return null;
-                      const selected = planSelectedObjective?.id === obj.id;
-                      return (
-                        <div key={item.objectiveId} className={selected ? 'bg-blue-50' : ''}>
-                          <CompactObjectiveCard
-                            objective={obj}
-                            depth={0}
-                            visibleColumnsOverride={listPlanColumns}
-                            defaultCollapsed
-                            hideRowActions
-                            filteredObjectiveIds={NO_CHILDREN_PLAN_LIST}
-                            onTitleClick={() => setPlanSelectedObjective(obj)}
-                          />
+                    <div className={`overflow-x-auto ${resizingPlanCol ? 'select-none' : ''}`}>
+                      <div className="min-w-max">
+                        <div className="flex items-center bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <div className="relative flex items-center px-2 py-2 flex-shrink-0" style={{ width: planColumnWidths.title, minWidth: 150 }}>
+                            <div className="flex-1">{COLUMN_LABELS.title}</div>
+                            <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handlePlanResizeStart('title', e)} />
+                          </div>
+                          {(Object.keys(COLUMN_LABELS) as ColumnKey[])
+                            .filter(col => col !== 'title' && listPlanColumns.includes(col))
+                            .map(col => (
+                              <div key={col} className="relative flex items-center" style={{ width: planColumnWidths[col] }}>
+                                <div className="px-1 py-2 flex-1">{COLUMN_LABELS[col]}</div>
+                                <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handlePlanResizeStart(col, e)} />
+                              </div>
+                            ))}
                         </div>
-                      );
-                    })
+                        {sortedItems.map((item) => {
+                          const obj = getObjective(item.objectiveId);
+                          if (!obj) return null;
+                          if (!passesFilters(obj, firstColStatusFilter, firstColOwnerFilter, firstColAssigneeFilter, firstColPeriodFilter)) return null;
+                          const selected = planSelectedObjective?.id === obj.id;
+                          return (
+                            <div key={item.objectiveId} className={selected ? 'bg-blue-50' : ''}>
+                              <CompactObjectiveCard
+                                objective={obj}
+                                depth={0}
+                                visibleColumnsOverride={listPlanColumns}
+                                defaultCollapsed
+                                hideRowActions
+                                filteredObjectiveIds={NO_CHILDREN_PLAN_LIST}
+                                onTitleClick={() => setPlanSelectedObjective(obj)}
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                   )}
                 </div>
                 )}
