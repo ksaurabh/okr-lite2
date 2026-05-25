@@ -175,12 +175,12 @@ interface OKRActions {
   listPlanColumns: ColumnKey[];
   setListPlanColumns: (columns: ColumnKey[]) => Promise<void>;
   toggleListPlanColumn: (column: ColumnKey) => Promise<void>;
-  listPlanChildView: 'table' | 'cards';
-  setListPlanChildView: (mode: 'table' | 'cards') => Promise<void>;
-  listPlanTreeView: 'table' | 'cards';
-  setListPlanTreeView: (mode: 'table' | 'cards') => Promise<void>;
-  listPlanCurrentView: 'table' | 'cards';
-  setListPlanCurrentView: (mode: 'table' | 'cards') => Promise<void>;
+  listPlanChildView: 'table' | 'cards' | 'list';
+  setListPlanChildView: (mode: 'table' | 'cards' | 'list') => Promise<void>;
+  listPlanTreeView: 'table' | 'cards' | 'list';
+  setListPlanTreeView: (mode: 'table' | 'cards' | 'list') => Promise<void>;
+  listPlanCurrentView: 'table' | 'cards' | 'list';
+  setListPlanCurrentView: (mode: 'table' | 'cards' | 'list') => Promise<void>;
   objectiveViewMode: 'explore' | 'plan';
   setObjectiveViewMode: (mode: 'explore' | 'plan') => Promise<void>;
   planViewColumns: ColumnKey[];
@@ -416,9 +416,9 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
   evergreenOverdueViewMode: 'tree' as 'tree' | 'table',
   listViewModes: {} as Record<string, 'list' | 'plan'>,
   listPlanColumns: ['workflowStatus', 'owner', 'period'] as ColumnKey[],
-  listPlanChildView: 'cards' as 'table' | 'cards',
-  listPlanTreeView: 'cards' as 'table' | 'cards',
-  listPlanCurrentView: 'cards' as 'table' | 'cards',
+  listPlanChildView: 'cards' as 'table' | 'cards' | 'list',
+  listPlanTreeView: 'cards' as 'table' | 'cards' | 'list',
+  listPlanCurrentView: 'cards' as 'table' | 'cards' | 'list',
   objectiveViewMode: 'explore' as 'explore' | 'plan',
   planViewColumns: ['level', 'period', 'workflowStatus', 'type', 'team', 'owner'] as ColumnKey[],
   planTreeColumns: ['level', 'period', 'workflowStatus', 'type', 'team', 'owner'] as ColumnKey[],
@@ -1214,13 +1214,13 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
         if (data.preferences?.listPlanColumns && Array.isArray(data.preferences.listPlanColumns)) {
           updates.listPlanColumns = data.preferences.listPlanColumns;
         }
-        if (data.preferences?.listPlanChildView === 'table' || data.preferences?.listPlanChildView === 'cards') {
+        if (['table', 'cards', 'list'].includes(data.preferences?.listPlanChildView)) {
           updates.listPlanChildView = data.preferences.listPlanChildView;
         }
-        if (data.preferences?.listPlanTreeView === 'table' || data.preferences?.listPlanTreeView === 'cards') {
+        if (['table', 'cards', 'list'].includes(data.preferences?.listPlanTreeView)) {
           updates.listPlanTreeView = data.preferences.listPlanTreeView;
         }
-        if (data.preferences?.listPlanCurrentView === 'table' || data.preferences?.listPlanCurrentView === 'cards') {
+        if (['table', 'cards', 'list'].includes(data.preferences?.listPlanCurrentView)) {
           updates.listPlanCurrentView = data.preferences.listPlanCurrentView;
         }
         if (data.preferences?.objectiveViewMode === 'explore' || data.preferences?.objectiveViewMode === 'plan') {

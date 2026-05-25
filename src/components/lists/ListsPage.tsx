@@ -160,6 +160,14 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
   const [treeAssigneeFilter, setTreeAssigneeFilter] = useState<string[]>([]);
   const [treePeriodFilter, setTreePeriodFilter] = useState<string[]>([]);
   const [treeShowDoneArchived, setTreeShowDoneArchived] = useState(false);
+  const [expandedListRowIds, setExpandedListRowIds] = useState<Set<string>>(new Set());
+  const toggleListRowExpanded = (id: string) => {
+    setExpandedListRowIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
   const [showCreateChildPlan, setShowCreateChildPlan] = useState(false);
   const [newChildPlanName, setNewChildPlanName] = useState('');
   const [newChildPlanOwnerId, setNewChildPlanOwnerId] = useState('');
@@ -256,10 +264,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
   const sharedPlansEarly = useOKRStore((state: OKRStore) => state.sharedPlans);
   const selectedListEarly = listsEarly.find(l => l.id === selectedListId) || sharedPlansEarly.find(l => l.id === selectedListId);
   const isReadOnlyListEarly = !!(selectedListEarly && (selectedListEarly as List & { createdByEmail?: string }).createdByEmail);
-  const isListPlanMode = selectedListId ? (isReadOnlyListEarly ? true : listViewModes[selectedListId] === 'plan') : false;
-  const setIsListPlanMode = (v: boolean) => {
-    if (selectedListId && !isReadOnlyListEarly) setListViewMode(selectedListId, v ? 'plan' : 'list');
-  };
+  const isListPlanMode = !!selectedListId;
   const [planSelectedObjective, setPlanSelectedObjective] = useState<Objective | null>(null);
   const [planTopLevel, setPlanTopLevel] = useState(false);
   const [topLevelFilterOn, setTopLevelFilterOn] = useState(false);
@@ -1179,22 +1184,6 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                     Top Level
                   </label>
                 )}
-                {!isReadOnlyList && (
-                <div className="inline-flex border border-gray-300 rounded overflow-hidden">
-                  <button
-                    onClick={() => setIsListPlanMode(false)}
-                    className={`px-3 py-1 text-sm ${!isListPlanMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-                  >
-                    List
-                  </button>
-                  <button
-                    onClick={() => setIsListPlanMode(true)}
-                    className={`px-3 py-1 text-sm border-l border-gray-300 ${isListPlanMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-                  >
-                    Plan
-                  </button>
-                </div>
-                )}
                 {isReadOnlyList && (
                   <span className="px-2 py-0.5 text-xs rounded bg-amber-50 border border-amber-300 text-amber-700">Read-only · shared by {((selectedList as List & { createdByEmail?: string }).createdByEmail) || 'another user'}</span>
                 )}
@@ -1231,7 +1220,8 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
               <div ref={listPlanSplitRef} className="flex relative" style={{ minHeight: 600 }}>
                 {!planTopLevel && (
                 <div className="border border-gray-200 rounded-lg overflow-y-auto bg-white" style={{ width: `${listPlanLeftWidth}%` }}>
-                  <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-end gap-2 bg-gray-50">
+                  <div className="px-3 py-2 border-b border-gray-100 flex items-center gap-2 bg-gray-50">
+                    <span className="text-xs font-semibold text-gray-700 truncate flex-1" title={selectedList.name}>Parent/Current Plan ({selectedList.name})</span>
                     <div ref={firstColFilterRef} className="relative">
                       <button
                         onClick={() => setShowFirstColFilter(!showFirstColFilter)}
@@ -1338,9 +1328,61 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                       >
                         Cards
                       </button>
+                      <button
+                        onClick={() => setListPlanCurrentView('list')}
+                        className={`px-2 py-0.5 text-[10px] border-l border-gray-300 ${listPlanCurrentView === 'list' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                      >
+                        List
+                      </button>
                     </div>
                   </div>
-                  {listPlanCurrentView === 'cards' ? (
+                  {listPlanCurrentView === 'list' ? (
+                    <div>
+                      {sortedItems.map((item) => {
+                        const obj = getObjective(item.objectiveId);
+                        if (!obj) return null;
+                        if (!passesFilters(obj, firstColStatusFilter, firstColOwnerFilter, firstColAssigneeFilter, firstColPeriodFilter)) return null;
+                        const selected = planSelectedObjective?.id === obj.id;
+                        const isExpanded = expandedListRowIds.has(obj.id);
+                        return (
+                          <div key={item.objectiveId}>
+                            <div
+                              onClick={() => setPlanSelectedObjective(obj)}
+                              className={`flex items-center gap-1 px-3 py-1 text-sm cursor-pointer border-b border-gray-100 ${selected ? 'bg-blue-50 text-blue-900' : 'hover:bg-gray-50 text-gray-800'}`}
+                              title={obj.title}
+                            >
+                              <span className="truncate flex-1">{obj.title}</span>
+                              {listPlanColumns.length > 0 && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); toggleListRowExpanded(obj.id); }}
+                                  className="text-gray-400 hover:text-gray-700 flex-shrink-0 p-0.5"
+                                  title={isExpanded ? 'Hide details' : 'Show details'}
+                                >
+                                  <svg className={`w-3.5 h-3.5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                  </svg>
+                                </button>
+                              )}
+                            </div>
+                            {isExpanded && listPlanColumns.length > 0 && (
+                              <div className="px-3 py-2 border-b border-gray-100 bg-gray-50">
+                                <div className="border border-gray-200 rounded p-2 bg-white">
+                                  <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+                                    {listPlanColumns.map(col => (
+                                      <div key={col} className="text-xs text-gray-600">
+                                        <span className="text-gray-400">{COLUMN_LABELS[col]}: </span>
+                                        <span className="text-gray-700">{cellValueForCard(obj, col)}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : listPlanCurrentView === 'cards' ? (
                     <div className="p-2 space-y-2">
                       {sortedItems.map((item) => {
                         const obj = getObjective(item.objectiveId);
@@ -1441,7 +1483,8 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                         : allRoots;
                       return (
                         <>
-                          <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-end gap-2 bg-gray-50">
+                          <div className="px-3 py-2 border-b border-gray-100 flex items-center gap-2 bg-gray-50">
+                            <span className="text-xs font-semibold text-gray-700 truncate flex-1">Objective Tree (Auto Filtered)</span>
                             <div className="inline-flex border border-gray-300 rounded overflow-hidden">
                               <button
                                 onClick={() => setListPlanTreeView('table')}
@@ -1454,6 +1497,12 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                 className={`px-2 py-0.5 text-[10px] border-l border-gray-300 ${listPlanTreeView === 'cards' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
                               >
                                 Cards
+                              </button>
+                              <button
+                                onClick={() => setListPlanTreeView('list')}
+                                className={`px-2 py-0.5 text-[10px] border-l border-gray-300 ${listPlanTreeView === 'list' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                              >
+                                List
                               </button>
                             </div>
                             <button
@@ -1560,6 +1609,48 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                           </div>
                           {roots.length === 0 ? (
                             <div className="p-6 text-center text-sm text-gray-400">No top-level objectives match the filter.</div>
+                          ) : listPlanTreeView === 'list' ? (
+                            <div>
+                              {roots.map(root => {
+                                const isExpanded = expandedListRowIds.has(root.id);
+                                return (
+                                  <div key={root.id}>
+                                    <div
+                                      onClick={() => setPlanSelectedObjective(root)}
+                                      className="flex items-center gap-1 px-3 py-1 text-sm cursor-pointer hover:bg-gray-50 text-gray-800 border-b border-gray-100"
+                                      title={root.title}
+                                    >
+                                      <span className="truncate flex-1">{root.title}</span>
+                                      {listPlanColumns.length > 0 && (
+                                        <button
+                                          onClick={(e) => { e.stopPropagation(); toggleListRowExpanded(root.id); }}
+                                          className="text-gray-400 hover:text-gray-700 flex-shrink-0 p-0.5"
+                                          title={isExpanded ? 'Hide details' : 'Show details'}
+                                        >
+                                          <svg className={`w-3.5 h-3.5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                          </svg>
+                                        </button>
+                                      )}
+                                    </div>
+                                    {isExpanded && listPlanColumns.length > 0 && (
+                                      <div className="px-3 py-2 border-b border-gray-100 bg-gray-50">
+                                        <div className="border border-gray-200 rounded p-2 bg-white">
+                                          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+                                            {listPlanColumns.map(col => (
+                                              <div key={col} className="text-xs text-gray-600">
+                                                <span className="text-gray-400">{COLUMN_LABELS[col]}: </span>
+                                                <span className="text-gray-700">{cellValueForCard(root, col)}</span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
                           ) : listPlanTreeView === 'cards' ? (
                             <div className="p-2 space-y-1">
                               {roots.map(root => renderObjectiveCard(root, 0))}
@@ -1615,7 +1706,8 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                     }
                     return (
                     <>
-                      <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-end gap-2 bg-gray-50">
+                      <div className="px-3 py-2 border-b border-gray-100 flex items-center gap-2 bg-gray-50">
+                        <span className="text-xs font-semibold text-gray-700 truncate flex-1">Objective Tree (Auto Filtered)</span>
                         <div className="inline-flex border border-gray-300 rounded overflow-hidden">
                           <button
                             onClick={() => setListPlanTreeView('table')}
@@ -1628,6 +1720,12 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                             className={`px-2 py-0.5 text-[10px] border-l border-gray-300 ${listPlanTreeView === 'cards' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
                           >
                             Cards
+                          </button>
+                          <button
+                            onClick={() => setListPlanTreeView('list')}
+                            className={`px-2 py-0.5 text-[10px] border-l border-gray-300 ${listPlanTreeView === 'list' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                          >
+                            List
                           </button>
                         </div>
                         <div ref={treeFilterRef} className="relative">
@@ -1739,7 +1837,70 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                           )}
                         </div>
                       </div>
-                      {listPlanTreeView === 'cards' ? (() => {
+                      {listPlanTreeView === 'list' ? (() => {
+                        const renderRow = (o: Objective, depth: number): React.ReactNode => {
+                          const children = orgObjectives.filter(c => c.parentId === o.id && (!treeFilteredIds || treeFilteredIds.has(c.id)));
+                          const hasChildren = children.length > 0;
+                          const isCollapsed = depth === 0 ? collapsedCardIds.has(o.id) : !collapsedCardIds.has(o.id);
+                          const isExpanded = expandedListRowIds.has(o.id);
+                          return (
+                            <div key={o.id}>
+                              <div
+                                onClick={() => setPlanSelectedObjective(o)}
+                                style={{ paddingLeft: depth * 16 + 8 }}
+                                className="flex items-center gap-1 py-1 pr-2 text-sm cursor-pointer hover:bg-gray-50 text-gray-800 border-b border-gray-100"
+                                title={o.title}
+                              >
+                                {hasChildren ? (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); toggleCardCollapsed(o.id); }}
+                                    className="text-gray-400 hover:text-gray-700 flex-shrink-0"
+                                    title={isCollapsed ? 'Show children' : 'Hide children'}
+                                  >
+                                    <svg className={`w-3 h-3 transition-transform ${isCollapsed ? '' : 'rotate-90'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                    </svg>
+                                  </button>
+                                ) : (
+                                  <span className="w-3 flex-shrink-0" />
+                                )}
+                                <span className="truncate flex-1">{o.title}</span>
+                                {listPlanColumns.length > 0 && (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); toggleListRowExpanded(o.id); }}
+                                    className="text-gray-400 hover:text-gray-700 flex-shrink-0 p-0.5"
+                                    title={isExpanded ? 'Hide details' : 'Show details'}
+                                  >
+                                    <svg className={`w-3.5 h-3.5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                  </button>
+                                )}
+                              </div>
+                              {isExpanded && listPlanColumns.length > 0 && (
+                                <div style={{ paddingLeft: depth * 16 + 24 }} className="py-2 pr-3 border-b border-gray-100 bg-gray-50">
+                                  <div className="border border-gray-200 rounded p-2 bg-white">
+                                    <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+                                      {listPlanColumns.map(col => (
+                                        <div key={col} className="text-xs text-gray-600">
+                                          <span className="text-gray-400">{COLUMN_LABELS[col]}: </span>
+                                          <span className="text-gray-700">{cellValueForCard(o, col)}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                              {hasChildren && !isCollapsed && children.map(c => renderRow(c, depth + 1))}
+                            </div>
+                          );
+                        };
+                        return (
+                          <div>
+                            {renderRow(planSelectedObjective, 0)}
+                          </div>
+                        );
+                      })() : listPlanTreeView === 'cards' ? (() => {
                         const renderCard = (obj: Objective, depth: number): React.ReactNode => {
                           const children = orgObjectives.filter(o => o.parentId === obj.id && (!treeFilteredIds || treeFilteredIds.has(o.id)));
                           const hasChildren = children.length > 0;
@@ -1926,7 +2087,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                       <>
                         <div className="px-3 py-2 border-b border-gray-100 flex items-center gap-2 bg-gray-50">
                           <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: child.color || '#6b7280' }} />
-                          <span className="text-sm font-medium text-gray-700 truncate flex-1">{child.name}</span>
+                          <span className="text-xs font-semibold text-gray-700 truncate flex-1" title={child.name}>Child Plan ({child.name})</span>
                           <div ref={thirdColFilterRef} className="relative">
                             <button
                               onClick={() => setShowThirdColFilter(!showThirdColFilter)}
@@ -2033,10 +2194,61 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                             >
                               Cards
                             </button>
+                            <button
+                              onClick={() => setListPlanChildView('list')}
+                              className={`px-2 py-0.5 text-[10px] border-l border-gray-300 ${listPlanChildView === 'list' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                            >
+                              List
+                            </button>
                           </div>
                         </div>
                         {child.items.length === 0 ? (
                           <div className="p-3 text-xs text-gray-400 italic">No items in this child list yet.</div>
+                        ) : listPlanChildView === 'list' ? (
+                          <div>
+                            {child.items.slice().sort((a, b) => a.order - b.order).map(item => {
+                              const obj = getObjective(item.objectiveId);
+                              if (!obj) return null;
+                              if (!passesFilters(obj, thirdColStatusFilter, thirdColOwnerFilter, thirdColAssigneeFilter, thirdColPeriodFilter)) return null;
+                              const isExpanded = expandedListRowIds.has(obj.id);
+                              return (
+                                <div key={item.objectiveId}>
+                                  <div
+                                    onClick={() => showPathInTree(obj.id)}
+                                    className="flex items-center gap-1 px-3 py-1 text-sm cursor-pointer border-b border-gray-100 hover:bg-gray-50 text-gray-800"
+                                    title={obj.title}
+                                  >
+                                    <span className="truncate flex-1">{obj.title}</span>
+                                    {listPlanColumns.length > 0 && (
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); toggleListRowExpanded(obj.id); }}
+                                        className="text-gray-400 hover:text-gray-700 flex-shrink-0 p-0.5"
+                                        title={isExpanded ? 'Hide details' : 'Show details'}
+                                      >
+                                        <svg className={`w-3.5 h-3.5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                      </button>
+                                    )}
+                                  </div>
+                                  {isExpanded && listPlanColumns.length > 0 && (
+                                    <div className="px-3 py-2 border-b border-gray-100 bg-gray-50">
+                                      <div className="border border-gray-200 rounded p-2 bg-white">
+                                        <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+                                          {listPlanColumns.map(col => (
+                                            <div key={col} className="text-xs text-gray-600">
+                                              <span className="text-gray-400">{COLUMN_LABELS[col]}: </span>
+                                              <span className="text-gray-700">{cellValueForCard(obj, col)}</span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
                         ) : listPlanChildView === 'cards' ? (
                           <div className="p-2 space-y-2">
                             {child.items.slice().sort((a, b) => a.order - b.order).map(item => {
