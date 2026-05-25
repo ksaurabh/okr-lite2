@@ -61,6 +61,7 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
   const activePeriodId = useOKRStore((state: OKRStore) => state.activePeriodId);
   const addObjective = useOKRStore((state: OKRStore) => state.addObjective);
   const updateObjective = useOKRStore((state: OKRStore) => state.updateObjective);
+  const deleteObjective = useOKRStore((state: OKRStore) => state.deleteObjective);
 
   const orgId = organization?.id || '';
   const userEmail = user?.email || '';
@@ -703,13 +704,31 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
         </div>
       )}
 
-      <div className="flex justify-end gap-2 pt-4">
-        <Button type="button" variant="secondary" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button type="submit">
-          {objective ? 'Update' : 'Create'} Objective
-        </Button>
+      <div className="flex items-center justify-between gap-2 pt-4">
+        <div>
+          {objective && (
+            <button
+              type="button"
+              onClick={async () => {
+                if (window.confirm(`Delete "${objective.title}"? This also removes its children.`)) {
+                  await deleteObjective(objective.id);
+                  onClose();
+                }
+              }}
+              className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded hover:bg-red-50"
+            >
+              Delete
+            </button>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit">
+            {objective ? 'Update' : 'Create'} Objective
+          </Button>
+        </div>
       </div>
     </form>
   );

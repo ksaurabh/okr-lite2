@@ -20,6 +20,8 @@ interface CompactObjectiveCardProps {
   groupPeriodsByDate?: boolean;
   hideRowActions?: boolean;
   quickAddToListId?: string;
+  alwaysShowQuickAdd?: boolean;
+  quickAddTooltip?: string;
 }
 
 const getChildLevel = (parentLevel: ObjectiveLevel): ObjectiveLevel => {
@@ -67,7 +69,7 @@ function getNextStepDateIndicator(nextStepDate?: string): { color: string; toolt
   }
 }
 
-export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filteredObjectiveIds, directlyMatchingIds, defaultCollapsed = false, visibleColumnsOverride, onRowClick, onTitleClick, groupPeriodsByDate = false, hideRowActions = false, quickAddToListId }: CompactObjectiveCardProps) {
+export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filteredObjectiveIds, directlyMatchingIds, defaultCollapsed = false, visibleColumnsOverride, onRowClick, onTitleClick, groupPeriodsByDate = false, hideRowActions = false, quickAddToListId, alwaysShowQuickAdd = false, quickAddTooltip }: CompactObjectiveCardProps) {
   // Only root-level items (depth 0) are expanded by default, unless caller opts into collapsed
   const [isExpanded, setIsExpanded] = useState(depth === 0 && !defaultCollapsed);
   const forcedExpandedIds = useOKRStore((s: OKRStore) => s.forcedExpandedIds);
@@ -1114,15 +1116,21 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
                   setShowListDropdown(!showListDropdown);
                 }
               }}
-              className={`p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 ${showListDropdown ? 'text-blue-600 opacity-100' : 'text-gray-400 hover:text-gray-600'}`}
+              className={alwaysShowQuickAdd
+                ? `px-2 py-0.5 text-[11px] font-medium rounded border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 flex-shrink-0 ${showListDropdown ? 'bg-blue-100' : ''}`
+                : `p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 ${showListDropdown ? 'text-blue-600 opacity-100' : 'text-gray-400 hover:text-gray-600'}`}
             >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
-              </svg>
+              {alwaysShowQuickAdd ? (
+                quickAddTooltip || 'Add to Plan'
+              ) : (
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                </svg>
+              )}
             </button>
-            {!showListDropdown && (
+            {!showListDropdown && !alwaysShowQuickAdd && (
               <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 px-2 py-1 text-xs text-white bg-gray-800 rounded whitespace-nowrap opacity-0 group-hover/list:opacity-100 transition-opacity duration-75 pointer-events-none z-50">
-                {quickAddToListId ? 'Add to Child List' : 'Add to list'}
+                {quickAddTooltip || (quickAddToListId ? 'Add to Child List' : 'Add to list')}
               </span>
             )}
             {!quickAddToListId && showListDropdown && listDropdownPosition && (
