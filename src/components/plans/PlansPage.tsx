@@ -29,6 +29,8 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
   const updateListParent = useOKRStore((s: OKRStore) => s.updateListParent);
   const setListShared = useOKRStore((s: OKRStore) => s.setListShared);
   const setListLevel = useOKRStore((s: OKRStore) => s.setListLevel);
+  const setListOwner = useOKRStore((s: OKRStore) => s.setListOwner);
+  const setListPeriod = useOKRStore((s: OKRStore) => s.setListPeriod);
   const setListViewMode = useOKRStore((s: OKRStore) => s.setListViewMode);
   const setPlanFocusListId = useOKRStore((s: OKRStore) => s.setPlanFocusListId);
 
@@ -307,8 +309,30 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
                       {list.name}
                     </button>
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{ownerName(list.ownerId)}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{periodName(list.periodId)}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">
+                    <select
+                      value={list.ownerId || ''}
+                      onChange={(e) => setListOwner(list.id, e.target.value)}
+                      className="border border-gray-300 rounded px-1.5 py-0.5 text-xs bg-white max-w-[160px]"
+                    >
+                      <option value="">— None —</option>
+                      {[...orgUsers].sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email)).map(u => (
+                        <option key={u.id} value={u.id}>{u.name || u.email}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-600">
+                    <select
+                      value={list.periodId || ''}
+                      onChange={(e) => setListPeriod(list.id, e.target.value)}
+                      className="border border-gray-300 rounded px-1.5 py-0.5 text-xs bg-white max-w-[160px]"
+                    >
+                      <option value="">— None —</option>
+                      {[...periods].sort((a, b) => a.startDate.localeCompare(b.startDate)).map((p: Period) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                  </td>
                   <td className="px-4 py-3 text-sm text-gray-600">
                     <select
                       value={list.level || ''}
