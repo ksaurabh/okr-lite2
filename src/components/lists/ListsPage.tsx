@@ -1490,7 +1490,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                 depth={0}
                                 visibleColumnsOverride={listPlanColumns}
                                 defaultCollapsed
-                                hideRowActions
+                                kebabActions
                                 filteredObjectiveIds={NO_CHILDREN_PLAN_LIST}
                                 onTitleClick={() => togglePlanSelectedObjective(obj)}
                               />
@@ -1719,6 +1719,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                     depth={0}
                                     visibleColumnsOverride={listPlanColumns}
                                     quickAddToListId={isReadOnlyList ? undefined : ((planTopLevel ? selectedList.id : planSelectedChildListId) || undefined)}
+                                    kebabActions
                                   />
                                 ))}
                               </div>
@@ -2130,6 +2131,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                               visibleColumnsOverride={listPlanColumns}
                               quickAddToListId={isReadOnlyList ? undefined : ((planTopLevel ? selectedList.id : planSelectedChildListId) || undefined)}
                               filteredObjectiveIds={treeFilteredIds || undefined}
+                              kebabActions
                             />
                           </div>
                         </div>
@@ -2442,7 +2444,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                   depth={0}
                                   visibleColumnsOverride={listPlanColumns}
                                   defaultCollapsed
-                                  hideRowActions
+                                  kebabActions
                                   filteredObjectiveIds={NO_CHILDREN_PLAN_LIST}
                                   onTitleClick={(o) => showPathInTree(o.id)}
                                 />

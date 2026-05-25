@@ -22,6 +22,7 @@ interface CompactObjectiveCardProps {
   quickAddToListId?: string;
   alwaysShowQuickAdd?: boolean;
   quickAddTooltip?: string;
+  kebabActions?: boolean;
 }
 
 const getChildLevel = (parentLevel: ObjectiveLevel): ObjectiveLevel => {
@@ -69,7 +70,7 @@ function getNextStepDateIndicator(nextStepDate?: string): { color: string; toolt
   }
 }
 
-export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filteredObjectiveIds, directlyMatchingIds, defaultCollapsed = false, visibleColumnsOverride, onRowClick, onTitleClick, groupPeriodsByDate = false, hideRowActions = false, quickAddToListId, alwaysShowQuickAdd = false, quickAddTooltip }: CompactObjectiveCardProps) {
+export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filteredObjectiveIds, directlyMatchingIds, defaultCollapsed = false, visibleColumnsOverride, onRowClick, onTitleClick, groupPeriodsByDate = false, hideRowActions = false, quickAddToListId, alwaysShowQuickAdd = false, quickAddTooltip, kebabActions = false }: CompactObjectiveCardProps) {
   // Only root-level items (depth 0) are expanded by default, unless caller opts into collapsed
   const [isExpanded, setIsExpanded] = useState(depth === 0 && !defaultCollapsed);
   const forcedExpandedIds = useOKRStore((s: OKRStore) => s.forcedExpandedIds);
@@ -103,6 +104,8 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   const [editingTags, setEditingTags] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [showListDropdown, setShowListDropdown] = useState(false);
+  const [showKebabMenu, setShowKebabMenu] = useState(false);
+  const kebabMenuRef = useRef<HTMLDivElement>(null);
   const [isCreatingList, setIsCreatingList] = useState(false);
   const [newListName, setNewListName] = useState('');
   const newListInputRef = useRef<HTMLInputElement>(null);
@@ -601,6 +604,15 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [editingTags]);
 
+  useEffect(() => {
+    if (!showKebabMenu) return;
+    const onClick = (e: MouseEvent) => {
+      if (kebabMenuRef.current && !kebabMenuRef.current.contains(e.target as Node)) setShowKebabMenu(false);
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [showKebabMenu]);
+
   // List dropdown positioning
   useEffect(() => {
     if (showListDropdown && listButtonRef.current) {
@@ -1070,7 +1082,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           })()}
 
           {/* Quick add button - inline with title */}
-          {!minimalActions && canAddChild && (
+          {!minimalActions && !kebabActions && canAddChild && (
             <span className="relative group/quickadd flex-shrink-0">
               <button
                 onClick={() => setShowQuickAdd(!showQuickAdd)}
@@ -1087,7 +1099,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           )}
 
           {/* Filter to descendants button */}
-          {!minimalActions && (
+          {!minimalActions && !kebabActions && (
           <span className="relative group/filter flex-shrink-0">
             <button
               onClick={() => setFilterObjective(objective.id)}
@@ -1105,7 +1117,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           )}
 
           {/* Add to list button */}
-          {!minimalActions && (
+          {!minimalActions && !kebabActions && (
           <div className="relative group/list">
             <button
               ref={listButtonRef}
@@ -1220,7 +1232,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           )}
 
           {/* Edit button - inline with title */}
-          {!minimalActions && canModify && (
+          {!minimalActions && !kebabActions && canModify && (
             <span className="relative group/edit flex-shrink-0">
               <button
                 onClick={() => setShowEdit(true)}
@@ -1237,7 +1249,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           )}
 
           {/* Clone button - inline with title */}
-          {!minimalActions && canModify && (
+          {!minimalActions && !kebabActions && canModify && (
             <span className="relative group/clone flex-shrink-0">
               <button
                 onClick={() => cloneObjective(objective.id, { orgId: organization?.id || '', userEmail, shared: objective.shared })}
@@ -1251,6 +1263,82 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
                 Clone
               </span>
             </span>
+          )}
+
+          {/* Kebab actions menu */}
+          {!minimalActions && kebabActions && (
+            <div ref={kebabMenuRef} className="relative flex-shrink-0">
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowKebabMenu(!showKebabMenu); }}
+                className="p-1 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100"
+                title="Actions"
+              >
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                  <circle cx="12" cy="6" r="1.5" />
+                  <circle cx="12" cy="12" r="1.5" />
+                  <circle cx="12" cy="18" r="1.5" />
+                </svg>
+              </button>
+              {showKebabMenu && (
+                <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-md shadow-lg py-1 min-w-[180px]">
+                  {canModify && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setShowKebabMenu(false); setShowEdit(true); }}
+                      className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                    >
+                      Edit
+                    </button>
+                  )}
+                  {canAddChild && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setShowKebabMenu(false); setShowQuickAdd(true); }}
+                      className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                    >
+                      Add child
+                    </button>
+                  )}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowKebabMenu(false); setFilterObjective(objective.id); }}
+                    className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    Filter to descendants
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowKebabMenu(false);
+                      if (quickAddToListId) addItemToList(quickAddToListId, objective.id);
+                      else setShowListDropdown(true);
+                    }}
+                    className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    {quickAddToListId ? (quickAddTooltip || 'Add to Plan') : 'Add to list…'}
+                  </button>
+                  {canModify && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setShowKebabMenu(false); cloneObjective(objective.id, { orgId: organization?.id || '', userEmail, shared: objective.shared }); }}
+                      className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                    >
+                      Clone
+                    </button>
+                  )}
+                  {canModify && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowKebabMenu(false);
+                        if (window.confirm(`Delete "${objective.title}"? This also removes its children.`)) {
+                          deleteObjective(objective.id);
+                        }
+                      }}
+                      className="w-full text-left px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 border-t border-gray-100"
+                    >
+                      Delete
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </div>
 
