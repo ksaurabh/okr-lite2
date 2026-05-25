@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import type { List, ObjectiveLevel, Period, PeriodType, User } from '../../types';
 
@@ -49,6 +49,70 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
   const [filterLevel, setFilterLevel] = useState<ObjectiveLevel | ''>('');
   const [filterPeriodId, setFilterPeriodId] = useState('');
   const [filterDurationType, setFilterDurationType] = useState<DurationType | ''>('');
+  const [viewMode, setViewMode] = useState<'list' | 'grouped'>(() => {
+    try { const v = localStorage.getItem('okr-plans-view-mode'); return v === 'grouped' ? 'grouped' : 'list'; } catch { return 'list'; }
+  });
+  const [groupedOwnerId, setGroupedOwnerId] = useState<string>(() => {
+    try { return localStorage.getItem('okr-plans-grouped-owner') || ''; } catch { return ''; }
+  });
+  const [groupedPeriodId, setGroupedPeriodId] = useState<string>(() => {
+    try { return localStorage.getItem('okr-plans-grouped-period') || ''; } catch { return ''; }
+  });
+  const [groupedLevel, setGroupedLevel] = useState<ObjectiveLevel | '' | '__none__'>(() => {
+    try {
+      const v = localStorage.getItem('okr-plans-grouped-level') || '';
+      if (v === 'company' || v === 'team' || v === 'individual' || v === '__none__') return v;
+      return '';
+    } catch { return ''; }
+  });
+  useEffect(() => { try { localStorage.setItem('okr-plans-view-mode', viewMode); } catch { /* ignore */ } }, [viewMode]);
+  useEffect(() => { try { localStorage.setItem('okr-plans-grouped-owner', groupedOwnerId); } catch { /* ignore */ } }, [groupedOwnerId]);
+  useEffect(() => { try { localStorage.setItem('okr-plans-grouped-period', groupedPeriodId); } catch { /* ignore */ } }, [groupedPeriodId]);
+  useEffect(() => { try { localStorage.setItem('okr-plans-grouped-level', groupedLevel); } catch { /* ignore */ } }, [groupedLevel]);
+  const loadWidth = (key: string, fallback: number) => {
+    try { const v = localStorage.getItem(key); const n = v ? parseFloat(v) : NaN; return Number.isFinite(n) && n >= 5 && n <= 80 ? n : fallback; } catch { return fallback; }
+  };
+  const [groupedCol1Width, setGroupedCol1Width] = useState<number>(() => loadWidth('okr-plans-grouped-col1', 15));
+  const [groupedCol2Width, setGroupedCol2Width] = useState<number>(() => loadWidth('okr-plans-grouped-col2', 15));
+  const [groupedCol3Width, setGroupedCol3Width] = useState<number>(() => loadWidth('okr-plans-grouped-col3', 15));
+  const groupedSplitRef = useRef<HTMLDivElement>(null);
+  const groupedDragRef = useRef<1 | 2 | 3 | null>(null);
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!groupedDragRef.current || !groupedSplitRef.current) return;
+      const rect = groupedSplitRef.current.getBoundingClientRect();
+      const pct = ((e.clientX - rect.left) / rect.width) * 100;
+      if (groupedDragRef.current === 1) {
+        const max = 100 - groupedCol2Width - groupedCol3Width - 10;
+        setGroupedCol1Width(Math.max(5, Math.min(max, pct)));
+      } else if (groupedDragRef.current === 2) {
+        const w = pct - groupedCol1Width;
+        const max = 100 - groupedCol1Width - groupedCol3Width - 10;
+        setGroupedCol2Width(Math.max(5, Math.min(max, w)));
+      } else {
+        const w = pct - groupedCol1Width - groupedCol2Width;
+        const max = 100 - groupedCol1Width - groupedCol2Width - 10;
+        setGroupedCol3Width(Math.max(5, Math.min(max, w)));
+      }
+    };
+    const onUp = () => {
+      if (!groupedDragRef.current) return;
+      groupedDragRef.current = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      try {
+        localStorage.setItem('okr-plans-grouped-col1', String(Math.round(groupedCol1Width * 10) / 10));
+        localStorage.setItem('okr-plans-grouped-col2', String(Math.round(groupedCol2Width * 10) / 10));
+        localStorage.setItem('okr-plans-grouped-col3', String(Math.round(groupedCol3Width * 10) / 10));
+      } catch { /* ignore */ }
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    return () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+  }, [groupedCol1Width, groupedCol2Width, groupedCol3Width]);
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [promoteListId, setPromoteListId] = useState<string | null>(null);
@@ -254,6 +318,20 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <div className="inline-flex border border-gray-300 rounded overflow-hidden">
+              <button
+                onClick={() => setViewMode('list')}
+                className={`px-3 py-1.5 text-sm ${viewMode === 'list' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+              >
+                List
+              </button>
+              <button
+                onClick={() => setViewMode('grouped')}
+                className={`px-3 py-1.5 text-sm border-l border-gray-300 ${viewMode === 'grouped' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+              >
+                Grouped
+              </button>
+            </div>
             <button
               onClick={() => { setNewName(''); setNewOwnerId(''); setNewPeriodId(''); setNewLevel(''); setCreateError(null); setShowCreate(true); }}
               className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
@@ -281,6 +359,7 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
           </div>
         </div>
 
+        {viewMode === 'list' && (
         <div className="px-4 py-2 border-b border-gray-200 flex items-center gap-3 bg-gray-50 flex-wrap">
           <div className="flex items-center gap-1">
             <label className="text-xs text-gray-500">Duration Type</label>
@@ -349,8 +428,9 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
             </button>
           )}
         </div>
+        )}
 
-        {planLists.length === 0 ? (
+        {viewMode === 'list' && (planLists.length === 0 ? (
           <div className="p-8 text-center text-sm text-gray-500">
             {lists.some(l => l.ownerId && l.periodId)
               ? 'No plans match the current filter.'
@@ -470,10 +550,201 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
               ))}
             </tbody>
           </table>
-        )}
+        ))}
+
+        {viewMode === 'grouped' && (() => {
+          const pool = lists.filter(l => l.ownerId && l.periodId);
+          const ownerPool = pool;
+          const periodPool = pool.filter(l => !groupedOwnerId || l.ownerId === groupedOwnerId);
+          const levelPool = periodPool.filter(l => !groupedPeriodId || l.periodId === groupedPeriodId);
+          const finalPool = levelPool.filter(l => {
+            if (!groupedLevel) return true;
+            if (groupedLevel === '__none__') return !l.level;
+            return l.level === groupedLevel;
+          });
+
+          const ownerCounts = new Map<string, number>();
+          ownerPool.forEach(l => { if (l.ownerId) ownerCounts.set(l.ownerId, (ownerCounts.get(l.ownerId) || 0) + 1); });
+          const ownerList = Array.from(ownerCounts.keys())
+            .map(id => ({ id, name: orgUsers.find(u => u.id === id)?.name || orgUsers.find(u => u.id === id)?.email || id, count: ownerCounts.get(id) || 0 }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+
+          const periodCounts = new Map<string, number>();
+          periodPool.forEach(l => { if (l.periodId) periodCounts.set(l.periodId, (periodCounts.get(l.periodId) || 0) + 1); });
+          const periodList = Array.from(periodCounts.keys())
+            .map(id => ({ id, p: periods.find(pp => pp.id === id), count: periodCounts.get(id) || 0 }))
+            .filter(x => !!x.p)
+            .sort((a, b) => (a.p!.startDate || '').localeCompare(b.p!.startDate || ''));
+
+          const levelCounts = new Map<string, number>();
+          levelPool.forEach(l => { const k = l.level || '__none__'; levelCounts.set(k, (levelCounts.get(k) || 0) + 1); });
+          const levelKeys: (ObjectiveLevel | '__none__')[] = ['company', 'team', 'individual', '__none__'];
+          const levelList = levelKeys
+            .filter(k => (levelCounts.get(k) || 0) > 0)
+            .map(k => ({ key: k, label: k === '__none__' ? '— No level —' : LEVEL_LABEL[k as ObjectiveLevel], count: levelCounts.get(k) || 0 }));
+
+          const colClass = (sel: boolean) => `w-full text-left px-3 py-2 text-sm border-b border-gray-100 flex items-center justify-between ${sel ? 'bg-blue-50 text-blue-800 font-medium' : 'text-gray-700 hover:bg-gray-50'}`;
+
+          const splitter = (which: 1 | 2 | 3) => (
+            <div
+              onMouseDown={() => {
+                groupedDragRef.current = which;
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none';
+              }}
+              className="w-1 cursor-col-resize bg-gray-200 hover:bg-blue-400 active:bg-blue-500 flex-shrink-0"
+              title="Drag to resize"
+            />
+          );
+          const col4Width = Math.max(10, 100 - groupedCol1Width - groupedCol2Width - groupedCol3Width);
+          return (
+            <div ref={groupedSplitRef} className="flex" style={{ minHeight: 360 }}>
+              <div className="overflow-y-auto" style={{ width: `${groupedCol1Width}%` }}>
+                <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 text-[10px] font-semibold text-gray-500 uppercase tracking-wider flex items-center justify-between">
+                  <span>Owner ({ownerList.length})</span>
+                  {groupedOwnerId && (
+                    <button onClick={() => setGroupedOwnerId('')} className="text-blue-600 hover:underline normal-case font-normal">Clear</button>
+                  )}
+                </div>
+                {ownerList.length === 0 ? (
+                  <div className="p-4 text-xs text-gray-400 italic">No owners.</div>
+                ) : ownerList.map(o => (
+                  <button key={o.id} onClick={() => setGroupedOwnerId(groupedOwnerId === o.id ? '' : o.id)} className={colClass(groupedOwnerId === o.id)}>
+                    <span className="truncate">{o.name}</span>
+                    <span className="text-xs text-gray-400 ml-2">{o.count}</span>
+                  </button>
+                ))}
+              </div>
+              {splitter(1)}
+              <div className="overflow-y-auto" style={{ width: `${groupedCol2Width}%` }}>
+                <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 text-[10px] font-semibold text-gray-500 uppercase tracking-wider flex items-center justify-between">
+                  <span>Period ({periodList.length})</span>
+                  {groupedPeriodId && (
+                    <button onClick={() => setGroupedPeriodId('')} className="text-blue-600 hover:underline normal-case font-normal">Clear</button>
+                  )}
+                </div>
+                {periodList.length === 0 ? (
+                  <div className="p-4 text-xs text-gray-400 italic">No periods.</div>
+                ) : periodList.map(({ id, p, count }) => (
+                  <button key={id} onClick={() => setGroupedPeriodId(groupedPeriodId === id ? '' : id)} className={colClass(groupedPeriodId === id)}>
+                    <span className="truncate">{p!.name}</span>
+                    <span className="text-xs text-gray-400 ml-2">{count}</span>
+                  </button>
+                ))}
+              </div>
+              {splitter(2)}
+              <div className="overflow-y-auto" style={{ width: `${groupedCol3Width}%` }}>
+                <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 text-[10px] font-semibold text-gray-500 uppercase tracking-wider flex items-center justify-between">
+                  <span>Level ({levelList.length})</span>
+                  {groupedLevel && (
+                    <button onClick={() => setGroupedLevel('')} className="text-blue-600 hover:underline normal-case font-normal">Clear</button>
+                  )}
+                </div>
+                {levelList.length === 0 ? (
+                  <div className="p-4 text-xs text-gray-400 italic">No levels.</div>
+                ) : levelList.map(({ key, label, count }) => (
+                  <button
+                    key={key}
+                    onClick={() => setGroupedLevel(groupedLevel === key ? '' : key)}
+                    className={colClass(groupedLevel === key)}
+                  >
+                    <span className="truncate">{label}</span>
+                    <span className="text-xs text-gray-400 ml-2">{count}</span>
+                  </button>
+                ))}
+              </div>
+              {splitter(3)}
+              <div className="overflow-y-auto" style={{ width: `${col4Width}%` }}>
+                <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+                  Plans ({finalPool.length})
+                </div>
+                {finalPool.length === 0 ? (
+                  <div className="p-4 text-xs text-gray-400 italic">No plans match.</div>
+                ) : (
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Name</th>
+                        <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Items</th>
+                        <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Sharing</th>
+                        <th className="px-3 py-2"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-100">
+                      {finalPool.sort((a, b) => a.name.localeCompare(b.name)).map(list => (
+                        <tr key={list.id} className="hover:bg-gray-50">
+                          <td className="px-3 py-2 text-sm">
+                            <button
+                              onClick={() => openPlan(list)}
+                              className="text-blue-600 hover:text-blue-800 hover:underline font-medium text-left flex items-center gap-2"
+                            >
+                              <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: list.color || '#6b7280' }} />
+                              {list.name}
+                            </button>
+                          </td>
+                          <td className="px-3 py-2 text-sm text-gray-600">{list.items.length}</td>
+                          <td className="px-3 py-2 text-sm">
+                            <button
+                              onClick={() => setListShared(list.id, !list.shared)}
+                              className={`px-2 py-0.5 text-xs rounded border ${list.shared ? 'bg-green-50 border-green-300 text-green-700 hover:bg-green-100' : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'}`}
+                              title={list.shared ? 'Click to make private' : 'Click to share with org'}
+                            >
+                              {list.shared ? 'Shared' : 'Private'}
+                            </button>
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <div className="inline-flex items-center gap-1">
+                              <button
+                                onClick={() => { setPlanFocusListId(list.id); onViewChange('planbuilder'); }}
+                                className="p-1 text-gray-400 hover:text-purple-600 rounded"
+                                title="Open in Plan Builder"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={() => { setEditListId(list.id); setEditName(list.name); setEditError(null); }}
+                                className="p-1 text-gray-400 hover:text-blue-600 rounded"
+                                title="Edit plan"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={() => handleClone(list)}
+                                disabled={cloningListId === list.id}
+                                className="p-1 text-gray-400 hover:text-blue-600 rounded disabled:opacity-50"
+                                title="Clone plan"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={() => { if (window.confirm(`Delete plan "${list.name}"? This removes the list and its items.`)) deleteList(list.id); }}
+                                className="p-1 text-gray-400 hover:text-red-600 rounded"
+                                title="Delete plan"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
-      {filteredSharedPlans.length > 0 && (
+      {viewMode === 'list' && filteredSharedPlans.length > 0 && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200">
           <div className="p-4 border-b border-gray-200">
             <h3 className="text-base font-semibold text-gray-900">Shared plans from others</h3>
