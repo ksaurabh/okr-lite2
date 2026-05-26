@@ -48,7 +48,8 @@ export function WeeklyUpdatesPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingBullet, setEditingBullet] = useState<{ uid: string; bid: string; field: 'text' | 'sp' } | null>(null);
   const [importTarget, setImportTarget] = useState<string | null>(null);
-  const [importText, setImportText] = useState('');
+  const [importFileName, setImportFileName] = useState<string>('');
+  const [importRows, setImportRows] = useState<Array<{ text: string; sp: number }> | null>(null);
   const [importMode, setImportMode] = useState<'replace' | 'append'>('append');
   const csvEscape = (s: string) => {
     if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
@@ -101,17 +102,16 @@ export function WeeklyUpdatesPage() {
     URL.revokeObjectURL(url);
   };
 
-  const openImport = (uid: string) => { setImportTarget(uid); setImportText(''); setImportMode('append'); };
+  const openImport = (uid: string) => { setImportTarget(uid); setImportFileName(''); setImportRows(null); setImportMode('append'); };
   const handleImportFile = async (file: File | null | undefined) => {
     if (!file) return;
     const text = await file.text();
-    setImportText(text);
+    setImportFileName(file.name);
+    setImportRows(parseCsv(text));
   };
   const runImport = () => {
-    if (!importTarget) return;
-    const rows = parseCsv(importText);
-    if (rows.length === 0) { setImportTarget(null); return; }
-    const newBullets: UpdateBullet[] = rows.map(r => ({ id: crypto.randomUUID(), text: r.text, sp: r.sp }));
+    if (!importTarget || !importRows || importRows.length === 0) { setImportTarget(null); return; }
+    const newBullets: UpdateBullet[] = importRows.map(r => ({ id: crypto.randomUUID(), text: r.text, sp: r.sp }));
     updateBullets(importTarget, bs => importMode === 'replace' ? newBullets : [...bs, ...newBullets]);
     setImportTarget(null);
   };
@@ -439,22 +439,29 @@ export function WeeklyUpdatesPage() {
         <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-lg w-full p-4">
             <h3 className="text-lg font-semibold text-gray-900 mb-1">Import bullets from CSV</h3>
-            <p className="text-xs text-gray-500 mb-3">Upload a <code>.csv</code> file or paste rows below. Format: <code>text,sp</code> (header row optional).</p>
-            <div className="mb-2">
-              <input
-                type="file"
-                accept=".csv,text/csv"
-                onChange={(e) => handleImportFile(e.target.files?.[0])}
-                className="text-xs"
-              />
-            </div>
-            <textarea
-              value={importText}
-              onChange={(e) => setImportText(e.target.value)}
-              rows={8}
-              placeholder={'text,sp\nShipped login page,3\n"Wrote PRD for X feature",5'}
-              className="w-full text-sm border border-gray-300 rounded px-3 py-2 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+            <p className="text-xs text-gray-500 mb-3">Choose a <code>.csv</code> file. Expected format: <code>text,sp</code> (header row optional).</p>
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              onChange={(e) => handleImportFile(e.target.files?.[0])}
+              className="text-sm block"
             />
+            {importRows && (
+              <div className="mt-3 text-xs text-gray-600">
+                <div className="mb-1"><span className="font-medium text-gray-800">{importFileName}</span> · {importRows.length} {importRows.length === 1 ? 'item' : 'items'} detected</div>
+                {importRows.length > 0 && (
+                  <ul className="border border-gray-200 rounded p-2 max-h-40 overflow-y-auto bg-gray-50 space-y-0.5">
+                    {importRows.slice(0, 10).map((r, i) => (
+                      <li key={i} className="flex justify-between gap-2">
+                        <span className="truncate">{r.text || <span className="italic text-gray-400">(empty)</span>}</span>
+                        <span className="text-gray-500">{r.sp} SP</span>
+                      </li>
+                    ))}
+                    {importRows.length > 10 && <li className="text-gray-400">…and {importRows.length - 10} more</li>}
+                  </ul>
+                )}
+              </div>
+            )}
             <div className="mt-2 flex items-center gap-3 text-xs">
               <label className="inline-flex items-center gap-1">
                 <input type="radio" checked={importMode === 'append'} onChange={() => setImportMode('append')} /> Append
@@ -472,7 +479,7 @@ export function WeeklyUpdatesPage() {
               </button>
               <button
                 onClick={runImport}
-                disabled={!importText.trim()}
+                disabled={!importRows || importRows.length === 0}
                 className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
               >
                 Import
