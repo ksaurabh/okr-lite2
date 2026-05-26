@@ -100,7 +100,7 @@ export interface Team {
   memberEmails?: string[];
 }
 
-export type PeriodType = 'quarter' | 'month' | 'week';
+export type PeriodType = 'quarter' | 'month' | 'week' | 'oneoff';
 
 export interface Period {
   id: string;

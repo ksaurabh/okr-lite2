@@ -7,6 +7,7 @@ const PERIOD_TYPE_BADGES: Record<PeriodType, { label: string; color: string }> =
   quarter: { label: 'Quarter', color: 'bg-purple-100 text-purple-700' },
   month: { label: 'Month', color: 'bg-blue-100 text-blue-700' },
   week: { label: 'Week', color: 'bg-green-100 text-green-700' },
+  oneoff: { label: 'One-off', color: 'bg-amber-100 text-amber-700' },
 };
 
 function formatDate(dateString: string): string {
@@ -33,37 +34,66 @@ export function PeriodsPage() {
   const periods = useOKRStore((state: OKRStore) => state.periods);
   const updatePeriod = useOKRStore((state: OKRStore) => state.updatePeriod);
   const addPeriod = useOKRStore((state: OKRStore) => state.addPeriod);
+  const deletePeriod = useOKRStore((state: OKRStore) => state.deletePeriod);
 
   const [createMonthsForQuarter, setCreateMonthsForQuarter] = useState<Period | null>(null);
   const [isCreatingMonths, setIsCreatingMonths] = useState(false);
   const [createWeeksForMonth, setCreateWeeksForMonth] = useState<Period | null>(null);
   const [isCreatingWeeks, setIsCreatingWeeks] = useState(false);
-  const [editing, setEditing] = useState<{ id: string; field: 'name' | 'startDate' | 'endDate' } | null>(null);
-  const [editValue, setEditValue] = useState('');
+  const [editTarget, setEditTarget] = useState<Period | null>(null);
+  const [autoUpdatePlan, setAutoUpdatePlan] = useState<{ creates: Array<{ name: string; type: PeriodType; startDate: string; endDate: string }>; archives: Period[] } | null>(null);
+  const [autoUpdateRunning, setAutoUpdateRunning] = useState(false);
+  const [fiscalEnabled, setFiscalEnabled] = useState<boolean>(() => {
+    try { return localStorage.getItem('okr-fiscal-quarters-enabled') === 'true'; } catch { return false; }
+  });
+  const [fiscalStartMonth, setFiscalStartMonth] = useState<number>(() => {
+    try { const v = localStorage.getItem('okr-fiscal-start-month'); const n = v ? parseInt(v, 10) : NaN; return Number.isFinite(n) && n >= 1 && n <= 12 ? n : 1; } catch { return 1; }
+  });
+  const setFiscalEnabledPersist = (v: boolean) => { setFiscalEnabled(v); try { localStorage.setItem('okr-fiscal-quarters-enabled', String(v)); } catch { /* ignore */ } };
+  const setFiscalStartMonthPersist = (m: number) => { setFiscalStartMonth(m); try { localStorage.setItem('okr-fiscal-start-month', String(m)); } catch { /* ignore */ } };
+  const [editForm, setEditForm] = useState<{ name: string; type: PeriodType; parentId: string; startDate: string; endDate: string }>({ name: '', type: 'quarter', parentId: '', startDate: '', endDate: '' });
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
 
-  const startEdit = (period: Period, field: 'name' | 'startDate' | 'endDate') => {
-    setEditing({ id: period.id, field });
-    setEditValue(field === 'name' ? period.name : period[field]);
+  const openEdit = (period: Period) => {
+    setEditTarget(period);
+    setEditForm({
+      name: period.name,
+      type: period.type,
+      parentId: period.parentId || '',
+      startDate: period.startDate,
+      endDate: period.endDate,
+    });
+    setEditError(null);
   };
 
-  const commitEdit = async () => {
-    if (!editing) return;
-    const trimmed = editValue.trim();
-    const period = periods.find(p => p.id === editing.id);
-    if (!period) { setEditing(null); return; }
-    if (editing.field === 'name') {
-      if (trimmed && trimmed !== period.name) {
-        await updatePeriod(editing.id, { name: trimmed });
-      }
-    } else {
-      if (trimmed && /^\d{4}-\d{2}-\d{2}$/.test(trimmed) && trimmed !== period[editing.field]) {
-        await updatePeriod(editing.id, { [editing.field]: trimmed });
-      }
+  const handleEditSave = async () => {
+    if (!editTarget) return;
+    const name = editForm.name.trim();
+    if (!name) { setEditError('Name is required.'); return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(editForm.startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(editForm.endDate)) {
+      setEditError('Start and end dates must be valid.');
+      return;
     }
-    setEditing(null);
+    if (editForm.startDate > editForm.endDate) {
+      setEditError('Start date must be before end date.');
+      return;
+    }
+    setEditSaving(true);
+    try {
+      const updates: Partial<Period> = {};
+      if (name !== editTarget.name) updates.name = name;
+      if (editForm.type !== editTarget.type) updates.type = editForm.type;
+      const nextParent = editForm.parentId || undefined;
+      if (nextParent !== editTarget.parentId) updates.parentId = nextParent;
+      if (editForm.startDate !== editTarget.startDate) updates.startDate = editForm.startDate;
+      if (editForm.endDate !== editTarget.endDate) updates.endDate = editForm.endDate;
+      if (Object.keys(updates).length > 0) await updatePeriod(editTarget.id, updates);
+      setEditTarget(null);
+    } finally {
+      setEditSaving(false);
+    }
   };
-
-  const cancelEdit = () => setEditing(null);
 
   const monthCandidatesForQuarter = useMemo(() => {
     if (!createMonthsForQuarter) return [];
@@ -182,6 +212,130 @@ export function PeriodsPage() {
   const [filterTypes, setFilterTypes] = useState<PeriodType[]>([]);
   const [filterArchived, setFilterArchived] = useState<'all' | 'active' | 'archived'>('active');
 
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const computeQuarterRange = (year: number, qIdx: number) => {
+    const startMonth = qIdx * 3;
+    const start = new Date(year, startMonth, 1);
+    const end = new Date(year, startMonth + 3, 0);
+    return { name: `Q${qIdx + 1} ${year}`, startDate: ymd(start), endDate: ymd(end) };
+  };
+  // Fiscal quarter: fiscalStartMonth is 1..12. Q1 starts at that month.
+  // Fiscal year label = calendar year of the FY end date (year that contains the last day of FY).
+  // Returns { name: 'FYxxQn', startDate, endDate, fyYear, qIdx (0..3) }
+  const computeFiscalQuarterForDate = (d: Date) => {
+    const startMonthIdx = fiscalStartMonth - 1; // 0..11
+    const m = d.getMonth();
+    const y = d.getFullYear();
+    // offset months from FY start (0..11)
+    const monthsFromStart = ((m - startMonthIdx) + 12) % 12;
+    const fyStartYear = m >= startMonthIdx ? y : y - 1;
+    const qIdx = Math.floor(monthsFromStart / 3); // 0..3
+    return { fyStartYear, qIdx };
+  };
+  const fiscalQuarterRange = (fyStartYear: number, qIdx: number) => {
+    const startMonthIdx = fiscalStartMonth - 1;
+    const absMonth = startMonthIdx + qIdx * 3;
+    const startYear = fyStartYear + Math.floor(absMonth / 12);
+    const startMonth = absMonth % 12;
+    const endAbs = absMonth + 3;
+    const endYear = fyStartYear + Math.floor(endAbs / 12);
+    const endMonth = endAbs % 12;
+    const start = new Date(startYear, startMonth, 1);
+    const end = new Date(endYear, endMonth, 0);
+    // FY label = year containing the last day of the fiscal year = fyStartYear + 1 when fiscalStartMonth>1, else fyStartYear
+    const fyEndYear = fiscalStartMonth === 1 ? fyStartYear : fyStartYear + 1;
+    const yy = String(fyEndYear).slice(-2);
+    return { name: `FY${yy}Q${qIdx + 1}`, startDate: ymd(start), endDate: ymd(end) };
+  };
+  const advanceFiscalQuarter = (fyStartYear: number, qIdx: number, delta: number) => {
+    const total = fyStartYear * 4 + qIdx + delta;
+    return { fyStartYear: Math.floor(total / 4), qIdx: ((total % 4) + 4) % 4 };
+  };
+  const computeMonthRange = (year: number, monthIdx: number) => {
+    const start = new Date(year, monthIdx, 1);
+    const end = new Date(year, monthIdx + 1, 0);
+    return { name: `${monthNames[monthIdx]} ${year}`, startDate: ymd(start), endDate: ymd(end) };
+  };
+  const computeWeekRange = (anchor: Date) => {
+    const d = new Date(anchor);
+    const day = d.getDay(); // 0=Sun..6=Sat
+    const diff = (day === 0 ? -6 : 1 - day); // shift to Monday
+    d.setDate(d.getDate() + diff);
+    const start = new Date(d);
+    const end = new Date(d);
+    end.setDate(end.getDate() + 6);
+    const startStr = ymd(start);
+    return { name: `w-${startStr}`, startDate: startStr, endDate: ymd(end) };
+  };
+
+  const computeAutoUpdatePlan = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const qIdx = Math.floor(now.getMonth() / 3);
+    const monthIdx = now.getMonth();
+    const quarterTargets = fiscalEnabled ? (() => {
+      const cur = computeFiscalQuarterForDate(now);
+      const prev = advanceFiscalQuarter(cur.fyStartYear, cur.qIdx, -1);
+      const next = advanceFiscalQuarter(cur.fyStartYear, cur.qIdx, 1);
+      return [
+        fiscalQuarterRange(prev.fyStartYear, prev.qIdx),
+        fiscalQuarterRange(cur.fyStartYear, cur.qIdx),
+        fiscalQuarterRange(next.fyStartYear, next.qIdx),
+      ];
+    })() : [
+      computeQuarterRange(qIdx === 0 ? year - 1 : year, qIdx === 0 ? 3 : qIdx - 1),
+      computeQuarterRange(year, qIdx),
+      computeQuarterRange(qIdx === 3 ? year + 1 : year, qIdx === 3 ? 0 : qIdx + 1),
+    ];
+    const targets: Record<'quarter' | 'month' | 'week', { name: string; startDate: string; endDate: string }[]> = {
+      quarter: quarterTargets,
+      month: [
+        computeMonthRange(monthIdx === 0 ? year - 1 : year, monthIdx === 0 ? 11 : monthIdx - 1),
+        computeMonthRange(year, monthIdx),
+        computeMonthRange(monthIdx === 11 ? year + 1 : year, monthIdx === 11 ? 0 : monthIdx + 1),
+      ],
+      week: [
+        (() => { const d = new Date(now); d.setDate(d.getDate() - 7); return computeWeekRange(d); })(),
+        computeWeekRange(now),
+        (() => { const d = new Date(now); d.setDate(d.getDate() + 7); return computeWeekRange(d); })(),
+      ],
+    };
+    const creates: Array<{ name: string; type: PeriodType; startDate: string; endDate: string }> = [];
+    const keepKeys = new Set<string>(); // type|startDate
+    (['quarter', 'month', 'week'] as const).forEach(t => {
+      targets[t].forEach(tgt => {
+        keepKeys.add(`${t}|${tgt.startDate}`);
+        const exists = periods.find(p => p.type === t && (!p.orgId || p.orgId === orgId) && p.startDate === tgt.startDate);
+        if (!exists) creates.push({ name: tgt.name, type: t, startDate: tgt.startDate, endDate: tgt.endDate });
+      });
+    });
+    const archives: Period[] = periods.filter(p =>
+      (!p.orgId || p.orgId === orgId)
+      && (p.type === 'quarter' || p.type === 'month' || p.type === 'week')
+      && !p.archived
+      && !keepKeys.has(`${p.type}|${p.startDate}`)
+    );
+    return { creates, archives };
+  };
+
+  const runAutoUpdate = async () => {
+    if (!autoUpdatePlan) return;
+    setAutoUpdateRunning(true);
+    try {
+      for (const c of autoUpdatePlan.creates) {
+        await addPeriod({ name: c.name, type: c.type, startDate: c.startDate, endDate: c.endDate, isActive: true }, { orgId, userEmail, shared: true });
+      }
+      for (const p of autoUpdatePlan.archives) {
+        await updatePeriod(p.id, { archived: true });
+      }
+      setAutoUpdatePlan(null);
+    } finally {
+      setAutoUpdateRunning(false);
+    }
+  };
+
   const toggleTypeFilter = (type: PeriodType) => {
     setFilterTypes(prev => prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]);
   };
@@ -247,10 +401,46 @@ export function PeriodsPage() {
     <div className="space-y-6">
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
         <div className="p-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">All Periods</h2>
-          <p className="text-sm text-gray-500 mt-1">
-            {orgPeriods.length} {orgPeriods.length === 1 ? 'period' : 'periods'} total
-          </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">All Periods</h2>
+              <p className="text-sm text-gray-500 mt-1">
+                {orgPeriods.length} {orgPeriods.length === 1 ? 'period' : 'periods'} total
+              </p>
+            </div>
+            {isAdmin && (
+              <div className="flex items-center gap-3">
+                <label className="inline-flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={fiscalEnabled}
+                    onChange={(e) => setFiscalEnabledPersist(e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  Enable fiscal quarters
+                </label>
+                {fiscalEnabled && (
+                  <div className="flex items-center gap-1 text-xs text-gray-600">
+                    <span>FY starts</span>
+                    <select
+                      value={fiscalStartMonth}
+                      onChange={(e) => setFiscalStartMonthPersist(parseInt(e.target.value, 10))}
+                      className="border border-gray-300 rounded px-1 py-0.5 text-xs bg-white"
+                    >
+                      {monthNames.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+                    </select>
+                  </div>
+                )}
+                <button
+                  onClick={() => setAutoUpdatePlan(computeAutoUpdatePlan())}
+                  className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+                  title="Create missing periods and archive old ones"
+                >
+                  Auto Update Periods
+                </button>
+              </div>
+            )}
+          </div>
 
           <div className="mt-3 flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2">
@@ -323,81 +513,29 @@ export function PeriodsPage() {
 
                   return (
                     <tr key={period.id} className={`hover:bg-gray-50 ${period.archived ? 'opacity-50' : ''}`}>
-                      <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                        {editing?.id === period.id && editing.field === 'name' ? (
-                          <input
-                            autoFocus
-                            value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            onBlur={commitEdit}
-                            onKeyDown={(e) => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') cancelEdit(); }}
-                            className="w-full px-1 py-0.5 text-sm border border-blue-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                          />
-                        ) : (
-                          <button
-                            onClick={() => startEdit(period, 'name')}
-                            className="text-left w-full hover:bg-gray-100 px-1 py-0.5 rounded"
-                            title="Click to edit"
-                          >
-                            {period.name}
-                          </button>
-                        )}
-                      </td>
+                      <td className="px-4 py-3 text-sm font-medium text-gray-900">{period.name}</td>
                       <td className="px-4 py-3 text-sm">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${badge.color}`}>
                           {badge.label}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-500">
-                        {getParentName(period.parentId)}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-900">
-                        {editing?.id === period.id && editing.field === 'startDate' ? (
-                          <input
-                            type="date"
-                            autoFocus
-                            value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            onBlur={commitEdit}
-                            onKeyDown={(e) => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') cancelEdit(); }}
-                            className="px-1 py-0.5 text-sm border border-blue-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                          />
-                        ) : (
-                          <button
-                            onClick={() => startEdit(period, 'startDate')}
-                            className="text-left hover:bg-gray-100 px-1 py-0.5 rounded"
-                            title="Click to edit"
-                          >
-                            {formatDate(period.startDate)}
-                          </button>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-900">
-                        {editing?.id === period.id && editing.field === 'endDate' ? (
-                          <input
-                            type="date"
-                            autoFocus
-                            value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            onBlur={commitEdit}
-                            onKeyDown={(e) => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') cancelEdit(); }}
-                            className="px-1 py-0.5 text-sm border border-blue-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                          />
-                        ) : (
-                          <button
-                            onClick={() => startEdit(period, 'endDate')}
-                            className="text-left hover:bg-gray-100 px-1 py-0.5 rounded"
-                            title="Click to edit"
-                          >
-                            {formatDate(period.endDate)}
-                          </button>
-                        )}
-                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-500">{getParentName(period.parentId) || '—'}</td>
+                      <td className="px-4 py-3 text-sm text-gray-900">{formatDate(period.startDate)}</td>
+                      <td className="px-4 py-3 text-sm text-gray-900">{formatDate(period.endDate)}</td>
                       <td className="px-4 py-3 text-sm text-gray-500">
                         {durationDays(period)} days
                       </td>
                       <td className="px-4 py-3 text-sm">
                         <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => openEdit(period)}
+                            className="p-1 text-gray-400 hover:text-blue-600 rounded"
+                            title="Edit period"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                          </button>
                           <button
                             onClick={() => updatePeriod(period.id, { archived: !period.archived })}
                             className={`px-2 py-1 text-xs rounded ${
@@ -427,6 +565,19 @@ export function PeriodsPage() {
                               Create Weeks
                             </button>
                           )}
+                          <button
+                            onClick={() => {
+                              if (window.confirm(`Delete period "${period.name}"? This cannot be undone.`)) {
+                                deletePeriod(period.id);
+                              }
+                            }}
+                            className="p-1 text-gray-400 hover:text-red-600 rounded"
+                            title="Delete period"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -536,6 +687,151 @@ export function PeriodsPage() {
                 {isCreatingMonths
                   ? 'Creating…'
                   : `Create ${monthCandidatesForQuarter.filter(c => !c.exists).length} period${monthCandidatesForQuarter.filter(c => !c.exists).length === 1 ? '' : 's'}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {autoUpdatePlan && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-lg w-full p-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-1">Auto Update Periods</h3>
+            <p className="text-xs text-gray-500 mb-3">For each type, keep only previous / current / next; create missing ones; archive everything else.</p>
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              <div>
+                <div className="text-xs font-semibold text-green-700 uppercase tracking-wider mb-1">Will create ({autoUpdatePlan.creates.length})</div>
+                {autoUpdatePlan.creates.length === 0 ? (
+                  <div className="text-xs text-gray-400 italic">Nothing to create.</div>
+                ) : (
+                  <ul className="text-xs text-gray-700 space-y-0.5">
+                    {autoUpdatePlan.creates.map((c, i) => (
+                      <li key={i} className="flex items-center gap-2">
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${PERIOD_TYPE_BADGES[c.type].color}`}>{PERIOD_TYPE_BADGES[c.type].label}</span>
+                        <span>{c.name}</span>
+                        <span className="text-gray-400">({c.startDate} → {c.endDate})</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div>
+                <div className="text-xs font-semibold text-amber-700 uppercase tracking-wider mb-1">Will archive ({autoUpdatePlan.archives.length})</div>
+                {autoUpdatePlan.archives.length === 0 ? (
+                  <div className="text-xs text-gray-400 italic">Nothing to archive.</div>
+                ) : (
+                  <ul className="text-xs text-gray-700 space-y-0.5">
+                    {autoUpdatePlan.archives.map(p => (
+                      <li key={p.id} className="flex items-center gap-2">
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${PERIOD_TYPE_BADGES[p.type].color}`}>{PERIOD_TYPE_BADGES[p.type].label}</span>
+                        <span>{p.name}</span>
+                        <span className="text-gray-400">({p.startDate} → {p.endDate})</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setAutoUpdatePlan(null)}
+                disabled={autoUpdateRunning}
+                className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={runAutoUpdate}
+                disabled={autoUpdateRunning || (autoUpdatePlan.creates.length === 0 && autoUpdatePlan.archives.length === 0)}
+                className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+              >
+                {autoUpdateRunning ? 'Updating…' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editTarget && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-3">Edit period</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Name</label>
+                <input
+                  type="text"
+                  autoFocus
+                  value={editForm.name}
+                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Type</label>
+                <select
+                  value={editForm.type}
+                  onChange={(e) => setEditForm({ ...editForm, type: e.target.value as PeriodType })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white"
+                >
+                  <option value="quarter">Quarterly</option>
+                  <option value="month">Monthly</option>
+                  <option value="week">Weekly</option>
+                  <option value="oneoff">One-off</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Parent</label>
+                <select
+                  value={editForm.parentId}
+                  onChange={(e) => setEditForm({ ...editForm, parentId: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white"
+                >
+                  <option value="">— None (top-level) —</option>
+                  {orgPeriods
+                    .filter(p => p.id !== editTarget.id)
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Start date</label>
+                  <input
+                    type="date"
+                    value={editForm.startDate}
+                    onChange={(e) => setEditForm({ ...editForm, startDate: e.target.value })}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">End date</label>
+                  <input
+                    type="date"
+                    value={editForm.endDate}
+                    onChange={(e) => setEditForm({ ...editForm, endDate: e.target.value })}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+              {editError && (
+                <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded p-2">{editError}</div>
+              )}
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setEditTarget(null)}
+                disabled={editSaving}
+                className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleEditSave}
+                disabled={editSaving || !editForm.name.trim()}
+                className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+              >
+                {editSaving ? 'Saving…' : 'Save'}
               </button>
             </div>
           </div>
