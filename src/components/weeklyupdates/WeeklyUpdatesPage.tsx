@@ -12,6 +12,7 @@ interface UpdateBullet {
   id: string;
   text: string;
   sp: number;
+  why?: { id: string; title: string };
 }
 
 interface WeeklyUpdate {
@@ -37,15 +38,38 @@ function saveUpdates(updates: WeeklyUpdate[]) {
 }
 
 export function WeeklyUpdatesPage() {
-  const { user } = useAuth();
+  const { user, organization } = useAuth();
   const userEmail = user?.email || '';
   const periods = useOKRStore((s: OKRStore) => s.periods);
+  const objectives = useOKRStore((s: OKRStore) => s.objectives);
 
   const [updates, setUpdates] = useState<WeeklyUpdate[]>(() => loadUpdates());
   const [showAdd, setShowAdd] = useState(false);
   const [newWeekPeriodId, setNewWeekPeriodId] = useState('');
   const [orgUsers, setOrgUsers] = useState<User[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
+  const [filterWeekDate, setFilterWeekDate] = useState<string>('');
+  const [filterReporterEmail, setFilterReporterEmail] = useState<string>('');
+  const [whyPicker, setWhyPicker] = useState<{ uid: string; bid: string } | null>(null);
+  const [whySearch, setWhySearch] = useState('');
+  const [whyMode, setWhyMode] = useState<'list' | 'tree'>('list');
+  const [addChildFor, setAddChildFor] = useState<string | 'root' | null>(null);
+  const [addChildTitle, setAddChildTitle] = useState('');
+  const [whyCollapsed, setWhyCollapsed] = useState<Set<string>>(new Set());
+  const toggleWhyCollapsed = (id: string) => setWhyCollapsed(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const addObjective = useOKRStore((s: OKRStore) => s.addObjective);
+  const activePeriodId = useOKRStore((s: OKRStore) => s.activePeriodId);
+  const orgIdForCreate = organization?.id || '';
+  const toggleCollapsed = (id: string) => setCollapsedIds(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
   const [editingBullet, setEditingBullet] = useState<{ uid: string; bid: string; field: 'text' | 'sp' } | null>(null);
   const [importTarget, setImportTarget] = useState<string | null>(null);
   const [importFileName, setImportFileName] = useState<string>('');
@@ -55,8 +79,8 @@ export function WeeklyUpdatesPage() {
     if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
     return s;
   };
-  const bulletsToCsv = (bs: UpdateBullet[]) => ['text,sp', ...bs.map(b => `${csvEscape(b.text)},${b.sp}`)].join('\n');
-  const parseCsv = (text: string): Array<{ text: string; sp: number }> => {
+  const bulletsToCsv = (bs: UpdateBullet[]) => ['Work item,Why,Story points', ...bs.map(b => `${csvEscape(b.text)},${csvEscape(b.why?.title || '')},${b.sp}`)].join('\n');
+  const parseCsv = (text: string): Array<{ text: string; sp: number; whyTitle?: string }> => {
     const rows: string[][] = [];
     let cur: string[] = [];
     let field = '';
@@ -76,15 +100,24 @@ export function WeeklyUpdatesPage() {
       }
     }
     if (field !== '' || cur.length > 0) { cur.push(field); rows.push(cur); }
-    const result: Array<{ text: string; sp: number }> = [];
+    const result: Array<{ text: string; sp: number; whyTitle?: string }> = [];
     for (const row of rows) {
       if (row.length === 0 || row.every(x => x.trim() === '')) continue;
-      if (row.length === 1 && /^\s*(text\s*,?\s*sp?)\s*$/i.test(row[0])) continue;
-      const t = (row[0] || '').trim();
-      const spStr = (row[1] || '').trim();
-      if (/^text$/i.test(t) && /^sp$/i.test(spStr)) continue;
-      const sp = Number(spStr);
-      result.push({ text: t, sp: Number.isFinite(sp) ? sp : 0 });
+      const c0 = (row[0] || '').trim();
+      const c1 = (row[1] || '').trim();
+      const c2 = (row[2] || '').trim();
+      // header rows
+      if (/^work\s*item$/i.test(c0) && /^why$/i.test(c1)) continue;
+      if (/^text$/i.test(c0) && (/^sp$/i.test(c1) || /^story\s*points?$/i.test(c1))) continue;
+      // 3-column: text, why, sp
+      if (row.length >= 3) {
+        const sp = Number(c2);
+        result.push({ text: c0, sp: Number.isFinite(sp) ? sp : 0, whyTitle: c1 || undefined });
+      } else {
+        // 2-column legacy: text, sp
+        const sp = Number(c1);
+        result.push({ text: c0, sp: Number.isFinite(sp) ? sp : 0 });
+      }
     }
     return result;
   };
@@ -111,7 +144,11 @@ export function WeeklyUpdatesPage() {
   };
   const runImport = () => {
     if (!importTarget || !importRows || importRows.length === 0) { setImportTarget(null); return; }
-    const newBullets: UpdateBullet[] = importRows.map(r => ({ id: crypto.randomUUID(), text: r.text, sp: r.sp }));
+    const newBullets: UpdateBullet[] = importRows.map(r => {
+      const match = r.whyTitle ? objectives.find(o => o.title === r.whyTitle) : undefined;
+      const why = r.whyTitle ? (match ? { id: match.id, title: match.title } : { id: '', title: r.whyTitle }) : undefined;
+      return { id: crypto.randomUUID(), text: r.text, sp: r.sp, why };
+    });
     updateBullets(importTarget, bs => importMode === 'replace' ? newBullets : [...bs, ...newBullets]);
     setImportTarget(null);
   };
@@ -175,6 +212,22 @@ export function WeeklyUpdatesPage() {
     return copy;
   });
 
+  const filteredUpdates = useMemo(() => updates.filter(u => {
+    if (filterWeekDate && u.weekDate !== filterWeekDate) return false;
+    if (filterReporterEmail && u.reporterEmail !== filterReporterEmail) return false;
+    return true;
+  }), [updates, filterWeekDate, filterReporterEmail]);
+
+  const uniqueWeekDates = useMemo(() => {
+    const set = new Set(updates.map(u => u.weekDate));
+    return Array.from(set).sort((a, b) => b.localeCompare(a));
+  }, [updates]);
+  const uniqueReporters = useMemo(() => {
+    const set = new Set(updates.map(u => u.reporterEmail));
+    return Array.from(set).sort((a, b) => userName(a).localeCompare(userName(b)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [updates, orgUsers]);
+
   const periodsForType = (dt: DurationType): Period[] => {
     const t = dt === 'quarterly' ? 'quarter' : dt === 'monthly' ? 'month' : 'week';
     return periods.filter(p => p.type === t);
@@ -182,30 +235,81 @@ export function WeeklyUpdatesPage() {
 
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-gray-900">Weekly Updates</h2>
-          <p className="text-sm text-gray-500 mt-1">{updates.length} {updates.length === 1 ? 'update' : 'updates'}</p>
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Weekly Updates</h2>
+            <p className="text-sm text-gray-500 mt-1">
+              {filteredUpdates.length} of {updates.length} {updates.length === 1 ? 'update' : 'updates'}
+            </p>
+          </div>
+          <button
+            onClick={() => setShowAdd(true)}
+            className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            + Add an update
+          </button>
         </div>
-        <button
-          onClick={() => setShowAdd(true)}
-          className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-        >
-          + Add an update
-        </button>
+        {updates.length > 0 && (
+          <div className="mt-3 flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-1">
+              <label className="text-xs text-gray-500">Week</label>
+              <select
+                value={filterWeekDate}
+                onChange={(e) => setFilterWeekDate(e.target.value)}
+                className="border border-gray-300 rounded px-2 py-1 text-xs bg-white"
+              >
+                <option value="">Any week</option>
+                {uniqueWeekDates.map(d => <option key={d} value={d}>w-{d}</option>)}
+              </select>
+            </div>
+            <div className="flex items-center gap-1">
+              <label className="text-xs text-gray-500">Reporter</label>
+              <select
+                value={filterReporterEmail}
+                onChange={(e) => setFilterReporterEmail(e.target.value)}
+                className="border border-gray-300 rounded px-2 py-1 text-xs bg-white"
+              >
+                <option value="">Any reporter</option>
+                {uniqueReporters.map(e => <option key={e} value={e}>{userName(e)}</option>)}
+              </select>
+            </div>
+            {(filterWeekDate || filterReporterEmail) && (
+              <button
+                onClick={() => { setFilterWeekDate(''); setFilterReporterEmail(''); }}
+                className="text-xs text-gray-500 hover:text-gray-700 underline"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {updates.length === 0 ? (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8 text-center text-sm text-gray-500">
           No updates yet. Click "Add an update" to create one.
         </div>
+      ) : filteredUpdates.length === 0 ? (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8 text-center text-sm text-gray-500">
+          No updates match the current filter.
+        </div>
       ) : (
-        updates.map(u => (
+        filteredUpdates.map(u => (
           <div key={u.id} className="bg-white rounded-lg shadow-sm border border-gray-200">
-            <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
-              <h3 className="text-base font-semibold text-gray-900">
-                Weekly Update - w-{u.weekDate} (Reporter: {userName(u.reporterEmail)})
-              </h3>
+            <div className={`px-4 py-3 flex items-center justify-between ${collapsedIds.has(u.id) ? '' : 'border-b border-gray-200'}`}>
+              <button
+                onClick={() => toggleCollapsed(u.id)}
+                className="flex items-center gap-2 text-left flex-1 min-w-0 hover:bg-gray-50 -mx-1 px-1 py-0.5 rounded"
+                title={collapsedIds.has(u.id) ? 'Expand' : 'Collapse'}
+              >
+                <svg className={`w-4 h-4 text-gray-400 transition-transform flex-shrink-0 ${collapsedIds.has(u.id) ? '' : 'rotate-90'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+                <h3 className="text-base font-semibold text-gray-900 truncate">
+                  Weekly Update - w-{u.weekDate} (Reporter: {userName(u.reporterEmail)})
+                </h3>
+              </button>
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => downloadUpdateCsv(u)}
@@ -247,6 +351,7 @@ export function WeeklyUpdatesPage() {
                 </button>
               </div>
             </div>
+            {!collapsedIds.has(u.id) && (<>
             <div className="p-4 grid grid-cols-3 gap-4">
               {(() => {
                 const isEditing = editingId === u.id;
@@ -359,6 +464,22 @@ export function WeeklyUpdatesPage() {
                               {b.text || <span className="text-gray-400 italic">What got done…</span>}
                             </button>
                           )}
+                          <button
+                            onClick={() => { setWhySearch(''); setWhyPicker({ uid: u.id, bid: b.id }); }}
+                            className={`max-w-[180px] truncate text-xs px-2 py-1 rounded border ${b.why ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100' : 'border-gray-300 text-gray-500 hover:bg-gray-50'}`}
+                            title={b.why ? `Why: ${b.why.title}` : 'Add reason (objective)'}
+                          >
+                            {b.why ? b.why.title : 'Why?'}
+                          </button>
+                          {b.why && (
+                            <button
+                              onClick={() => editBullet(u.id, b.id, { why: undefined })}
+                              className="p-0.5 text-gray-300 hover:text-red-600"
+                              title="Clear why"
+                            >
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                          )}
                           {editingBullet && editingBullet.uid === u.id && editingBullet.bid === b.id && editingBullet.field === 'sp' ? (() => {
                             const raw = (b as UpdateBullet & { spText?: string }).spText ?? String(b.sp);
                             const invalid = raw.trim() !== '' && Number.isNaN(Number(raw));
@@ -431,21 +552,224 @@ export function WeeklyUpdatesPage() {
                 </div>
               );
             })()}
+            </>)}
           </div>
         ))
       )}
+
+      {whyPicker && (() => {
+        const targetBullet = updates.find(uu => uu.id === whyPicker.uid)?.bullets?.find(bb => bb.id === whyPicker.bid);
+        const bulletText = targetBullet?.text || '';
+        const q = whySearch.trim().toLowerCase();
+        const matches = q ? objectives.filter(o => o.title.toLowerCase().includes(q)) : objectives;
+        const visible = matches.slice(0, 50);
+        const pathFor = (objId: string): string => {
+          const parts: string[] = [];
+          let cur = objectives.find(o => o.id === objId);
+          let safety = 10;
+          while (cur && safety-- > 0) {
+            parts.unshift(cur.title);
+            cur = cur.parentId ? objectives.find(o => o.id === cur!.parentId) : undefined;
+          }
+          return parts.join(' › ');
+        };
+        const pickObjective = (id: string, title: string) => {
+          editBullet(whyPicker.uid, whyPicker.bid, { why: { id, title } });
+          setWhyPicker(null);
+          setAddChildFor(null);
+          setAddChildTitle('');
+        };
+        const createUnder = async (parentId: string | undefined) => {
+          const title = addChildTitle.trim();
+          if (!title) return;
+          const parent = parentId ? objectives.find(o => o.id === parentId) : undefined;
+          await addObjective({
+            title,
+            parentId,
+            level: parent?.level || 'company',
+            periodId: parent?.periodId || activePeriodId || (periods[0]?.id ?? ''),
+            workflowStatus: 'todo',
+          }, { orgId: orgIdForCreate, userEmail, shared: true });
+          setAddChildFor(null);
+          setAddChildTitle('');
+        };
+        const renderTreeNode = (o: typeof objectives[number], depth: number): React.ReactNode => {
+          const children = objectives.filter(c => c.parentId === o.id);
+          const hasChildren = children.length > 0;
+          const collapsed = whyCollapsed.has(o.id);
+          return (
+            <div key={o.id}>
+              <div className="group flex items-center gap-1 px-2 py-1 hover:bg-gray-50 border-b border-gray-100" style={{ paddingLeft: depth * 16 + 8 }}>
+                {hasChildren ? (
+                  <button
+                    onClick={() => toggleWhyCollapsed(o.id)}
+                    className="text-gray-400 hover:text-gray-700 flex-shrink-0"
+                    title={collapsed ? 'Expand' : 'Collapse'}
+                  >
+                    <svg className={`w-3 h-3 transition-transform ${collapsed ? '' : 'rotate-90'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                ) : (
+                  <span className="w-3 flex-shrink-0" />
+                )}
+                <button
+                  onClick={() => pickObjective(o.id, o.title)}
+                  className="flex-1 text-left text-sm text-gray-800 truncate"
+                >
+                  {o.title}
+                </button>
+                <button
+                  onClick={() => { setAddChildFor(o.id); setAddChildTitle(''); }}
+                  className="p-0.5 text-gray-400 hover:text-blue-600 opacity-0 group-hover:opacity-100"
+                  title="Add child"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+                </button>
+              </div>
+              {addChildFor === o.id && (
+                <div className="flex items-center gap-1 px-2 py-1 bg-blue-50 border-b border-gray-100" style={{ paddingLeft: (depth + 1) * 16 + 8 }}>
+                  <input
+                    type="text"
+                    autoFocus
+                    value={addChildTitle}
+                    onChange={(e) => setAddChildTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') createUnder(o.id);
+                      if (e.key === 'Escape') { setAddChildFor(null); setAddChildTitle(''); }
+                    }}
+                    placeholder="New child objective title…"
+                    className="flex-1 text-sm border border-blue-300 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                  <button onClick={() => createUnder(o.id)} className="px-2 py-0.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700">Add</button>
+                  <button onClick={() => { setAddChildFor(null); setAddChildTitle(''); }} className="px-2 py-0.5 text-xs text-gray-500 hover:text-gray-700">Cancel</button>
+                </div>
+              )}
+              {hasChildren && !collapsed && children.map(c => renderTreeNode(c, depth + 1))}
+            </div>
+          );
+        };
+        const roots = objectives.filter(o => !o.parentId);
+        return (
+          <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-lg shadow-xl max-w-lg w-full p-4">
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="text-lg font-semibold text-gray-900">Pick an objective (why)</h3>
+                <div className="inline-flex border border-gray-300 rounded overflow-hidden">
+                  <button
+                    onClick={() => setWhyMode('list')}
+                    className={`px-2 py-0.5 text-xs ${whyMode === 'list' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                  >List</button>
+                  <button
+                    onClick={() => setWhyMode('tree')}
+                    className={`px-2 py-0.5 text-xs border-l border-gray-300 ${whyMode === 'tree' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                  >Tree</button>
+                </div>
+              </div>
+              <div className="text-xs text-gray-500 mb-3">
+                Work item: <span className="font-medium text-gray-800">{bulletText || <span className="italic text-gray-400">(empty)</span>}</span>
+              </div>
+              {whyMode === 'list' ? (
+                <>
+                  <input
+                    type="text"
+                    autoFocus
+                    value={whySearch}
+                    onChange={(e) => setWhySearch(e.target.value)}
+                    placeholder="Search objectives…"
+                    className="w-full text-sm border border-gray-300 rounded px-3 py-2 mb-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <div className="border border-gray-200 rounded max-h-72 overflow-y-auto">
+                    {objectives.length === 0 ? (
+                      <div className="p-3 text-xs text-gray-400">No objectives yet.</div>
+                    ) : visible.length === 0 ? (
+                      <div className="p-3 text-xs text-gray-400">No matches.</div>
+                    ) : (
+                      visible.map(o => (
+                        <button
+                          key={o.id}
+                          onClick={() => pickObjective(o.id, o.title)}
+                          className="w-full text-left px-3 py-1.5 text-sm text-gray-800 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                        >
+                          <div className="truncate">{o.title}</div>
+                          {o.parentId && (
+                            <div className="text-[10px] text-gray-400 truncate">{pathFor(o.id)}</div>
+                          )}
+                        </button>
+                      ))
+                    )}
+                    {matches.length > visible.length && (
+                      <div className="px-3 py-1 text-[10px] text-gray-400 border-t border-gray-100">Showing 50 of {matches.length} — type to narrow</div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div>
+                  <div className="flex items-center justify-end mb-2">
+                    <button
+                      onClick={() => { setAddChildFor('root'); setAddChildTitle(''); }}
+                      className="px-2 py-0.5 text-xs text-blue-600 border border-blue-200 rounded hover:bg-blue-50"
+                    >
+                      + Add top-level objective
+                    </button>
+                  </div>
+                  {addChildFor === 'root' && (
+                    <div className="flex items-center gap-1 px-2 py-1 bg-blue-50 border border-blue-100 rounded mb-2">
+                      <input
+                        type="text"
+                        autoFocus
+                        value={addChildTitle}
+                        onChange={(e) => setAddChildTitle(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') createUnder(undefined);
+                          if (e.key === 'Escape') { setAddChildFor(null); setAddChildTitle(''); }
+                        }}
+                        placeholder="New top-level objective title…"
+                        className="flex-1 text-sm border border-blue-300 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      />
+                      <button onClick={() => createUnder(undefined)} className="px-2 py-0.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700">Add</button>
+                      <button onClick={() => { setAddChildFor(null); setAddChildTitle(''); }} className="px-2 py-0.5 text-xs text-gray-500 hover:text-gray-700">Cancel</button>
+                    </div>
+                  )}
+                  <div className="border border-gray-200 rounded max-h-72 overflow-y-auto">
+                    {roots.length === 0 ? (
+                      <div className="p-3 text-xs text-gray-400">No objectives yet.</div>
+                    ) : (
+                      roots.map(r => renderTreeNode(r, 0))
+                    )}
+                  </div>
+                </div>
+              )}
+              <div className="mt-3 flex justify-end gap-2">
+                <button
+                  onClick={() => { setWhyPicker(null); setAddChildFor(null); setAddChildTitle(''); }}
+                  className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {importTarget && (
         <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-lg w-full p-4">
             <h3 className="text-lg font-semibold text-gray-900 mb-1">Import bullets from CSV</h3>
             <p className="text-xs text-gray-500 mb-3">Choose a <code>.csv</code> file. Expected format: <code>text,sp</code> (header row optional).</p>
-            <input
-              type="file"
-              accept=".csv,text/csv"
-              onChange={(e) => handleImportFile(e.target.files?.[0])}
-              className="text-sm block"
-            />
+            <label className="inline-flex items-center gap-2 px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 cursor-pointer">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+              {importFileName ? 'Choose a different file' : 'Choose CSV file'}
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                onChange={(e) => handleImportFile(e.target.files?.[0])}
+                className="hidden"
+              />
+            </label>
             {importRows && (
               <div className="mt-3 text-xs text-gray-600">
                 <div className="mb-1"><span className="font-medium text-gray-800">{importFileName}</span> · {importRows.length} {importRows.length === 1 ? 'item' : 'items'} detected</div>
@@ -453,8 +777,9 @@ export function WeeklyUpdatesPage() {
                   <ul className="border border-gray-200 rounded p-2 max-h-40 overflow-y-auto bg-gray-50 space-y-0.5">
                     {importRows.slice(0, 10).map((r, i) => (
                       <li key={i} className="flex justify-between gap-2">
-                        <span className="truncate">{r.text || <span className="italic text-gray-400">(empty)</span>}</span>
-                        <span className="text-gray-500">{r.sp} SP</span>
+                        <span className="truncate flex-1">{r.text || <span className="italic text-gray-400">(empty)</span>}</span>
+                        {r.whyTitle && <span className="text-blue-700 truncate max-w-[150px]" title={r.whyTitle}>{r.whyTitle}</span>}
+                        <span className="text-gray-500 flex-shrink-0">{r.sp} SP</span>
                       </li>
                     ))}
                     {importRows.length > 10 && <li className="text-gray-400">…and {importRows.length - 10} more</li>}

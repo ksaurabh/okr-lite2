@@ -1721,49 +1721,106 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                           </div>
                           {roots.length === 0 ? (
                             <div className="p-6 text-center text-sm text-gray-400">No top-level objectives match the filter.</div>
-                          ) : listPlanTreeView === 'list' ? (
-                            <div>
-                              {roots.map(root => {
-                                const isExpanded = expandedListRowIds.has(root.id);
-                                return (
-                                  <div key={root.id}>
-                                    <div
-                                      onClick={() => setPlanSelectedObjective(root)}
-                                      className="flex items-center gap-1 px-3 py-1 text-sm cursor-pointer hover:bg-gray-50 text-gray-800 border-b border-gray-100"
-                                      title={root.title}
+                          ) : listPlanTreeView === 'list' ? (() => {
+                            const renderTopLevelRow = (o: Objective, depth: number): React.ReactNode => {
+                              const children = orgObjectives.filter(c => c.parentId === o.id);
+                              const hasChildren = children.length > 0;
+                              const isCollapsed = collapsedCardIds.has(o.id);
+                              const isExpanded = expandedListRowIds.has(o.id);
+                              return (
+                                <div key={o.id}>
+                                  <div
+                                    onClick={() => togglePlanSelectedObjective(o)}
+                                    style={{ paddingLeft: depth * 16 + 12 }}
+                                    className={`flex items-center gap-1 py-1 pr-3 text-sm cursor-pointer border-b border-gray-100 ${planSelectedObjective?.id === o.id ? 'bg-blue-50 text-blue-900' : 'hover:bg-gray-50 text-gray-800'}`}
+                                    title={o.title}
+                                  >
+                                    {hasChildren ? (
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); toggleCardCollapsed(o.id); }}
+                                        className="text-gray-400 hover:text-gray-700 flex-shrink-0"
+                                        title={isCollapsed ? 'Show children' : 'Hide children'}
+                                      >
+                                        <svg className={`w-3 h-3 transition-transform ${isCollapsed ? '' : 'rotate-90'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                        </svg>
+                                      </button>
+                                    ) : (
+                                      <span className="w-3 flex-shrink-0" />
+                                    )}
+                                    <span className="truncate flex-1">{o.title}</span>
+                                    <AddToPlanBookmark objectiveId={o.id} size="sm" />
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); setQuickAddCardParentId(o.id); setQuickAddCardTitle(''); }}
+                                      className="text-gray-400 hover:text-blue-600 flex-shrink-0 p-0.5"
+                                      title="Add child"
                                     >
-                                      <span className="truncate flex-1">{root.title}</span>
-                                      {listPlanColumns.length > 0 && (
-                                        <button
-                                          onClick={(e) => { e.stopPropagation(); toggleListRowExpanded(root.id); }}
-                                          className="text-gray-400 hover:text-gray-700 flex-shrink-0 p-0.5"
-                                          title={isExpanded ? 'Hide details' : 'Show details'}
-                                        >
-                                          <svg className={`w-3.5 h-3.5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                          </svg>
-                                        </button>
-                                      )}
-                                    </div>
-                                    {isExpanded && listPlanColumns.length > 0 && (
-                                      <div className="px-3 py-2 border-b border-gray-100 bg-gray-50">
-                                        <div className="border border-gray-200 rounded p-2 bg-white">
-                                          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
-                                            {listPlanColumns.map(col => (
-                                              <div key={col} className="text-xs text-gray-600">
-                                                <span className="text-gray-400">{COLUMN_LABELS[col]}: </span>
-                                                <span className="text-gray-700">{cellValueForCard(root, col)}</span>
-                                              </div>
-                                            ))}
-                                          </div>
-                                        </div>
-                                      </div>
+                                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+                                    </button>
+                                    {listPlanColumns.length > 0 && (
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); toggleListRowExpanded(o.id); }}
+                                        className="text-gray-400 hover:text-gray-700 flex-shrink-0 p-0.5"
+                                        title={isExpanded ? 'Hide details' : 'Show details'}
+                                      >
+                                        <svg className={`w-3.5 h-3.5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                      </button>
                                     )}
                                   </div>
-                                );
-                              })}
-                            </div>
-                          ) : listPlanTreeView === 'cards' ? (
+                                  {isExpanded && listPlanColumns.length > 0 && (
+                                    <div style={{ paddingLeft: depth * 16 + 24 }} className="py-2 pr-3 border-b border-gray-100 bg-gray-50">
+                                      <div className="border border-gray-200 rounded p-2 bg-white">
+                                        <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+                                          {listPlanColumns.map(col => (
+                                            <div key={col} className="text-xs text-gray-600">
+                                              <span className="text-gray-400">{COLUMN_LABELS[col]}: </span>
+                                              <span className="text-gray-700">{cellValueForCard(o, col)}</span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                  {quickAddCardParentId === o.id && (
+                                    <div style={{ paddingLeft: depth * 16 + 24 }} className="py-1 pr-3 bg-blue-50 border-b border-gray-100">
+                                      <input
+                                        type="text"
+                                        autoFocus
+                                        value={quickAddCardTitle}
+                                        onChange={(e) => setQuickAddCardTitle(e.target.value)}
+                                        onBlur={() => { if (!quickAddCardTitle.trim()) setQuickAddCardParentId(null); }}
+                                        onKeyDown={async (e) => {
+                                          if (e.key === 'Enter' && quickAddCardTitle.trim()) {
+                                            await addObjective({
+                                              title: quickAddCardTitle.trim(),
+                                              level: o.level,
+                                              parentId: o.id,
+                                              periodId: o.periodId,
+                                              workflowStatus: 'todo',
+                                            }, { orgId, userEmail, shared: o.shared });
+                                            setQuickAddCardTitle('');
+                                          } else if (e.key === 'Escape') {
+                                            setQuickAddCardParentId(null);
+                                            setQuickAddCardTitle('');
+                                          }
+                                        }}
+                                        placeholder="New child title (Enter to add, Esc to close)"
+                                        className="w-full text-xs px-2 py-1 border border-blue-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                      />
+                                    </div>
+                                  )}
+                                  {hasChildren && !isCollapsed && children.map(c => renderTopLevelRow(c, depth + 1))}
+                                </div>
+                              );
+                            };
+                            return (
+                              <div>
+                                {roots.map(root => renderTopLevelRow(root, 0))}
+                              </div>
+                            );
+                          })() : listPlanTreeView === 'cards' ? (
                             <div className="p-2 space-y-1">
                               {roots.map(root => renderObjectiveCard(root, 0))}
                             </div>
@@ -1996,6 +2053,13 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                 )}
                                 <span className="truncate flex-1">{o.title}</span>
                                 <AddToPlanBookmark objectiveId={o.id} size="sm" />
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setQuickAddCardParentId(o.id); setQuickAddCardTitle(''); }}
+                                  className="text-gray-400 hover:text-blue-600 flex-shrink-0 p-0.5"
+                                  title="Add child"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+                                </button>
                                 {listPlanColumns.length > 0 && (
                                   <button
                                     onClick={(e) => { e.stopPropagation(); toggleListRowExpanded(o.id); }}
@@ -2008,6 +2072,34 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                   </button>
                                 )}
                               </div>
+                              {quickAddCardParentId === o.id && (
+                                <div style={{ paddingLeft: depth * 16 + 24 }} className="py-1 pr-3 bg-blue-50 border-b border-gray-100">
+                                  <input
+                                    type="text"
+                                    autoFocus
+                                    value={quickAddCardTitle}
+                                    onChange={(e) => setQuickAddCardTitle(e.target.value)}
+                                    onBlur={() => { if (!quickAddCardTitle.trim()) setQuickAddCardParentId(null); }}
+                                    onKeyDown={async (e) => {
+                                      if (e.key === 'Enter' && quickAddCardTitle.trim()) {
+                                        await addObjective({
+                                          title: quickAddCardTitle.trim(),
+                                          level: o.level,
+                                          parentId: o.id,
+                                          periodId: o.periodId,
+                                          workflowStatus: 'todo',
+                                        }, { orgId, userEmail, shared: o.shared });
+                                        setQuickAddCardTitle('');
+                                      } else if (e.key === 'Escape') {
+                                        setQuickAddCardParentId(null);
+                                        setQuickAddCardTitle('');
+                                      }
+                                    }}
+                                    placeholder="New child title (Enter to add, Esc to close)"
+                                    className="w-full text-xs px-2 py-1 border border-blue-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                  />
+                                </div>
+                              )}
                               {isExpanded && listPlanColumns.length > 0 && (
                                 <div style={{ paddingLeft: depth * 16 + 24 }} className="py-2 pr-3 border-b border-gray-100 bg-gray-50">
                                   <div className="border border-gray-200 rounded p-2 bg-white">
