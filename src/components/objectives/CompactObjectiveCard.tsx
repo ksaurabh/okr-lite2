@@ -23,6 +23,7 @@ interface CompactObjectiveCardProps {
   alwaysShowQuickAdd?: boolean;
   quickAddTooltip?: string;
   kebabActions?: boolean;
+  addToPlanBookmark?: boolean;
 }
 
 const getChildLevel = (parentLevel: ObjectiveLevel): ObjectiveLevel => {
@@ -70,7 +71,7 @@ function getNextStepDateIndicator(nextStepDate?: string): { color: string; toolt
   }
 }
 
-export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filteredObjectiveIds, directlyMatchingIds, defaultCollapsed = false, visibleColumnsOverride, onRowClick, onTitleClick, groupPeriodsByDate = false, hideRowActions = false, quickAddToListId, alwaysShowQuickAdd = false, quickAddTooltip, kebabActions = false }: CompactObjectiveCardProps) {
+export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filteredObjectiveIds, directlyMatchingIds, defaultCollapsed = false, visibleColumnsOverride, onRowClick, onTitleClick, groupPeriodsByDate = false, hideRowActions = false, quickAddToListId, alwaysShowQuickAdd = false, quickAddTooltip, kebabActions = false, addToPlanBookmark = false }: CompactObjectiveCardProps) {
   // Only root-level items (depth 0) are expanded by default, unless caller opts into collapsed
   const [isExpanded, setIsExpanded] = useState(depth === 0 && !defaultCollapsed);
   const forcedExpandedIds = useOKRStore((s: OKRStore) => s.forcedExpandedIds);
@@ -106,6 +107,9 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   const [showListDropdown, setShowListDropdown] = useState(false);
   const [showKebabMenu, setShowKebabMenu] = useState(false);
   const kebabMenuRef = useRef<HTMLDivElement>(null);
+  const [showAddPlanMenu, setShowAddPlanMenu] = useState(false);
+  const [addPlanSearch, setAddPlanSearch] = useState('');
+  const addPlanMenuRef = useRef<HTMLDivElement>(null);
   const [isCreatingList, setIsCreatingList] = useState(false);
   const [newListName, setNewListName] = useState('');
   const newListInputRef = useRef<HTMLInputElement>(null);
@@ -612,6 +616,15 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
     document.addEventListener('mousedown', onClick);
     return () => document.removeEventListener('mousedown', onClick);
   }, [showKebabMenu]);
+
+  useEffect(() => {
+    if (!showAddPlanMenu) return;
+    const onClick = (e: MouseEvent) => {
+      if (addPlanMenuRef.current && !addPlanMenuRef.current.contains(e.target as Node)) setShowAddPlanMenu(false);
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [showAddPlanMenu]);
 
   // List dropdown positioning
   useEffect(() => {
@@ -1264,6 +1277,66 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
               </span>
             </span>
           )}
+
+          {/* Add to Plan bookmark */}
+          {!minimalActions && addToPlanBookmark && (() => {
+            const plans = lists.filter(l => l.ownerId && l.periodId);
+            const q = addPlanSearch.trim().toLowerCase();
+            const matches = q ? plans.filter(p => p.name.toLowerCase().includes(q)) : plans;
+            return (
+              <div ref={addPlanMenuRef} className="relative flex-shrink-0">
+                <button
+                  onClick={(e) => { e.stopPropagation(); setAddPlanSearch(''); setShowAddPlanMenu(!showAddPlanMenu); }}
+                  className="p-1 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50"
+                  title="Add to Plan"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                  </svg>
+                </button>
+                {showAddPlanMenu && (
+                  <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-md shadow-lg py-1 min-w-[220px] max-h-72 overflow-y-auto">
+                    <div className="px-2 py-1 border-b border-gray-100">
+                      <input
+                        type="text"
+                        autoFocus
+                        value={addPlanSearch}
+                        onChange={(e) => setAddPlanSearch(e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        placeholder="Search plans…"
+                        className="w-full text-xs px-2 py-1 border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      />
+                    </div>
+                    {plans.length === 0 ? (
+                      <div className="px-3 py-2 text-xs text-gray-400">No plans available.</div>
+                    ) : matches.length === 0 ? (
+                      <div className="px-3 py-2 text-xs text-gray-400">No matches.</div>
+                    ) : (
+                      matches.map(p => {
+                        const already = p.items.some(it => it.objectiveId === objective.id);
+                        return (
+                          <button
+                            key={p.id}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (!already) addItemToList(p.id, objective.id);
+                              setShowAddPlanMenu(false);
+                            }}
+                            disabled={already}
+                            className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 ${already ? 'text-gray-400 cursor-not-allowed' : 'text-gray-700 hover:bg-gray-50'}`}
+                          >
+                            <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: p.color || '#6b7280' }} />
+                            <span className="flex-1 truncate">{p.name}</span>
+                            {already && <span className="text-[10px] text-gray-400">added</span>}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Kebab actions menu */}
           {!minimalActions && kebabActions && (

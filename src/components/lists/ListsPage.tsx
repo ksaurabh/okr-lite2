@@ -3,6 +3,8 @@ import { useOKRStore, type OKRStore, type ColumnKey, COLUMN_LABELS } from '../..
 import { useAuth } from '../../context/AuthContext';
 import { ObjectiveFilterPanel } from '../filters/ObjectiveFilterPanel';
 import { CompactObjectiveCard } from '../objectives/CompactObjectiveCard';
+import { AddToPlanBookmark } from '../plans/AddToPlanBookmark';
+import { renderGroupedPeriodOptions } from '../../utils/periodOptions';
 import { ObjectiveForm } from '../objectives/ObjectiveForm';
 import { SlidePane } from '../common/SlidePane';
 import {
@@ -750,21 +752,11 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
               <span className="w-3 flex-shrink-0" />
             )}
             <div className="text-sm font-medium text-gray-900 break-words flex-1 min-w-0" title={obj.title}>{obj.title}</div>
-            <div className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-              {!isReadOnlyList && targetListId && (
-                <button
-                  onClick={() => addItemToList(targetListId, obj.id)}
-                  className="p-0.5 text-gray-400 hover:text-blue-600 rounded"
-                  title={planTopLevel ? 'Add to List' : 'Add to Child List'}
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
-                  </svg>
-                </button>
-              )}
+            <div className="flex items-center gap-0.5 flex-shrink-0">
+              <AddToPlanBookmark objectiveId={obj.id} size="sm" />
               <button
                 onClick={() => setPlanSelectedObjective(obj)}
-                className="p-0.5 text-gray-400 hover:text-blue-600 rounded"
+                className="p-0.5 text-gray-400 hover:text-blue-600 rounded opacity-0 group-hover:opacity-100 transition-opacity"
                 title="Focus on this objective"
               >
                 <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
@@ -1097,9 +1089,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                     className="border border-gray-300 rounded px-1 py-0.5 text-xs bg-white"
                   >
                     <option value="">— None —</option>
-                    {[...periods].sort((a, b) => a.startDate.localeCompare(b.startDate)).map((p: Period) => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
+                    {renderGroupedPeriodOptions(periods)}
                   </select>
                 )}
               </span>
@@ -1469,6 +1459,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                               title={obj.title}
                             >
                               <span className="truncate flex-1">{obj.title}</span>
+                              <AddToPlanBookmark objectiveId={obj.id} size="sm" />
                               {listPlanColumns.length > 0 && (
                                 <button
                                   onClick={(e) => { e.stopPropagation(); toggleListRowExpanded(obj.id); }}
@@ -1507,7 +1498,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                         if (!passesFilters(obj, firstColStatusFilter, firstColOwnerFilter, firstColAssigneeFilter, firstColPeriodFilter)) return null;
                         const selected = planSelectedObjective?.id === obj.id;
                         return (
-                          <button
+                          <div
                             key={item.objectiveId}
                             onClick={() => togglePlanSelectedObjective(obj)}
                             draggable
@@ -1523,7 +1514,10 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                             }}
                             className={`w-full text-left border rounded p-2 cursor-grab active:cursor-grabbing ${selected ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
                           >
-                            <div className="text-sm font-medium text-gray-900 break-words" title={obj.title}>{obj.title}</div>
+                            <div className="flex items-start gap-1">
+                              <div className="text-sm font-medium text-gray-900 break-words flex-1 min-w-0" title={obj.title}>{obj.title}</div>
+                              <AddToPlanBookmark objectiveId={obj.id} size="sm" />
+                            </div>
                             {listPlanColumns.length > 0 && (
                               <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5">
                                 {listPlanColumns.map(col => (
@@ -1534,7 +1528,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                 ))}
                               </div>
                             )}
-                          </button>
+                          </div>
                         );
                       })}
                     </div>
@@ -1568,6 +1562,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                 visibleColumnsOverride={listPlanColumns}
                                 defaultCollapsed
                                 kebabActions
+                                addToPlanBookmark
                                 filteredObjectiveIds={NO_CHILDREN_PLAN_LIST}
                                 onTitleClick={() => togglePlanSelectedObjective(obj)}
                               />
@@ -1797,6 +1792,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                     visibleColumnsOverride={listPlanColumns}
                                     quickAddToListId={isReadOnlyList ? undefined : ((planTopLevel ? selectedList.id : planSelectedChildListId) || undefined)}
                                     kebabActions
+                                addToPlanBookmark
                                   />
                                 ))}
                               </div>
@@ -1999,6 +1995,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                   <span className="w-3 flex-shrink-0" />
                                 )}
                                 <span className="truncate flex-1">{o.title}</span>
+                                <AddToPlanBookmark objectiveId={o.id} size="sm" />
                                 {listPlanColumns.length > 0 && (
                                   <button
                                     onClick={(e) => { e.stopPropagation(); toggleListRowExpanded(o.id); }}
@@ -2059,18 +2056,8 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                     <span className="w-3 flex-shrink-0" />
                                   )}
                                   <div className="text-sm font-medium text-gray-900 break-words flex-1 min-w-0" title={obj.title}>{obj.title}</div>
+                                  <AddToPlanBookmark objectiveId={obj.id} size="sm" />
                                   <div className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    {(planTopLevel ? selectedList.id : planSelectedChildListId) && (
-                                      <button
-                                        onClick={() => addItemToList((planTopLevel ? selectedList.id : planSelectedChildListId) as string, obj.id)}
-                                        className="p-0.5 text-gray-400 hover:text-blue-600 rounded"
-                                        title={planTopLevel ? 'Add to List' : 'Add to Child List'}
-                                      >
-                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
-                                        </svg>
-                                      </button>
-                                    )}
                                     <button
                                       onClick={() => setPlanSelectedObjective(obj)}
                                       className="p-0.5 text-gray-400 hover:text-blue-600 rounded"
@@ -2209,6 +2196,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                               quickAddToListId={isReadOnlyList ? undefined : ((planTopLevel ? selectedList.id : planSelectedChildListId) || undefined)}
                               filteredObjectiveIds={treeFilteredIds || undefined}
                               kebabActions
+                                addToPlanBookmark
                             />
                           </div>
                         </div>
@@ -2388,6 +2376,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                     title={obj.title}
                                   >
                                     <span className="truncate flex-1">{obj.title}</span>
+                                    <AddToPlanBookmark objectiveId={obj.id} size="sm" />
                                     {listPlanColumns.length > 0 && (
                                       <button
                                         onClick={(e) => { e.stopPropagation(); toggleListRowExpanded(obj.id); }}
@@ -2450,6 +2439,9 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                     >
                                       {obj.title}
                                     </button>
+                                    <div onClick={(e) => e.stopPropagation()}>
+                                      <AddToPlanBookmark objectiveId={obj.id} size="sm" />
+                                    </div>
                                     <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                                       {obj.link?.url && (
                                         <a
@@ -2522,6 +2514,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                   visibleColumnsOverride={listPlanColumns}
                                   defaultCollapsed
                                   kebabActions
+                                addToPlanBookmark
                                   filteredObjectiveIds={NO_CHILDREN_PLAN_LIST}
                                   onTitleClick={(o) => showPathInTree(o.id)}
                                 />
@@ -2863,9 +2856,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                   className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white"
                 >
                   <option value="">— Pick a period —</option>
-                  {[...periods].sort((a, b) => a.startDate.localeCompare(b.startDate)).map((p: Period) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
+                  {renderGroupedPeriodOptions(periods)}
                 </select>
               </div>
               <div>

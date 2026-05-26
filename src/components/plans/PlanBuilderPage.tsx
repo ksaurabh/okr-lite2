@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useOKRStore, type OKRStore, type ColumnKey, COLUMN_LABELS } from '../../store/okrStore';
 import { CompactObjectiveCard } from '../objectives/CompactObjectiveCard';
 import type { Objective, ObjectiveLevel, Period, User } from '../../types';
+import { renderGroupedPeriodOptions } from '../../utils/periodOptions';
 
 const LEVELS: ObjectiveLevel[] = ['company', 'team', 'individual'];
 const LEVEL_LABEL: Record<ObjectiveLevel, string> = { company: 'Company', team: 'Team', individual: 'Individual' };
@@ -300,9 +301,7 @@ export function PlanBuilderPage({ onViewChange }: PlanBuilderPageProps) {
                 className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-white"
               >
                 <option value="">— Pick a period —</option>
-                {[...periods].sort((a, b) => a.startDate.localeCompare(b.startDate)).map((p: Period) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
+                {renderGroupedPeriodOptions(periods)}
               </select>
             </div>
             <div>

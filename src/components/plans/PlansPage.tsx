@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import type { List, ObjectiveLevel, Period, PeriodType, User } from '../../types';
+import { renderGroupedPeriodOptions } from '../../utils/periodOptions';
 
 const LEVELS: ObjectiveLevel[] = ['company', 'team', 'individual'];
 const LEVEL_LABEL: Record<ObjectiveLevel, string> = { company: 'Company', team: 'Team', individual: 'Individual' };
@@ -413,12 +414,10 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
               className="border border-gray-300 rounded px-2 py-1 text-xs bg-white"
             >
               <option value="">Any duration ({countPlans({ periodId: '' })})</option>
-              {[...periods]
-                .filter((p: Period) => !filterDurationType || periodDurationType(p) === filterDurationType)
-                .sort((a, b) => a.startDate.localeCompare(b.startDate))
-                .map((p: Period) => (
-                  <option key={p.id} value={p.id}>{p.name} ({countPlans({ periodId: p.id })})</option>
-                ))}
+              {renderGroupedPeriodOptions(
+                periods.filter((p: Period) => !filterDurationType || periodDurationType(p) === filterDurationType),
+                { optionLabel: (p) => `${p.name} (${countPlans({ periodId: p.id })})` }
+              )}
             </select>
           </div>
           <div className="flex items-center gap-1">
@@ -516,9 +515,7 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
                       className="border border-gray-300 rounded px-1.5 py-0.5 text-xs bg-white max-w-[160px]"
                     >
                       <option value="">— None —</option>
-                      {[...periods].sort((a, b) => a.startDate.localeCompare(b.startDate)).map((p: Period) => (
-                        <option key={p.id} value={p.id}>{p.name}</option>
-                      ))}
+                      {renderGroupedPeriodOptions(periods)}
                     </select>
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">{list.items.length}</td>
@@ -847,9 +844,7 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
                   className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white"
                 >
                   <option value="">— Pick a period —</option>
-                  {[...periods].sort((a, b) => a.startDate.localeCompare(b.startDate)).map((p: Period) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
+                  {renderGroupedPeriodOptions(periods)}
                 </select>
               </div>
               <div>
@@ -925,9 +920,7 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
                   className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white"
                 >
                   <option value="">— Pick a period —</option>
-                  {[...periods].sort((a, b) => a.startDate.localeCompare(b.startDate)).map((p: Period) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
+                  {renderGroupedPeriodOptions(periods)}
                 </select>
               </div>
             </div>

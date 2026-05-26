@@ -3,6 +3,7 @@ import type { Objective, ObjectiveLevel, ObjectiveLink, ProgressUpdate, Period, 
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../common/Button';
+import { renderGroupedPeriodOptions } from '../../utils/periodOptions';
 
 function formatDate(dateString: string): string {
   const date = new Date(dateString);
@@ -314,11 +315,7 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
             required
           >
             <option value="">Select period</option>
-            {orgPeriods.map((period: Period) => (
-              <option key={period.id} value={period.id}>
-                {period.name}
-              </option>
-            ))}
+            {renderGroupedPeriodOptions(orgPeriods)}
           </select>
         </div>
       </div>
