@@ -346,6 +346,24 @@ export function PeriodsPage() {
     return parent?.name || '-';
   };
 
+  const latestWeekId = useMemo(() => {
+    const weeks = periods.filter(p => p.type === 'week' && (!p.orgId || p.orgId === orgId) && !p.archived);
+    if (weeks.length === 0) return null;
+    return weeks.reduce((a, b) => (a.startDate || '') >= (b.startDate || '') ? a : b).id;
+  }, [periods, orgId]);
+
+  const latestQuarterId = useMemo(() => {
+    const qs = periods.filter(p => p.type === 'quarter' && (!p.orgId || p.orgId === orgId) && !p.archived);
+    if (qs.length === 0) return null;
+    return qs.reduce((a, b) => (a.startDate || '') >= (b.startDate || '') ? a : b).id;
+  }, [periods, orgId]);
+
+  const latestMonthId = useMemo(() => {
+    const ms = periods.filter(p => p.type === 'month' && (!p.orgId || p.orgId === orgId) && !p.archived);
+    if (ms.length === 0) return null;
+    return ms.reduce((a, b) => (a.startDate || '') >= (b.startDate || '') ? a : b).id;
+  }, [periods, orgId]);
+
   const orgPeriods = useMemo(() => {
     const filtered = periods.filter((p: Period) => {
       if (!((!p.orgId || p.orgId === orgId) && (isAdmin || p.shared !== false || p.createdBy === userEmail))) return false;
@@ -556,6 +574,36 @@ export function PeriodsPage() {
                               Create Months
                             </button>
                           )}
+                          {period.type === 'quarter' && !period.archived && period.id === latestQuarterId && (
+                            <button
+                              onClick={async () => {
+                                const start = new Date(`${period.endDate}T00:00:00`);
+                                start.setDate(start.getDate() + 1);
+                                const year = start.getFullYear();
+                                const month = start.getMonth();
+                                const startStr = ymd(new Date(year, month, 1));
+                                const endStr = ymd(new Date(year, month + 3, 0));
+                                const exists = periods.find(p => p.type === 'quarter' && p.startDate === startStr);
+                                if (exists) {
+                                  alert(`Next quarter already exists: "${exists.name}".`);
+                                  return;
+                                }
+                                const q = Math.floor(month / 3) + 1;
+                                await addPeriod({
+                                  name: `Q${q} ${year}`,
+                                  type: 'quarter',
+                                  startDate: startStr,
+                                  endDate: endStr,
+                                  isActive: true,
+                                  parentId: period.parentId,
+                                }, { orgId, userEmail, shared: true });
+                              }}
+                              className="px-2 py-1 text-xs rounded bg-purple-100 text-purple-700 hover:bg-purple-200"
+                              title="Create the quarter that follows this one"
+                            >
+                              Create Next Quarter
+                            </button>
+                          )}
                           {period.type === 'month' && !period.archived && (
                             <button
                               onClick={() => setCreateWeeksForMonth(period)}
@@ -563,6 +611,64 @@ export function PeriodsPage() {
                               title="Create weekly periods inside this month"
                             >
                               Create Weeks
+                            </button>
+                          )}
+                          {period.type === 'month' && !period.archived && period.id === latestMonthId && (
+                            <button
+                              onClick={async () => {
+                                const start = new Date(`${period.endDate}T00:00:00`);
+                                start.setDate(start.getDate() + 1);
+                                const year = start.getFullYear();
+                                const month = start.getMonth();
+                                const startStr = ymd(new Date(year, month, 1));
+                                const endStr = ymd(new Date(year, month + 1, 0));
+                                const exists = periods.find(p => p.type === 'month' && p.startDate === startStr);
+                                if (exists) {
+                                  alert(`Next month already exists: "${exists.name}".`);
+                                  return;
+                                }
+                                await addPeriod({
+                                  name: `${monthNames[month]} ${year}`,
+                                  type: 'month',
+                                  startDate: startStr,
+                                  endDate: endStr,
+                                  isActive: true,
+                                  parentId: period.parentId,
+                                }, { orgId, userEmail, shared: true });
+                              }}
+                              className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-700 hover:bg-blue-200"
+                              title="Create the month that follows this one"
+                            >
+                              Create Next Month
+                            </button>
+                          )}
+                          {period.type === 'week' && !period.archived && period.id === latestWeekId && (
+                            <button
+                              onClick={async () => {
+                                const start = new Date(`${period.endDate}T00:00:00`);
+                                start.setDate(start.getDate() + 1);
+                                const end = new Date(start);
+                                end.setDate(end.getDate() + 6);
+                                const startStr = ymd(start);
+                                const endStr = ymd(end);
+                                const exists = periods.find(p => p.type === 'week' && p.startDate === startStr);
+                                if (exists) {
+                                  alert(`Next week already exists: "${exists.name}".`);
+                                  return;
+                                }
+                                await addPeriod({
+                                  name: `w-${startStr}`,
+                                  type: 'week',
+                                  startDate: startStr,
+                                  endDate: endStr,
+                                  isActive: true,
+                                  parentId: period.parentId,
+                                }, { orgId, userEmail, shared: true });
+                              }}
+                              className="px-2 py-1 text-xs rounded bg-green-100 text-green-700 hover:bg-green-200"
+                              title="Create the week that follows this one"
+                            >
+                              Create Next Week
                             </button>
                           )}
                           <button
