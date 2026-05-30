@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import type { Objective, ObjectiveLevel, ObjectiveType, WorkflowStatus, Period, User, Team, Tag, List } from '../../types';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
+import { usePinnedRowActions, type RowAction } from '../../utils/recentRowAction';
 import { SlidePane } from '../common/SlidePane';
 import { ObjectiveForm } from './ObjectiveForm';
 
@@ -107,6 +108,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   const [showListDropdown, setShowListDropdown] = useState(false);
   const [showKebabMenu, setShowKebabMenu] = useState(false);
   const kebabMenuRef = useRef<HTMLDivElement>(null);
+  const { isPinned, togglePin } = usePinnedRowActions();
   const [showAddPlanMenu, setShowAddPlanMenu] = useState(false);
   const [addPlanSearch, setAddPlanSearch] = useState('');
   const addPlanMenuRef = useRef<HTMLDivElement>(null);
@@ -1244,39 +1246,86 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           </div>
           )}
 
-          {/* Edit button - inline with title */}
-          {!minimalActions && !kebabActions && canModify && (
-            <span className="relative group/edit flex-shrink-0">
-              <button
-                onClick={() => setShowEdit(true)}
-                className="p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-gray-600"
-              >
+          {/* Pinned actions + Actions menu */}
+          {!minimalActions && !kebabActions && canModify && (() => {
+            const ICONS: Record<RowAction, React.ReactNode> = {
+              edit: (
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                 </svg>
-              </button>
-              <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 px-2 py-1 text-xs text-white bg-gray-800 rounded whitespace-nowrap opacity-0 group-hover/edit:opacity-100 transition-opacity duration-75 pointer-events-none z-50">
-                Edit
-              </span>
-            </span>
-          )}
-
-          {/* Clone button - inline with title */}
-          {!minimalActions && !kebabActions && canModify && (
-            <span className="relative group/clone flex-shrink-0">
-              <button
-                onClick={() => cloneObjective(objective.id, { orgId: organization?.id || '', userEmail, shared: objective.shared })}
-                className="p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-blue-500"
-              >
+              ),
+              clone: (
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                 </svg>
-              </button>
-              <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 px-2 py-1 text-xs text-white bg-gray-800 rounded whitespace-nowrap opacity-0 group-hover/clone:opacity-100 transition-opacity duration-75 pointer-events-none z-50">
-                Clone
-              </span>
-            </span>
-          )}
+              ),
+              archive: (
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v1a2 2 0 01-2 2M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8M10 12h4" />
+                </svg>
+              ),
+            };
+            const LABELS: Record<RowAction, string> = { edit: 'Edit', clone: 'Clone', archive: 'Archive' };
+            const ACTIONS: RowAction[] = ['edit', 'clone', 'archive'];
+            const doAction = (a: RowAction) => {
+              if (a === 'edit') setShowEdit(true);
+              else if (a === 'clone') cloneObjective(objective.id, { orgId: organization?.id || '', userEmail, shared: objective.shared });
+              else updateObjective(objective.id, { workflowStatus: 'archived' }, userEmail);
+            };
+            return (
+              <>
+                {ACTIONS.filter(a => isPinned(a)).map(a => (
+                  <span key={a} className="relative group/pinned flex-shrink-0">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); doAction(a); }}
+                      className="p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-gray-700"
+                    >
+                      {ICONS[a]}
+                    </button>
+                    <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 px-2 py-1 text-xs text-white bg-gray-800 rounded whitespace-nowrap opacity-0 group-hover/pinned:opacity-100 transition-opacity duration-75 pointer-events-none z-50">
+                      {LABELS[a]}
+                    </span>
+                  </span>
+                ))}
+                <div ref={kebabMenuRef} className="relative flex-shrink-0">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowKebabMenu(!showKebabMenu); }}
+                    className={`p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity ${showKebabMenu ? 'text-blue-600 bg-blue-50 opacity-100' : 'text-gray-400 hover:text-gray-700'}`}
+                    title="Actions"
+                  >
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                      <circle cx="12" cy="6" r="1.5" />
+                      <circle cx="12" cy="12" r="1.5" />
+                      <circle cx="12" cy="18" r="1.5" />
+                    </svg>
+                  </button>
+                  {showKebabMenu && (
+                    <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-md shadow-lg py-1 min-w-[200px]">
+                      {ACTIONS.map((a, i) => (
+                        <div key={a} className={`flex items-center justify-between hover:bg-gray-50 ${i > 0 && a === 'archive' ? 'border-t border-gray-100' : ''}`}>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setShowKebabMenu(false); doAction(a); }}
+                            className="flex-1 text-left px-3 py-1.5 text-sm text-gray-700 flex items-center gap-2"
+                          >
+                            {ICONS[a]} {LABELS[a]}
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); togglePin(a); }}
+                            className={`px-2 py-1.5 text-xs ${isPinned(a) ? 'text-blue-600 hover:text-blue-800' : 'text-gray-300 hover:text-gray-600'}`}
+                            title={isPinned(a) ? 'Unpin from row' : 'Pin to row'}
+                          >
+                            <svg className="w-3.5 h-3.5" fill={isPinned(a) ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5l5 5m9 9l-5-5m-4 4l-3-3m10-7l3 3M9 15l-4 4m6-12l6 6" />
+                            </svg>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            );
+          })()}
 
           {/* Add to Plan bookmark */}
           {!minimalActions && addToPlanBookmark && (() => {
