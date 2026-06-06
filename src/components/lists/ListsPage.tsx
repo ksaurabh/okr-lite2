@@ -731,20 +731,37 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
 
   const [panel1EditMode, setPanel1EditMode] = useState(false);
   const [panel3EditMode, setPanel3EditMode] = useState(false);
+  const [cardEditingId, setCardEditingId] = useState<string | null>(null);
+  const [cardDraft, setCardDraft] = useState<Partial<Objective>>({});
+  const beginCardEdit = (objId: string) => { setCardEditingId(objId); setCardDraft({}); };
+  const cancelCardEdit = () => { setCardEditingId(null); setCardDraft({}); };
+  const commitCardEdit = async (objId: string) => {
+    if (Object.keys(cardDraft).length > 0) await updateObjective(objId, cardDraft, userEmail);
+    setCardEditingId(null);
+    setCardDraft({});
+  };
 
-  const CardCellEditor = ({ obj, col }: { obj: Objective; col: ColumnKey }) => {
-    const save = (updates: Partial<Objective>) => updateObjective(obj.id, updates, userEmail);
+  const CardCellEditor = ({ obj, col, draft, setDraft }: { obj: Objective; col: ColumnKey; draft?: Partial<Objective>; setDraft?: (updates: Partial<Objective>) => void }) => {
+    const useDraft = !!setDraft;
+    const valueOf = <K extends keyof Objective>(key: K): Objective[K] | undefined => {
+      if (useDraft && draft && key in draft) return draft[key] as Objective[K];
+      return obj[key];
+    };
+    const save = (updates: Partial<Objective>) => {
+      if (useDraft && setDraft) setDraft(updates);
+      else updateObjective(obj.id, updates, userEmail);
+    };
     const cls = 'w-full text-xs px-1 py-0.5 border border-gray-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500';
     switch (col) {
       case 'workflowStatus':
         return (
-          <select value={obj.workflowStatus || 'todo'} onChange={(e) => save({ workflowStatus: e.target.value as WorkflowStatus })} className={cls}>
+          <select value={valueOf('workflowStatus') || 'todo'} onChange={(e) => save({ workflowStatus: e.target.value as WorkflowStatus })} className={cls}>
             {WORKFLOW_STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
         );
       case 'level':
         return (
-          <select value={obj.level} onChange={(e) => save({ level: e.target.value as Objective['level'] })} className={cls}>
+          <select value={valueOf('level') || 'company'} onChange={(e) => save({ level: e.target.value as Objective['level'] })} className={cls}>
             <option value="company">Company</option>
             <option value="team">Team</option>
             <option value="individual">Individual</option>
@@ -752,7 +769,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
         );
       case 'owner':
         return (
-          <select value={obj.ownerId || ''} onChange={(e) => save({ ownerId: e.target.value || undefined })} className={cls}>
+          <select value={valueOf('ownerId') || ''} onChange={(e) => save({ ownerId: e.target.value || undefined })} className={cls}>
             <option value="">—</option>
             {[...orgUsers].sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email)).map(u => (
               <option key={u.id} value={u.id}>{u.name || u.email}</option>
@@ -761,7 +778,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
         );
       case 'assignee':
         return (
-          <select value={obj.assigneeId || ''} onChange={(e) => save({ assigneeId: e.target.value || undefined })} className={cls}>
+          <select value={valueOf('assigneeId') || ''} onChange={(e) => save({ assigneeId: e.target.value || undefined })} className={cls}>
             <option value="">—</option>
             {[...orgUsers].sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email)).map(u => (
               <option key={u.id} value={u.id}>{u.name || u.email}</option>
@@ -770,7 +787,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
         );
       case 'period':
         return (
-          <select value={obj.periodId || ''} onChange={(e) => save({ periodId: e.target.value || undefined })} className={cls}>
+          <select value={valueOf('periodId') || ''} onChange={(e) => save({ periodId: e.target.value || undefined })} className={cls}>
             <option value="">—</option>
             {[...orgPeriods].sort((a, b) => (a.startDate || '').localeCompare(b.startDate || '')).map(p => (
               <option key={p.id} value={p.id}>{p.name}</option>
@@ -779,7 +796,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
         );
       case 'team':
         return (
-          <select value={obj.teamId || ''} onChange={(e) => save({ teamId: e.target.value || undefined })} className={cls}>
+          <select value={valueOf('teamId') || ''} onChange={(e) => save({ teamId: e.target.value || undefined })} className={cls}>
             <option value="">—</option>
             {[...orgTeams].sort((a, b) => a.name.localeCompare(b.name)).map(t => (
               <option key={t.id} value={t.id}>{t.name}</option>
@@ -788,20 +805,39 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
         );
       case 'nextStepDate':
         return (
-          <input type="date" value={obj.nextStepDate || ''} onChange={(e) => save({ nextStepDate: e.target.value || undefined })} className={cls} />
+          <input type="date" value={valueOf('nextStepDate') || ''} onChange={(e) => save({ nextStepDate: e.target.value || undefined })} className={cls} />
         );
       case 'nextStep':
         return (
-          <input type="text" defaultValue={obj.nextStep || ''} onBlur={(e) => { if (e.target.value !== (obj.nextStep || '')) save({ nextStep: e.target.value || undefined }); }} className={cls} />
+          <input
+            type="text"
+            defaultValue={valueOf('nextStep') || ''}
+            onBlur={(e) => { const v = e.target.value; const prev = valueOf('nextStep') || ''; if (v !== prev) save({ nextStep: v || undefined }); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+            className={cls}
+          />
         );
       case 'storyPoints':
       case 'valuePoints': {
-        const v = (obj[col] as number | undefined) ?? '';
+        const v = (valueOf(col) as number | null | undefined);
         return (
-          <input type="text" inputMode="decimal" defaultValue={String(v)} onBlur={(e) => {
-            const n = e.target.value.trim() === '' ? undefined : Number(e.target.value);
-            if (Number.isFinite(n) || n === undefined) save({ [col]: n } as Partial<Objective>);
-          }} className={cls} />
+          <input
+            type="text"
+            inputMode="decimal"
+            defaultValue={v == null ? '' : String(v)}
+            onBlur={(e) => {
+              const raw = e.target.value.trim();
+              const prev = v ?? null;
+              if (raw === '') {
+                if (prev !== null) save({ [col]: null } as unknown as Partial<Objective>);
+              } else {
+                const n = Number(raw);
+                if (Number.isFinite(n) && n !== prev) save({ [col]: n } as Partial<Objective>);
+              }
+            }}
+            onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+            className={cls}
+          />
         );
       }
       default:
@@ -1630,19 +1666,44 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                               <div className="text-sm font-medium text-gray-900 break-words flex-1 min-w-0" title={obj.title}>{obj.title}</div>
                               <ChildPlanBadges objectiveId={obj.id} />
                               <AddToPlanBookmark objectiveId={obj.id} size="sm" />
+                              <button
+                                onClick={(e) => { e.stopPropagation(); if (cardEditingId === obj.id) cancelCardEdit(); else beginCardEdit(obj.id); }}
+                                className={`p-1 rounded flex-shrink-0 ${cardEditingId === obj.id ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'}`}
+                                title={cardEditingId === obj.id ? 'Cancel edit' : 'Edit card'}
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                              </button>
                             </div>
                             {listPlanColumns.length > 0 && (
                               <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5" onClick={(e) => e.stopPropagation()}>
                                 {listPlanColumns.map(col => (
                                   <div key={col} className="text-xs text-gray-600">
                                     <span className="text-gray-400">{COLUMN_LABELS[col]}=</span>
-                                    {panel1EditMode ? (
-                                      <CardCellEditor obj={obj} col={col} />
+                                    {panel1EditMode || cardEditingId === obj.id ? (
+                                      <CardCellEditor obj={obj} col={col} draft={cardEditingId === obj.id ? cardDraft : undefined} setDraft={cardEditingId === obj.id ? (u) => setCardDraft(prev => ({ ...prev, ...u })) : undefined} />
                                     ) : (
                                       <span className="text-gray-700">{cellValueForCard(obj, col)}</span>
                                     )}
                                   </div>
                                 ))}
+                              </div>
+                            )}
+                            {cardEditingId === obj.id && (
+                              <div className="mt-2 flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); cancelCardEdit(); }}
+                                  className="px-2 py-0.5 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); commitCardEdit(obj.id); }}
+                                  className="px-2 py-0.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+                                >
+                                  OK
+                                </button>
                               </div>
                             )}
                           </div>
@@ -2662,6 +2723,15 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                     <div onClick={(e) => e.stopPropagation()}>
                                       <AddToPlanBookmark objectiveId={obj.id} size="sm" />
                                     </div>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); if (cardEditingId === obj.id) cancelCardEdit(); else beginCardEdit(obj.id); }}
+                                      className={`p-1 rounded flex-shrink-0 ${cardEditingId === obj.id ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'}`}
+                                      title={cardEditingId === obj.id ? 'Cancel edit' : 'Edit card'}
+                                    >
+                                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                      </svg>
+                                    </button>
                                     <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                                       {obj.link?.url && (
                                         <a
@@ -2710,13 +2780,29 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                       {listPlanColumns.map(col => (
                                         <div key={col} className="text-xs text-gray-600 truncate">
                                           <span className="text-gray-400">{COLUMN_LABELS[col]}=</span>
-                                          {panel3EditMode ? (
-                                            <CardCellEditor obj={obj} col={col} />
+                                          {panel3EditMode || cardEditingId === obj.id ? (
+                                            <CardCellEditor obj={obj} col={col} draft={cardEditingId === obj.id ? cardDraft : undefined} setDraft={cardEditingId === obj.id ? (u) => setCardDraft(prev => ({ ...prev, ...u })) : undefined} />
                                           ) : (
                                             <span className="text-gray-700">{cellValueForCard(obj, col)}</span>
                                           )}
                                         </div>
                                       ))}
+                                    </div>
+                                  )}
+                                  {cardEditingId === obj.id && (
+                                    <div className="mt-2 flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); cancelCardEdit(); }}
+                                        className="px-2 py-0.5 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                                      >
+                                        Cancel
+                                      </button>
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); commitCardEdit(obj.id); }}
+                                        className="px-2 py-0.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+                                      >
+                                        OK
+                                      </button>
                                     </div>
                                   )}
                                 </div>
