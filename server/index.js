@@ -784,6 +784,50 @@ app.post('/api/admin/last-backup-restore', requireOrgAdminOrSuperAdmin, (_req, r
   res.json({ lastBackupRestoredAt: data.lastBackupRestoredAt });
 });
 
+// Admin: get every user's lists/plans across the org (for backup)
+app.get('/api/admin/all-plans', requireOrgAdminOrSuperAdmin, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.json({ plans: [] });
+  const users = getUsersByOrganization(org.id);
+  const out = [];
+  for (const u of users) {
+    if (!u.email) continue;
+    const userLists = u.lists || [];
+    for (const l of userLists) {
+      out.push({ ...l, ownerEmail: u.email });
+    }
+  }
+  res.json({ plans: out });
+});
+
+// Admin: replace every user's lists in bulk (for backup restore)
+app.put('/api/admin/all-plans', requireOrgAdminOrSuperAdmin, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.status(403).json({ error: 'No organization found' });
+  const incoming = Array.isArray(req.body?.plans) ? req.body.plans : [];
+  // Group plans by ownerEmail
+  const byEmail = new Map();
+  for (const p of incoming) {
+    const email = (p.ownerEmail || '').toLowerCase();
+    if (!email) continue;
+    const { ownerEmail: _drop, ...plan } = p;
+    void _drop;
+    if (!byEmail.has(email)) byEmail.set(email, []);
+    byEmail.get(email).push(plan);
+  }
+  const users = getUsers();
+  const orgUserEmails = new Set(getUsersByOrganization(org.id).map(u => (u.email || '').toLowerCase()));
+  let touched = 0;
+  for (let i = 0; i < users.length; i++) {
+    const email = (users[i].email || '').toLowerCase();
+    if (!orgUserEmails.has(email)) continue;
+    users[i].lists = byEmail.get(email) || [];
+    touched++;
+  }
+  saveUsers(users);
+  res.json({ touched });
+});
+
 app.delete('/api/users/:email', requireOrgAdminOrSuperAdmin, (req, res) => {
   const decodedEmail = decodeURIComponent(req.params.email).toLowerCase();
 

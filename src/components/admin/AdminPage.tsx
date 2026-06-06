@@ -180,6 +180,19 @@ export function AdminPage() {
       // Continue with OKR data only
     }
 
+    // Admin: fetch every user's plans (lists) across the org so we capture
+    // shared and private plans of other users too. Falls back to caller's
+    // own lists already in `data.lists` if the request fails.
+    try {
+      const res = await fetch(`${API_URL}/api/admin/all-plans`, { credentials: 'include' });
+      if (res.ok) {
+        const body = await res.json();
+        (data as unknown as { allPlans?: unknown }).allPlans = body.plans || [];
+      }
+    } catch (err) {
+      console.error('Failed to fetch all org plans for backup:', err);
+    }
+
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -266,6 +279,24 @@ export function AdminPage() {
           });
           if (!usersResponse.ok) {
             console.warn('Failed to import users');
+          }
+        }
+
+        // Restore every user's plans (lists) across the org
+        const allPlans = (pendingImportData as unknown as { allPlans?: Array<{ ownerEmail?: string }> }).allPlans;
+        if (Array.isArray(allPlans)) {
+          try {
+            const res = await fetch(`${API_URL}/api/admin/all-plans`, {
+              method: 'PUT',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ plans: allPlans }),
+            });
+            if (!res.ok) {
+              console.warn('Failed to restore all-plans:', res.status, await res.text().catch(() => ''));
+            }
+          } catch (err) {
+            console.error('Failed to restore all-plans:', err);
           }
         }
 
