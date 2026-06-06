@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import type { List, ObjectiveLevel, Period, PeriodType, User } from '../../types';
 import { renderGroupedPeriodOptions } from '../../utils/periodOptions';
@@ -72,6 +72,27 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
   useEffect(() => { try { localStorage.setItem('okr-plans-grouped-level', groupedLevel); } catch { /* ignore */ } }, [groupedLevel]);
   const loadWidth = (key: string, fallback: number) => {
     try { const v = localStorage.getItem(key); const n = v ? parseFloat(v) : NaN; return Number.isFinite(n) && n >= 5 && n <= 80 ? n : fallback; } catch { return fallback; }
+  };
+  const [groupOrder, setGroupOrder] = useState<Array<'owner' | 'level' | 'period'>>(() => {
+    try {
+      const v = localStorage.getItem('okr-plans-group-order');
+      if (v) {
+        const arr = JSON.parse(v);
+        const valid = Array.isArray(arr) && arr.length === 3 && (['owner', 'level', 'period'] as const).every(k => arr.includes(k));
+        if (valid) return arr;
+      }
+    } catch { /* ignore */ }
+    return ['owner', 'level', 'period'];
+  });
+  const moveGroupKey = (key: 'owner' | 'level' | 'period', dir: -1 | 1) => {
+    const idx = groupOrder.indexOf(key);
+    if (idx < 0) return;
+    const target = idx + dir;
+    if (target < 0 || target >= groupOrder.length) return;
+    const next = [...groupOrder];
+    [next[idx], next[target]] = [next[target], next[idx]];
+    setGroupOrder(next);
+    try { localStorage.setItem('okr-plans-group-order', JSON.stringify(next)); } catch { /* ignore */ }
   };
   const [groupedCol1Width, setGroupedCol1Width] = useState<number>(() => loadWidth('okr-plans-grouped-col1', 15));
   const [groupedCol2Width, setGroupedCol2Width] = useState<number>(() => loadWidth('okr-plans-grouped-col2', 15));
@@ -576,37 +597,110 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
         ))}
 
         {viewMode === 'grouped' && (() => {
-          const pool = lists.filter(l => l.ownerId && l.periodId);
-          const ownerPool = pool;
-          const levelPool = pool.filter(l => !groupedOwnerId || l.ownerId === groupedOwnerId);
-          const periodPool = levelPool.filter(l => {
-            if (!groupedLevel) return true;
-            if (groupedLevel === '__none__') return !l.level;
-            return l.level === groupedLevel;
-          });
-          const finalPool = periodPool.filter(l => !groupedPeriodId || l.periodId === groupedPeriodId);
-
-          const ownerCounts = new Map<string, number>();
-          ownerPool.forEach(l => { if (l.ownerId) ownerCounts.set(l.ownerId, (ownerCounts.get(l.ownerId) || 0) + 1); });
-          const ownerList = Array.from(ownerCounts.keys())
-            .map(id => ({ id, name: orgUsers.find(u => u.id === id)?.name || orgUsers.find(u => u.id === id)?.email || id, count: ownerCounts.get(id) || 0 }))
-            .sort((a, b) => a.name.localeCompare(b.name));
-
-          const levelCounts = new Map<string, number>();
-          levelPool.forEach(l => { const k = l.level || '__none__'; levelCounts.set(k, (levelCounts.get(k) || 0) + 1); });
-          const levelKeys: (ObjectiveLevel | '__none__')[] = ['company', 'team', 'individual', '__none__'];
-          const levelList = levelKeys
-            .filter(k => (levelCounts.get(k) || 0) > 0)
-            .map(k => ({ key: k, label: k === '__none__' ? '— No level —' : LEVEL_LABEL[k as ObjectiveLevel], count: levelCounts.get(k) || 0 }));
-
-          const periodCounts = new Map<string, number>();
-          periodPool.forEach(l => { if (l.periodId) periodCounts.set(l.periodId, (periodCounts.get(l.periodId) || 0) + 1); });
-          const periodList = Array.from(periodCounts.keys())
-            .map(id => ({ id, p: periods.find(pp => pp.id === id), count: periodCounts.get(id) || 0 }))
-            .filter(x => !!x.p)
-            .sort((a, b) => (a.p!.startDate || '').localeCompare(b.p!.startDate || ''));
+          const allPool = lists.filter(l => l.ownerId && l.periodId);
+          type GroupKey = 'owner' | 'level' | 'period';
+          const applyFilter = (pool: List[], key: GroupKey): List[] => {
+            if (key === 'owner') return pool.filter(l => !groupedOwnerId || l.ownerId === groupedOwnerId);
+            if (key === 'level') return pool.filter(l => {
+              if (!groupedLevel) return true;
+              if (groupedLevel === '__none__') return !l.level;
+              return l.level === groupedLevel;
+            });
+            return pool.filter(l => !groupedPeriodId || l.periodId === groupedPeriodId);
+          };
+          // Cascade pools positionally: pools[i] is the pool feeding column i (already filtered by columns 0..i-1)
+          const pools: List[][] = [allPool];
+          for (let i = 0; i < groupOrder.length; i++) {
+            pools.push(applyFilter(pools[i], groupOrder[i]));
+          }
+          const finalPool = pools[pools.length - 1];
 
           const colClass = (sel: boolean) => `w-full text-left px-3 py-2 text-sm border-b border-gray-100 flex items-center justify-between ${sel ? 'bg-blue-50 text-blue-800 font-medium' : 'text-gray-700 hover:bg-gray-50'}`;
+
+          const renderColumn = (key: GroupKey, pool: List[], position: number, width: number) => {
+            if (key === 'owner') {
+              const counts = new Map<string, number>();
+              pool.forEach(l => { if (l.ownerId) counts.set(l.ownerId, (counts.get(l.ownerId) || 0) + 1); });
+              const items = Array.from(counts.keys())
+                .map(id => ({ id, name: orgUsers.find(u => u.id === id)?.name || orgUsers.find(u => u.id === id)?.email || id, count: counts.get(id) || 0 }))
+                .sort((a, b) => a.name.localeCompare(b.name));
+              return (
+                <div className="overflow-y-auto" style={{ width: `${width}%` }}>
+                  <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 text-[10px] font-semibold text-gray-500 uppercase tracking-wider flex items-center justify-between">
+                    <span className="flex items-center gap-1">
+                      <span>Owner ({items.length})</span>
+                      <button disabled={position === 0} onClick={() => moveGroupKey('owner', -1)} className="text-gray-400 hover:text-gray-700 disabled:opacity-30 normal-case font-normal" title="Move left">◀</button>
+                      <button disabled={position === groupOrder.length - 1} onClick={() => moveGroupKey('owner', 1)} className="text-gray-400 hover:text-gray-700 disabled:opacity-30 normal-case font-normal" title="Move right">▶</button>
+                    </span>
+                    {groupedOwnerId && (<button onClick={() => setGroupedOwnerId('')} className="text-blue-600 hover:underline normal-case font-normal">Clear</button>)}
+                  </div>
+                  {items.length === 0 ? (
+                    <div className="p-4 text-xs text-gray-400 italic">No owners.</div>
+                  ) : items.map(o => (
+                    <button key={o.id} onClick={() => setGroupedOwnerId(groupedOwnerId === o.id ? '' : o.id)} className={colClass(groupedOwnerId === o.id)}>
+                      <span className="truncate">{o.name}</span>
+                      <span className="text-xs text-gray-400 ml-2">{o.count}</span>
+                    </button>
+                  ))}
+                </div>
+              );
+            }
+            if (key === 'level') {
+              const counts = new Map<string, number>();
+              pool.forEach(l => { const k = l.level || '__none__'; counts.set(k, (counts.get(k) || 0) + 1); });
+              const levelKeys: (ObjectiveLevel | '__none__')[] = ['company', 'team', 'individual', '__none__'];
+              const items = levelKeys
+                .filter(k => (counts.get(k) || 0) > 0)
+                .map(k => ({ key: k, label: k === '__none__' ? '— No level —' : LEVEL_LABEL[k as ObjectiveLevel], count: counts.get(k) || 0 }));
+              return (
+                <div className="overflow-y-auto" style={{ width: `${width}%` }}>
+                  <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 text-[10px] font-semibold text-gray-500 uppercase tracking-wider flex items-center justify-between">
+                    <span className="flex items-center gap-1">
+                      <span>Level ({items.length})</span>
+                      <button disabled={position === 0} onClick={() => moveGroupKey('level', -1)} className="text-gray-400 hover:text-gray-700 disabled:opacity-30 normal-case font-normal" title="Move left">◀</button>
+                      <button disabled={position === groupOrder.length - 1} onClick={() => moveGroupKey('level', 1)} className="text-gray-400 hover:text-gray-700 disabled:opacity-30 normal-case font-normal" title="Move right">▶</button>
+                    </span>
+                    {groupedLevel && (<button onClick={() => setGroupedLevel('')} className="text-blue-600 hover:underline normal-case font-normal">Clear</button>)}
+                  </div>
+                  {items.length === 0 ? (
+                    <div className="p-4 text-xs text-gray-400 italic">No levels.</div>
+                  ) : items.map(({ key: k, label, count }) => (
+                    <button key={k} onClick={() => setGroupedLevel(groupedLevel === k ? '' : k)} className={colClass(groupedLevel === k)}>
+                      <span className="truncate">{label}</span>
+                      <span className="text-xs text-gray-400 ml-2">{count}</span>
+                    </button>
+                  ))}
+                </div>
+              );
+            }
+            // period
+            const counts = new Map<string, number>();
+            pool.forEach(l => { if (l.periodId) counts.set(l.periodId, (counts.get(l.periodId) || 0) + 1); });
+            const items = Array.from(counts.keys())
+              .map(id => ({ id, p: periods.find(pp => pp.id === id), count: counts.get(id) || 0 }))
+              .filter(x => !!x.p)
+              .sort((a, b) => (a.p!.startDate || '').localeCompare(b.p!.startDate || ''));
+            return (
+              <div className="overflow-y-auto" style={{ width: `${width}%` }}>
+                <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 text-[10px] font-semibold text-gray-500 uppercase tracking-wider flex items-center justify-between">
+                  <span className="flex items-center gap-1">
+                    <span>Period ({items.length})</span>
+                    <button disabled={position === 0} onClick={() => moveGroupKey('period', -1)} className="text-gray-400 hover:text-gray-700 disabled:opacity-30 normal-case font-normal" title="Move left">◀</button>
+                    <button disabled={position === groupOrder.length - 1} onClick={() => moveGroupKey('period', 1)} className="text-gray-400 hover:text-gray-700 disabled:opacity-30 normal-case font-normal" title="Move right">▶</button>
+                  </span>
+                  {groupedPeriodId && (<button onClick={() => setGroupedPeriodId('')} className="text-blue-600 hover:underline normal-case font-normal">Clear</button>)}
+                </div>
+                {items.length === 0 ? (
+                  <div className="p-4 text-xs text-gray-400 italic">No periods.</div>
+                ) : items.map(({ id, p, count }) => (
+                  <button key={id} onClick={() => setGroupedPeriodId(groupedPeriodId === id ? '' : id)} className={colClass(groupedPeriodId === id)}>
+                    <span className="truncate">{p!.name}</span>
+                    <span className="text-xs text-gray-400 ml-2">{count}</span>
+                  </button>
+                ))}
+              </div>
+            );
+          };
 
           const splitter = (which: 1 | 2 | 3) => (
             <div
@@ -620,63 +714,15 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
             />
           );
           const col4Width = Math.max(10, 100 - groupedCol1Width - groupedCol2Width - groupedCol3Width);
+          const widths = [groupedCol1Width, groupedCol2Width, groupedCol3Width];
           return (
             <div ref={groupedSplitRef} className="flex" style={{ minHeight: 360 }}>
-              <div className="overflow-y-auto" style={{ width: `${groupedCol1Width}%` }}>
-                <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 text-[10px] font-semibold text-gray-500 uppercase tracking-wider flex items-center justify-between">
-                  <span>Owner ({ownerList.length})</span>
-                  {groupedOwnerId && (
-                    <button onClick={() => setGroupedOwnerId('')} className="text-blue-600 hover:underline normal-case font-normal">Clear</button>
-                  )}
-                </div>
-                {ownerList.length === 0 ? (
-                  <div className="p-4 text-xs text-gray-400 italic">No owners.</div>
-                ) : ownerList.map(o => (
-                  <button key={o.id} onClick={() => setGroupedOwnerId(groupedOwnerId === o.id ? '' : o.id)} className={colClass(groupedOwnerId === o.id)}>
-                    <span className="truncate">{o.name}</span>
-                    <span className="text-xs text-gray-400 ml-2">{o.count}</span>
-                  </button>
-                ))}
-              </div>
-              {splitter(1)}
-              <div className="overflow-y-auto" style={{ width: `${groupedCol2Width}%` }}>
-                <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 text-[10px] font-semibold text-gray-500 uppercase tracking-wider flex items-center justify-between">
-                  <span>Level ({levelList.length})</span>
-                  {groupedLevel && (
-                    <button onClick={() => setGroupedLevel('')} className="text-blue-600 hover:underline normal-case font-normal">Clear</button>
-                  )}
-                </div>
-                {levelList.length === 0 ? (
-                  <div className="p-4 text-xs text-gray-400 italic">No levels.</div>
-                ) : levelList.map(({ key, label, count }) => (
-                  <button
-                    key={key}
-                    onClick={() => setGroupedLevel(groupedLevel === key ? '' : key)}
-                    className={colClass(groupedLevel === key)}
-                  >
-                    <span className="truncate">{label}</span>
-                    <span className="text-xs text-gray-400 ml-2">{count}</span>
-                  </button>
-                ))}
-              </div>
-              {splitter(2)}
-              <div className="overflow-y-auto" style={{ width: `${groupedCol3Width}%` }}>
-                <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 text-[10px] font-semibold text-gray-500 uppercase tracking-wider flex items-center justify-between">
-                  <span>Period ({periodList.length})</span>
-                  {groupedPeriodId && (
-                    <button onClick={() => setGroupedPeriodId('')} className="text-blue-600 hover:underline normal-case font-normal">Clear</button>
-                  )}
-                </div>
-                {periodList.length === 0 ? (
-                  <div className="p-4 text-xs text-gray-400 italic">No periods.</div>
-                ) : periodList.map(({ id, p, count }) => (
-                  <button key={id} onClick={() => setGroupedPeriodId(groupedPeriodId === id ? '' : id)} className={colClass(groupedPeriodId === id)}>
-                    <span className="truncate">{p!.name}</span>
-                    <span className="text-xs text-gray-400 ml-2">{count}</span>
-                  </button>
-                ))}
-              </div>
-              {splitter(3)}
+              {groupOrder.map((key, i) => (
+                <Fragment key={key}>
+                  {renderColumn(key, pools[i], i, widths[i])}
+                  {splitter((i + 1) as 1 | 2 | 3)}
+                </Fragment>
+              ))}
               <div className="overflow-y-auto" style={{ width: `${col4Width}%` }}>
                 <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
                   Plans ({finalPool.length})

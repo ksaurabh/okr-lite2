@@ -729,6 +729,109 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
 
   const planFocus = planFocusListId ? (lists.find(l => l.id === planFocusListId) || sharedPlans.find(l => l.id === planFocusListId)) : null;
 
+  const [panel1EditMode, setPanel1EditMode] = useState(false);
+  const [panel3EditMode, setPanel3EditMode] = useState(false);
+
+  const CardCellEditor = ({ obj, col }: { obj: Objective; col: ColumnKey }) => {
+    const save = (updates: Partial<Objective>) => updateObjective(obj.id, updates, userEmail);
+    const cls = 'w-full text-xs px-1 py-0.5 border border-gray-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500';
+    switch (col) {
+      case 'workflowStatus':
+        return (
+          <select value={obj.workflowStatus || 'todo'} onChange={(e) => save({ workflowStatus: e.target.value as WorkflowStatus })} className={cls}>
+            {WORKFLOW_STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+          </select>
+        );
+      case 'level':
+        return (
+          <select value={obj.level} onChange={(e) => save({ level: e.target.value as Objective['level'] })} className={cls}>
+            <option value="company">Company</option>
+            <option value="team">Team</option>
+            <option value="individual">Individual</option>
+          </select>
+        );
+      case 'owner':
+        return (
+          <select value={obj.ownerId || ''} onChange={(e) => save({ ownerId: e.target.value || undefined })} className={cls}>
+            <option value="">—</option>
+            {[...orgUsers].sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email)).map(u => (
+              <option key={u.id} value={u.id}>{u.name || u.email}</option>
+            ))}
+          </select>
+        );
+      case 'assignee':
+        return (
+          <select value={obj.assigneeId || ''} onChange={(e) => save({ assigneeId: e.target.value || undefined })} className={cls}>
+            <option value="">—</option>
+            {[...orgUsers].sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email)).map(u => (
+              <option key={u.id} value={u.id}>{u.name || u.email}</option>
+            ))}
+          </select>
+        );
+      case 'period':
+        return (
+          <select value={obj.periodId || ''} onChange={(e) => save({ periodId: e.target.value || undefined })} className={cls}>
+            <option value="">—</option>
+            {[...orgPeriods].sort((a, b) => (a.startDate || '').localeCompare(b.startDate || '')).map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        );
+      case 'team':
+        return (
+          <select value={obj.teamId || ''} onChange={(e) => save({ teamId: e.target.value || undefined })} className={cls}>
+            <option value="">—</option>
+            {[...orgTeams].sort((a, b) => a.name.localeCompare(b.name)).map(t => (
+              <option key={t.id} value={t.id}>{t.name}</option>
+            ))}
+          </select>
+        );
+      case 'nextStepDate':
+        return (
+          <input type="date" value={obj.nextStepDate || ''} onChange={(e) => save({ nextStepDate: e.target.value || undefined })} className={cls} />
+        );
+      case 'nextStep':
+        return (
+          <input type="text" defaultValue={obj.nextStep || ''} onBlur={(e) => { if (e.target.value !== (obj.nextStep || '')) save({ nextStep: e.target.value || undefined }); }} className={cls} />
+        );
+      case 'storyPoints':
+      case 'valuePoints': {
+        const v = (obj[col] as number | undefined) ?? '';
+        return (
+          <input type="text" inputMode="decimal" defaultValue={String(v)} onBlur={(e) => {
+            const n = e.target.value.trim() === '' ? undefined : Number(e.target.value);
+            if (Number.isFinite(n) || n === undefined) save({ [col]: n } as Partial<Objective>);
+          }} className={cls} />
+        );
+      }
+      default:
+        return <span className="text-gray-700">{cellValueForCard(obj, col)}</span>;
+    }
+  };
+
+  const childPlansOf = (parentId: string | undefined) => parentId ? lists.filter(l => l.parentId === parentId && l.ownerId && l.periodId) : [];
+  const ChildPlanBadges = ({ objectiveId }: { objectiveId: string }) => {
+    const parent = selectedList;
+    if (!parent) return null;
+    const children = childPlansOf(parent.id);
+    const memberOf = children.filter(c => c.items.some(it => it.objectiveId === objectiveId));
+    if (memberOf.length === 0) return null;
+    return (
+      <span className="flex items-center gap-1 flex-shrink-0">
+        {memberOf.map(c => (
+          <span
+            key={c.id}
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded border border-gray-200 bg-gray-50 text-gray-700 max-w-[120px] truncate"
+            title={`In child plan: ${c.name}`}
+          >
+            <span className="w-1.5 h-1.5 rounded-sm flex-shrink-0" style={{ backgroundColor: c.color || '#6b7280' }} />
+            <span className="truncate">{c.name}</span>
+          </span>
+        ))}
+      </span>
+    );
+  };
+
   const renderObjectiveCard = (obj: Objective, depth: number): React.ReactNode => {
     const children = orgObjectives.filter(o => o.parentId === obj.id);
     const hasChildren = children.length > 0;
@@ -752,6 +855,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
               <span className="w-3 flex-shrink-0" />
             )}
             <div className="text-sm font-medium text-gray-900 break-words flex-1 min-w-0" title={obj.title}>{obj.title}</div>
+            <ChildPlanBadges objectiveId={obj.id} />
             <div className="flex items-center gap-0.5 flex-shrink-0">
               <AddToPlanBookmark objectiveId={obj.id} size="sm" />
               <button
@@ -1442,6 +1546,14 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                         List
                       </button>
                     </div>
+                    {listPlanCurrentView === 'cards' && (
+                      <button
+                        onClick={() => setPanel1EditMode(v => !v)}
+                        className={`px-2 py-0.5 text-[10px] border rounded ${panel1EditMode ? 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700' : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'}`}
+                      >
+                        {panel1EditMode ? 'View' : 'Edit'}
+                      </button>
+                    )}
                   </div>
                   {listPlanCurrentView === 'list' ? (
                     <div>
@@ -1516,14 +1628,19 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                           >
                             <div className="flex items-start gap-1">
                               <div className="text-sm font-medium text-gray-900 break-words flex-1 min-w-0" title={obj.title}>{obj.title}</div>
+                              <ChildPlanBadges objectiveId={obj.id} />
                               <AddToPlanBookmark objectiveId={obj.id} size="sm" />
                             </div>
                             {listPlanColumns.length > 0 && (
-                              <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5">
+                              <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5" onClick={(e) => e.stopPropagation()}>
                                 {listPlanColumns.map(col => (
                                   <div key={col} className="text-xs text-gray-600">
                                     <span className="text-gray-400">{COLUMN_LABELS[col]}=</span>
-                                    <span className="text-gray-700">{cellValueForCard(obj, col)}</span>
+                                    {panel1EditMode ? (
+                                      <CardCellEditor obj={obj} col={col} />
+                                    ) : (
+                                      <span className="text-gray-700">{cellValueForCard(obj, col)}</span>
+                                    )}
                                   </div>
                                 ))}
                               </div>
@@ -1749,6 +1866,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                       <span className="w-3 flex-shrink-0" />
                                     )}
                                     <span className="truncate flex-1">{o.title}</span>
+                                    <ChildPlanBadges objectiveId={o.id} />
                                     <AddToPlanBookmark objectiveId={o.id} size="sm" />
                                     <button
                                       onClick={(e) => { e.stopPropagation(); setQuickAddCardParentId(o.id); setQuickAddCardTitle(''); }}
@@ -2052,6 +2170,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                   <span className="w-3 flex-shrink-0" />
                                 )}
                                 <span className="truncate flex-1">{o.title}</span>
+                                <ChildPlanBadges objectiveId={o.id} />
                                 <AddToPlanBookmark objectiveId={o.id} size="sm" />
                                 <button
                                   onClick={(e) => { e.stopPropagation(); setQuickAddCardParentId(o.id); setQuickAddCardTitle(''); }}
@@ -2148,6 +2267,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                     <span className="w-3 flex-shrink-0" />
                                   )}
                                   <div className="text-sm font-medium text-gray-900 break-words flex-1 min-w-0" title={obj.title}>{obj.title}</div>
+                                  <ChildPlanBadges objectiveId={obj.id} />
                                   <AddToPlanBookmark objectiveId={obj.id} size="sm" />
                                   <div className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                                     <button
@@ -2449,6 +2569,14 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                               List
                             </button>
                           </div>
+                          {listPlanChildView === 'cards' && (
+                            <button
+                              onClick={() => setPanel3EditMode(v => !v)}
+                              className={`px-2 py-0.5 text-[10px] border rounded ${panel3EditMode ? 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700' : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'}`}
+                            >
+                              {panel3EditMode ? 'View' : 'Edit'}
+                            </button>
+                          )}
                         </div>
                         {child.items.length === 0 ? (
                           <div className="p-3 text-xs text-gray-400 italic">No items in this child list yet.</div>
@@ -2578,11 +2706,15 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                     </div>
                                   </div>
                                   {listPlanColumns.length > 0 && (
-                                    <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5">
+                                    <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5" onClick={(e) => e.stopPropagation()}>
                                       {listPlanColumns.map(col => (
                                         <div key={col} className="text-xs text-gray-600 truncate">
                                           <span className="text-gray-400">{COLUMN_LABELS[col]}=</span>
-                                          <span className="text-gray-700">{cellValueForCard(obj, col)}</span>
+                                          {panel3EditMode ? (
+                                            <CardCellEditor obj={obj} col={col} />
+                                          ) : (
+                                            <span className="text-gray-700">{cellValueForCard(obj, col)}</span>
+                                          )}
                                         </div>
                                       ))}
                                     </div>
