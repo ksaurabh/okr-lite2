@@ -392,7 +392,8 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   // Adding a child requires edit rights on the parent (creator/admin) or being
   // its owner/assignee. Read-only objectives narrow this to owner/assignee
   // (plus the creator and admins).
-  const canAddChild = canModify || isOwnerOrAssignee;
+  const isTrackedInJira = !!objective.jiraEpicKey;
+  const canAddChild = (canModify || isOwnerOrAssignee) && !isTrackedInJira;
 
   const levelOptions: { value: ObjectiveLevel; label: string }[] = [
     { value: 'company', label: 'Company' },
@@ -1064,6 +1065,20 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
             </div>
           )}
 
+          {/* Jira tracking badge */}
+          {!minimalActions && objective.jiraEpicKey && (
+            <a
+              href={objective.jiraEpicUrl || '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+              title={`Tracked in Jira as ${objective.jiraEpicKey}`}
+            >
+              {objective.jiraEpicKey}
+            </a>
+          )}
+
           {/* External link */}
           {!minimalActions && objective.link?.url && (
             <a
@@ -1320,6 +1335,45 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
                           </button>
                         </div>
                       ))}
+                      {!objective.jiraEpicKey ? (
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            setShowKebabMenu(false);
+                            try {
+                              const res = await fetch(`${API_URL}/api/jira/create-epic`, {
+                                method: 'POST',
+                                credentials: 'include',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ summary: objective.title, description: objective.description, objectiveId: objective.id }),
+                              });
+                              const data = await res.json().catch(() => ({}));
+                              if (!res.ok) {
+                                window.alert(`Failed to create Jira ticket: ${data.error || res.status}`);
+                                return;
+                              }
+                              await updateObjective(objective.id, { jiraEpicKey: data.key, jiraEpicUrl: data.url }, userEmail);
+                            } catch (err) {
+                              window.alert(`Failed to create Jira ticket: ${String(err)}`);
+                            }
+                          }}
+                          className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 border-t border-gray-100"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
+                          Create Jira ticket
+                        </button>
+                      ) : (
+                        <a
+                          href={objective.jiraEpicUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-full text-left px-3 py-1.5 text-sm text-blue-700 hover:bg-blue-50 flex items-center gap-2 border-t border-gray-100"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                          Open {objective.jiraEpicKey} in Jira
+                        </a>
+                      )}
                     </div>
                   )}
                 </div>

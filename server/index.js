@@ -784,6 +784,390 @@ app.post('/api/admin/last-backup-restore', requireOrgAdminOrSuperAdmin, (_req, r
   res.json({ lastBackupRestoredAt: data.lastBackupRestoredAt });
 });
 
+// ---- Jira integration (per-organization) ----
+function getJiraConfig(orgId) {
+  const data = getOKRData();
+  data.jiraConfigs = data.jiraConfigs || {};
+  return data.jiraConfigs[orgId] || null;
+}
+function saveJiraConfig(orgId, cfg) {
+  const data = getOKRData();
+  data.jiraConfigs = data.jiraConfigs || {};
+  data.jiraConfigs[orgId] = { ...(data.jiraConfigs[orgId] || {}), ...cfg };
+  saveOKRData(data);
+  return data.jiraConfigs[orgId];
+}
+function jiraAuthHeader(cfg) {
+  const token = Buffer.from(`${cfg.email}:${cfg.apiToken}`).toString('base64');
+  return `Basic ${token}`;
+}
+async function jiraFetch(cfg, path, init = {}) {
+  const url = `${(cfg.baseUrl || '').replace(/\/$/, '')}${path}`;
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      'Authorization': jiraAuthHeader(cfg),
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+      ...(init.headers || {}),
+    },
+  });
+  return res;
+}
+
+app.get('/api/admin/jira-config', requireOrgAdminOrSuperAdmin, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.json({ config: null });
+  const cfg = getJiraConfig(org.id);
+  if (!cfg) return res.json({ config: null });
+  // Strip the token from the response
+  const { apiToken: _drop, ...safe } = cfg;
+  void _drop;
+  res.json({ config: { ...safe, hasToken: !!cfg.apiToken } });
+});
+
+app.put('/api/admin/jira-config', requireOrgAdminOrSuperAdmin, async (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.status(403).json({ error: 'No organization found' });
+  const { baseUrl, email, apiToken, projectKey, epicIssueTypeId, periodFieldKey, periodValueMap } = req.body || {};
+  const existing = getJiraConfig(org.id) || {};
+  const next = { ...existing };
+  if (typeof baseUrl === 'string') next.baseUrl = baseUrl.trim();
+  if (typeof email === 'string') next.email = email.trim();
+  if (typeof apiToken === 'string' && apiToken.trim()) next.apiToken = apiToken.trim();
+  if (typeof projectKey === 'string') next.projectKey = projectKey.trim();
+  if (typeof epicIssueTypeId === 'string') next.epicIssueTypeId = epicIssueTypeId.trim();
+  if (typeof periodFieldKey === 'string') next.periodFieldKey = periodFieldKey.trim() || undefined;
+  if (periodValueMap && typeof periodValueMap === 'object') next.periodValueMap = periodValueMap;
+  saveJiraConfig(org.id, next);
+  const { apiToken: _drop, ...safe } = next;
+  void _drop;
+  res.json({ config: { ...safe, hasToken: !!next.apiToken } });
+});
+
+app.delete('/api/admin/jira-config', requireOrgAdminOrSuperAdmin, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.status(403).json({ error: 'No organization found' });
+  const data = getOKRData();
+  data.jiraConfigs = data.jiraConfigs || {};
+  delete data.jiraConfigs[org.id];
+  saveOKRData(data);
+  res.json({ ok: true });
+});
+
+app.get('/api/admin/jira/projects', requireOrgAdminOrSuperAdmin, async (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.status(403).json({ error: 'No organization found' });
+  const cfg = getJiraConfig(org.id);
+  if (!cfg || !cfg.baseUrl || !cfg.email || !cfg.apiToken) {
+    return res.status(400).json({ error: 'Jira not configured' });
+  }
+  try {
+    const r = await jiraFetch(cfg, '/rest/api/3/project/search?maxResults=200');
+    if (!r.ok) {
+      const text = await r.text().catch(() => '');
+      return res.status(r.status).json({ error: `Jira: ${r.status} ${text.slice(0, 200)}` });
+    }
+    const data = await r.json();
+    const projects = (data.values || []).map(p => ({ id: p.id, key: p.key, name: p.name }));
+    res.json({ projects });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+app.post('/api/admin/jira/create-period-field', requireOrgAdminOrSuperAdmin, async (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.status(403).json({ error: 'No organization found' });
+  const cfg = getJiraConfig(org.id);
+  if (!cfg || !cfg.baseUrl || !cfg.email || !cfg.apiToken || !cfg.projectKey) {
+    return res.status(400).json({ error: 'Jira not fully configured' });
+  }
+  const { name } = req.body || {};
+  if (!name || typeof name !== 'string') return res.status(400).json({ error: 'name required' });
+
+  const okr = getOKRData();
+  const periods = (okr.periods || []).filter(p => p.orgId === org.id && !p.archived);
+  if (periods.length === 0) return res.status(400).json({ error: 'No active periods to use as options' });
+
+  try {
+    // 1. Create the custom field
+    const fieldRes = await jiraFetch(cfg, '/rest/api/3/field', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: name.trim(),
+        type: 'com.atlassian.jira.plugin.system.customfieldtypes:select',
+        searcherKey: 'com.atlassian.jira.plugin.system.customfieldtypes:selectsearcher',
+      }),
+    });
+    if (!fieldRes.ok) {
+      const text = await fieldRes.text().catch(() => '');
+      return res.status(fieldRes.status).json({ error: `Create field: ${fieldRes.status} ${text.slice(0, 500)}` });
+    }
+    const fieldData = await fieldRes.json();
+    const fieldId = fieldData.id;
+
+    // 2. Resolve / create the field context
+    let contextId;
+    try {
+      const ctxRes = await jiraFetch(cfg, `/rest/api/3/field/${fieldId}/context`);
+      if (ctxRes.ok) {
+        const ctxData = await ctxRes.json();
+        contextId = ctxData.values?.[0]?.id;
+      }
+    } catch { /* ignore */ }
+    if (!contextId) {
+      const newCtxRes = await jiraFetch(cfg, `/rest/api/3/field/${fieldId}/context`, {
+        method: 'POST',
+        body: JSON.stringify({ name: 'OKR app context', description: 'Auto-created by the OKR app for periods' }),
+      });
+      if (newCtxRes.ok) {
+        const d = await newCtxRes.json();
+        contextId = d.id;
+      }
+    }
+
+    // 3. Add an option for each active period
+    const periodValueMap = {};
+    if (contextId) {
+      const optRes = await jiraFetch(cfg, `/rest/api/3/field/${fieldId}/context/${contextId}/option`, {
+        method: 'POST',
+        body: JSON.stringify({ options: periods.map(p => ({ value: p.name })) }),
+      });
+      if (optRes.ok) {
+        const optData = await optRes.json();
+        const created = optData.options || [];
+        for (const p of periods) {
+          const opt = created.find(o => o.value === p.name);
+          if (opt) periodValueMap[p.id] = { id: opt.id, value: opt.value };
+        }
+      }
+    }
+
+    // 4. Best-effort: add the field to the Epic screens for this project
+    let attachedScreens = 0;
+    const warnings = [];
+    try {
+      // Resolve project id (numeric) from key
+      let projectId = null;
+      const projRes = await jiraFetch(cfg, `/rest/api/3/project/${encodeURIComponent(cfg.projectKey)}`);
+      if (projRes.ok) {
+        const pj = await projRes.json();
+        projectId = pj.id;
+      }
+      // Walk: project → issue type screen scheme → screen scheme(s) for Epic → screens
+      let screenIds = new Set();
+      if (projectId) {
+        const itssRes = await jiraFetch(cfg, `/rest/api/3/issuetypescreenscheme/project?projectId=${projectId}`);
+        if (itssRes.ok) {
+          const itssData = await itssRes.json();
+          const itssId = itssData.values?.[0]?.issueTypeScreenScheme?.id;
+          if (itssId) {
+            const mappingRes = await jiraFetch(cfg, `/rest/api/3/issuetypescreenscheme/mapping?issueTypeScreenSchemeId=${itssId}`);
+            if (mappingRes.ok) {
+              const mappingData = await mappingRes.json();
+              // Resolve Epic issue type id
+              const epicIssueTypeId = cfg.epicIssueTypeId;
+              const screenSchemeIds = new Set();
+              for (const m of mappingData.values || []) {
+                if (m.issueTypeId === 'default' || (epicIssueTypeId && m.issueTypeId === epicIssueTypeId)) {
+                  screenSchemeIds.add(m.screenSchemeId);
+                }
+              }
+              for (const ssId of screenSchemeIds) {
+                const ssRes = await jiraFetch(cfg, `/rest/api/3/screenscheme?id=${ssId}`);
+                if (!ssRes.ok) continue;
+                const ssData = await ssRes.json();
+                for (const ss of ssData.values || []) {
+                  const screens = ss.screens || {};
+                  for (const k of Object.keys(screens)) {
+                    if (screens[k]) screenIds.add(screens[k]);
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      // Fallback: any screen with "Epic" in its name
+      if (screenIds.size === 0) {
+        const screensRes = await jiraFetch(cfg, '/rest/api/3/screens?maxResults=200');
+        if (screensRes.ok) {
+          const screensData = await screensRes.json();
+          for (const s of screensData.values || []) {
+            if (/epic/i.test(s.name)) screenIds.add(s.id);
+          }
+        }
+        if (screenIds.size === 0) warnings.push('Could not find Epic screens to attach the field — add the field to your Epic create/edit screens manually in Jira.');
+      }
+      for (const screenId of screenIds) {
+        const tabsRes = await jiraFetch(cfg, `/rest/api/3/screens/${screenId}/tabs`);
+        if (!tabsRes.ok) continue;
+        const tabs = await tabsRes.json();
+        const firstTab = Array.isArray(tabs) ? tabs[0] : null;
+        if (!firstTab) continue;
+        const addRes = await jiraFetch(cfg, `/rest/api/3/screens/${screenId}/tabs/${firstTab.id}/fields`, {
+          method: 'POST',
+          body: JSON.stringify({ fieldId }),
+        });
+        if (addRes.ok) attachedScreens++;
+      }
+    } catch (err) {
+      warnings.push(`Screen attachment failed: ${String(err).slice(0, 200)}`);
+    }
+
+    saveJiraConfig(org.id, { periodFieldKey: fieldId, periodValueMap });
+
+    res.json({ fieldId, fieldName: fieldData.name, attachedScreens, periodValueMap, warnings });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+app.get('/api/jira/epic-fields', requireAuth, async (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.status(403).json({ error: 'No organization found' });
+  const cfg = getJiraConfig(org.id);
+  if (!cfg || !cfg.baseUrl || !cfg.email || !cfg.apiToken || !cfg.projectKey) {
+    return res.status(400).json({ error: 'Jira not fully configured' });
+  }
+  try {
+    // Resolve Epic issue type id (cache on config)
+    let epicId = cfg.epicIssueTypeId;
+    if (!epicId) {
+      const ir = await jiraFetch(cfg, `/rest/api/3/issuetype/project?projectId=${encodeURIComponent('')}`);
+      void ir; // not used directly; fall through to createmeta
+    }
+    const params = new URLSearchParams({
+      projectKeys: cfg.projectKey,
+      expand: 'projects.issuetypes.fields',
+    });
+    const r = await jiraFetch(cfg, `/rest/api/3/issue/createmeta?${params.toString()}`);
+    if (!r.ok) {
+      const text = await r.text().catch(() => '');
+      return res.status(r.status).json({ error: `Jira: ${r.status} ${text.slice(0, 500)}` });
+    }
+    const meta = await r.json();
+    const project = (meta.projects || []).find(p => p.key === cfg.projectKey) || (meta.projects || [])[0];
+    if (!project) return res.json({ project: null, issueType: null, fields: [] });
+    const epic = (project.issuetypes || []).find(t => /epic/i.test(t.name));
+    if (!epic) return res.json({ project: { id: project.id, key: project.key, name: project.name }, issueType: null, fields: [] });
+    // Cache the epic issue type id for create-epic to use
+    if (!cfg.epicIssueTypeId || cfg.epicIssueTypeId !== epic.id) {
+      saveJiraConfig(org.id, { epicIssueTypeId: epic.id });
+    }
+    const rawFields = epic.fields || {};
+    const fields = Object.keys(rawFields).map(key => {
+      const f = rawFields[key];
+      return {
+        key,
+        name: f.name,
+        required: !!f.required,
+        schema: f.schema ? { type: f.schema.type, items: f.schema.items, custom: f.schema.custom } : null,
+        allowedValues: Array.isArray(f.allowedValues)
+          ? f.allowedValues.slice(0, 200).map(v => ({ id: v.id, value: v.value, name: v.name, key: v.key }))
+          : undefined,
+        hasDefaultValue: !!f.hasDefaultValue,
+      };
+    });
+    res.json({
+      project: { id: project.id, key: project.key, name: project.name },
+      issueType: { id: epic.id, name: epic.name },
+      fields,
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+app.post('/api/jira/create-epic', requireAuth, async (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.status(403).json({ error: 'No organization found' });
+  const cfg = getJiraConfig(org.id);
+  if (!cfg || !cfg.baseUrl || !cfg.email || !cfg.apiToken || !cfg.projectKey) {
+    return res.status(400).json({ error: 'Jira not fully configured' });
+  }
+  const { summary, description, objectiveId } = req.body || {};
+  if (!summary || typeof summary !== 'string') return res.status(400).json({ error: 'summary required' });
+
+  let epicIssueTypeId = cfg.epicIssueTypeId;
+  // Lazily resolve the Epic issue type id for this project (cached on config)
+  if (!epicIssueTypeId) {
+    try {
+      const r = await jiraFetch(cfg, `/rest/api/3/issue/createmeta?projectKeys=${encodeURIComponent(cfg.projectKey)}&expand=projects.issuetypes`);
+      if (r.ok) {
+        const meta = await r.json();
+        const project = (meta.projects || [])[0];
+        const epic = (project?.issuetypes || []).find(t => /epic/i.test(t.name));
+        if (epic) {
+          epicIssueTypeId = epic.id;
+          saveJiraConfig(org.id, { epicIssueTypeId });
+        }
+      }
+    } catch { /* ignore — falls back to name */ }
+  }
+
+  const fields = {
+    project: { key: cfg.projectKey },
+    summary,
+    issuetype: epicIssueTypeId ? { id: epicIssueTypeId } : { name: 'Epic' },
+  };
+  if (description) {
+    fields.description = {
+      type: 'doc',
+      version: 1,
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: String(description) }] }],
+    };
+  }
+  // Apply period mapping if configured and the objective has a period
+  if (cfg.periodFieldKey && objectiveId) {
+    const okr = getOKRData();
+    const obj = okr.objectives.find(o => o.id === objectiveId && o.orgId === org.id);
+    const period = obj && obj.periodId ? (okr.periods || []).find(p => p.id === obj.periodId) : null;
+    if (period) {
+      const mapped = cfg.periodValueMap && cfg.periodValueMap[period.id];
+      if (mapped && typeof mapped === 'object') {
+        // Object form: { id }, { value }, { id, value }, etc.
+        fields[cfg.periodFieldKey] = mapped;
+      } else if (typeof mapped === 'string' && mapped) {
+        fields[cfg.periodFieldKey] = { value: mapped };
+      } else {
+        // No explicit mapping; fall back to sending the period name as the value
+        fields[cfg.periodFieldKey] = period.name;
+      }
+    }
+  }
+  try {
+    const r = await jiraFetch(cfg, '/rest/api/3/issue', {
+      method: 'POST',
+      body: JSON.stringify({ fields }),
+    });
+    if (!r.ok) {
+      const text = await r.text().catch(() => '');
+      return res.status(r.status).json({ error: `Jira: ${r.status} ${text.slice(0, 500)}` });
+    }
+    const data = await r.json();
+    const url = `${cfg.baseUrl.replace(/\/$/, '')}/browse/${data.key}`;
+    // Tag the objective if provided
+    if (objectiveId) {
+      const okr = getOKRData();
+      const idx = okr.objectives.findIndex(o => o.id === objectiveId && o.orgId === org.id);
+      if (idx !== -1) {
+        okr.objectives[idx] = {
+          ...okr.objectives[idx],
+          jiraEpicKey: data.key,
+          jiraEpicUrl: url,
+          updatedAt: new Date().toISOString(),
+        };
+        saveOKRData(okr);
+      }
+    }
+    res.json({ key: data.key, url });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
 // Admin: get every user's lists/plans across the org (for backup)
 app.get('/api/admin/all-plans', requireOrgAdminOrSuperAdmin, (req, res) => {
   const org = getOrganizationByDomain(req.user.domain);

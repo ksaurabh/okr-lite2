@@ -803,6 +803,13 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
             ))}
           </select>
         );
+      case 'keyResult':
+        return (
+          <select value={valueOf('isKeyResult') ? 'yes' : 'no'} onChange={(e) => save({ isKeyResult: e.target.value === 'yes' })} className={cls}>
+            <option value="no">No</option>
+            <option value="yes">Yes</option>
+          </select>
+        );
       case 'nextStepDate':
         return (
           <input type="date" value={valueOf('nextStepDate') || ''} onChange={(e) => save({ nextStepDate: e.target.value || undefined })} className={cls} />
@@ -843,6 +850,53 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
       default:
         return <span className="text-gray-700">{cellValueForCard(obj, col)}</span>;
     }
+  };
+
+  const JiraTicketButton = ({ obj }: { obj: Objective }) => {
+    const [busy, setBusy] = useState(false);
+    if (obj.jiraEpicKey) {
+      return (
+        <a
+          href={obj.jiraEpicUrl || '#'}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 flex-shrink-0"
+          title={`Tracked in Jira as ${obj.jiraEpicKey}`}
+        >
+          {obj.jiraEpicKey}
+        </a>
+      );
+    }
+    return (
+      <button
+        onClick={async (e) => {
+          e.stopPropagation();
+          if (busy) return;
+          setBusy(true);
+          try {
+            const res = await fetch(`${API_URL}/api/jira/create-epic`, {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ summary: obj.title, description: obj.description, objectiveId: obj.id }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) { window.alert(`Failed to create Jira ticket: ${data.error || res.status}`); return; }
+            await updateObjective(obj.id, { jiraEpicKey: data.key, jiraEpicUrl: data.url }, userEmail);
+          } catch (err) {
+            window.alert(`Failed to create Jira ticket: ${String(err)}`);
+          } finally {
+            setBusy(false);
+          }
+        }}
+        className="inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-bold rounded border border-gray-300 bg-gray-50 text-gray-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 flex-shrink-0 disabled:opacity-50"
+        title="Create Jira ticket"
+        disabled={busy}
+      >
+        {busy ? '…' : 'J+'}
+      </button>
+    );
   };
 
   const childPlansOf = (parentId: string | undefined) => parentId ? lists.filter(l => l.parentId === parentId && l.ownerId && l.periodId) : [];
@@ -1666,6 +1720,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                               <div className="text-sm font-medium text-gray-900 break-words flex-1 min-w-0" title={obj.title}>{obj.title}</div>
                               <ChildPlanBadges objectiveId={obj.id} />
                               <AddToPlanBookmark objectiveId={obj.id} size="sm" />
+                              <JiraTicketButton obj={obj} />
                               <button
                                 onClick={(e) => { e.stopPropagation(); if (cardEditingId === obj.id) cancelCardEdit(); else beginCardEdit(obj.id); }}
                                 className={`p-1 rounded flex-shrink-0 ${cardEditingId === obj.id ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'}`}
@@ -2723,6 +2778,9 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                     <div onClick={(e) => e.stopPropagation()}>
                                       <AddToPlanBookmark objectiveId={obj.id} size="sm" />
                                     </div>
+                                    <div onClick={(e) => e.stopPropagation()}>
+                                      <JiraTicketButton obj={obj} />
+                                    </div>
                                     <button
                                       onClick={(e) => { e.stopPropagation(); if (cardEditingId === obj.id) cancelCardEdit(); else beginCardEdit(obj.id); }}
                                       className={`p-1 rounded flex-shrink-0 ${cardEditingId === obj.id ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'}`}
@@ -2778,7 +2836,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                   {listPlanColumns.length > 0 && (
                                     <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5" onClick={(e) => e.stopPropagation()}>
                                       {listPlanColumns.map(col => (
-                                        <div key={col} className="text-xs text-gray-600 truncate">
+                                        <div key={col} className="text-xs text-gray-600">
                                           <span className="text-gray-400">{COLUMN_LABELS[col]}=</span>
                                           {panel3EditMode || cardEditingId === obj.id ? (
                                             <CardCellEditor obj={obj} col={col} draft={cardEditingId === obj.id ? cardDraft : undefined} setDraft={cardEditingId === obj.id ? (u) => setCardDraft(prev => ({ ...prev, ...u })) : undefined} />

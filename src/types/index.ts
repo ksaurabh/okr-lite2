@@ -63,6 +63,8 @@ export interface Objective {
   createdAt: string;
   updatedAt: string;
   history: ObjectiveHistoryEntry[];
+  jiraEpicKey?: string;
+  jiraEpicUrl?: string;
 }
 
 export interface Tag {

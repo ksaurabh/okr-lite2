@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useOKRStore, type OKRStore } from '../../store/okrStore';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -33,9 +34,107 @@ export function SettingsPage() {
   const [myNameSaved, setMyNameSaved] = useState(false);
   const [profileOpen, setProfileOpen] = useState(true);
   const [usersOpen, setUsersOpen] = useState(true);
+  const [jiraOpen, setJiraOpen] = useState(true);
+  const [jiraBaseUrl, setJiraBaseUrl] = useState('');
+  const [jiraEmail, setJiraEmail] = useState('');
+  const [jiraToken, setJiraToken] = useState('');
+  const [jiraHasToken, setJiraHasToken] = useState(false);
+  const [jiraProjectKey, setJiraProjectKey] = useState('');
+  const [jiraProjects, setJiraProjects] = useState<Array<{ id: string; key: string; name: string }>>([]);
+  const [jiraSaving, setJiraSaving] = useState(false);
+  const [jiraLoadingProjects, setJiraLoadingProjects] = useState(false);
+  const [jiraError, setJiraError] = useState<string | null>(null);
+  const [jiraSaved, setJiraSaved] = useState(false);
+  const [jiraEpicFields, setJiraEpicFields] = useState<Array<{ key: string; name: string; required: boolean; schema?: { type?: string; custom?: string } | null; allowedValues?: Array<{ id?: string; value?: string; name?: string; key?: string }> }>>([]);
+  const [jiraEpicMeta, setJiraEpicMeta] = useState<{ project?: { key: string; name: string }; issueType?: { id: string; name: string } } | null>(null);
+  const [jiraLoadingFields, setJiraLoadingFields] = useState(false);
+  const [periodFieldKey, setPeriodFieldKey] = useState<string>('');
+  const [periodValueMap, setPeriodValueMap] = useState<Record<string, string | { id?: string; value?: string }>>({});
+  const periodsAll = useOKRStore((s: OKRStore) => s.periods);
+  const [periodFieldSearch, setPeriodFieldSearch] = useState('');
+  const [periodFieldMenuOpen, setPeriodFieldMenuOpen] = useState(false);
+  const [creatingPeriodField, setCreatingPeriodField] = useState(false);
+
+  const loadEpicFields = async () => {
+    setJiraLoadingFields(true); setJiraError(null);
+    try {
+      const res = await fetch(`${API_URL}/api/jira/epic-fields`, { credentials: 'include' });
+      if (!res.ok) { const t = await res.text().catch(() => ''); throw new Error(t || `HTTP ${res.status}`); }
+      const data = await res.json();
+      setJiraEpicFields(data.fields || []);
+      setJiraEpicMeta({ project: data.project, issueType: data.issueType });
+    } catch (err) {
+      setJiraError(String(err));
+      setJiraEpicFields([]);
+      setJiraEpicMeta(null);
+    } finally {
+      setJiraLoadingFields(false);
+    }
+  };
+
+  const saveJiraConfig = async (overrides?: Record<string, unknown>) => {
+    setJiraSaving(true); setJiraError(null); setJiraSaved(false);
+    try {
+      const body: Record<string, unknown> = {
+        baseUrl: jiraBaseUrl.trim(),
+        email: jiraEmail.trim(),
+        projectKey: jiraProjectKey.trim(),
+        ...(overrides || {}),
+      };
+      if (jiraToken.trim()) body.apiToken = jiraToken.trim();
+      const res = await fetch(`${API_URL}/api/admin/jira-config`, {
+        method: 'PUT', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) { const t = await res.text().catch(() => ''); throw new Error(t || `HTTP ${res.status}`); }
+      const data = await res.json();
+      setJiraHasToken(!!data?.config?.hasToken);
+      setJiraToken('');
+      setJiraSaved(true);
+      setTimeout(() => setJiraSaved(false), 2000);
+    } catch (err) {
+      setJiraError(String(err));
+    } finally {
+      setJiraSaving(false);
+    }
+  };
+
+  const loadJiraProjects = async () => {
+    setJiraLoadingProjects(true); setJiraError(null);
+    try {
+      const res = await fetch(`${API_URL}/api/admin/jira/projects`, { credentials: 'include' });
+      if (!res.ok) { const t = await res.text().catch(() => ''); throw new Error(t || `HTTP ${res.status}`); }
+      const data = await res.json();
+      setJiraProjects(data.projects || []);
+    } catch (err) {
+      setJiraError(String(err));
+      setJiraProjects([]);
+    } finally {
+      setJiraLoadingProjects(false);
+    }
+  };
 
   const { isSuperAdmin, isOrgAdmin, user: currentUser } = useAuth();
   const canManageRoles = isSuperAdmin || isOrgAdmin;
+
+  useEffect(() => {
+    if (!(isSuperAdmin || isOrgAdmin)) return;
+    fetch(`${API_URL}/api/admin/jira-config`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : { config: null })
+      .then(d => {
+        const cfg = d?.config;
+        if (cfg) {
+          setJiraBaseUrl(cfg.baseUrl || '');
+          setJiraEmail(cfg.email || '');
+          setJiraProjectKey(cfg.projectKey || '');
+          setJiraHasToken(!!cfg.hasToken);
+          setPeriodFieldKey(cfg.periodFieldKey || '');
+          setPeriodValueMap(cfg.periodValueMap || {});
+        }
+      })
+      .catch(() => { /* ignore */ });
+  }, [isSuperAdmin, isOrgAdmin]);
 
   useEffect(() => {
     fetchUsers();
@@ -579,6 +678,285 @@ export function SettingsPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {(isSuperAdmin || isOrgAdmin) && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+          <button
+            onClick={() => setJiraOpen(!jiraOpen)}
+            className="w-full p-4 flex items-center justify-between hover:bg-gray-50"
+          >
+            <h2 className="text-base font-semibold text-gray-900">Jira integration</h2>
+            <svg className={`w-4 h-4 text-gray-400 transition-transform ${jiraOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {jiraOpen && (
+            <div className="p-4 border-t border-gray-200 space-y-3">
+              <p className="text-xs text-gray-500">Connect this organization to Jira so admins can create tracking Epics for objectives. Uses Basic auth with an Atlassian email + API token.</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Jira base URL</label>
+                  <input type="text" value={jiraBaseUrl} onChange={(e) => setJiraBaseUrl(e.target.value)} placeholder="https://your-org.atlassian.net" className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Atlassian email</label>
+                  <input type="email" value={jiraEmail} onChange={(e) => setJiraEmail(e.target.value)} placeholder="you@example.com" className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-gray-500 mb-1">API token {jiraHasToken && <span className="text-gray-400">(saved — enter a new value to replace)</span>}</label>
+                  <input type="password" value={jiraToken} onChange={(e) => setJiraToken(e.target.value)} placeholder={jiraHasToken ? '••••••••' : 'Paste your Atlassian API token'} className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm" />
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => saveJiraConfig()} disabled={jiraSaving} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">
+                  {jiraSaving ? 'Saving…' : 'Save credentials'}
+                </button>
+                <button onClick={loadJiraProjects} disabled={jiraLoadingProjects || !jiraHasToken && !jiraToken} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50">
+                  {jiraLoadingProjects ? 'Loading…' : 'Load projects'}
+                </button>
+                {jiraSaved && <span className="text-xs text-green-700">Saved.</span>}
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">OKR project</label>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={jiraProjectKey}
+                    onChange={(e) => { setJiraProjectKey(e.target.value); saveJiraConfig({ projectKey: e.target.value }); }}
+                    className="flex-1 border border-gray-300 rounded px-3 py-1.5 text-sm bg-white"
+                  >
+                    <option value="">— Pick a project —</option>
+                    {jiraProjects.map(p => <option key={p.id} value={p.key}>{p.name} ({p.key})</option>)}
+                    {jiraProjectKey && !jiraProjects.some(p => p.key === jiraProjectKey) && (
+                      <option value={jiraProjectKey}>{jiraProjectKey} (current)</option>
+                    )}
+                  </select>
+                </div>
+                <p className="text-[11px] text-gray-400 mt-1">Click "Load projects" to populate. Selecting a project saves immediately.</p>
+              </div>
+
+              <div className="border-t border-gray-200 pt-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-semibold text-gray-700">Epic issue type fields</div>
+                    <p className="text-[11px] text-gray-400">Inspect what fields Jira expects on a new Epic in the OKR project.</p>
+                  </div>
+                  <button
+                    onClick={loadEpicFields}
+                    disabled={jiraLoadingFields || !jiraProjectKey}
+                    className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    {jiraLoadingFields ? 'Loading…' : 'Fetch Epic fields'}
+                  </button>
+                </div>
+                {jiraEpicMeta && (
+                  <div className="mt-2 text-xs text-gray-600">
+                    Project: <span className="font-medium text-gray-800">{jiraEpicMeta.project?.name}</span>
+                    {jiraEpicMeta.issueType && <> · Issue type: <span className="font-medium text-gray-800">{jiraEpicMeta.issueType.name}</span> (id {jiraEpicMeta.issueType.id})</>}
+                  </div>
+                )}
+                {jiraEpicFields.length > 0 && (() => {
+                  const selectedField = jiraEpicFields.find(f => f.key === periodFieldKey);
+                  return (
+                    <div className="mt-3 mb-2 border border-gray-200 rounded p-2 bg-gray-50">
+                      <div className="text-xs font-semibold text-gray-700 mb-1">Map Period → Jira field</div>
+                      <p className="text-[11px] text-gray-500 mb-2">When you create a Jira ticket, the objective's period value will be sent in this Jira field.</p>
+                      <div className="mb-2">
+                        <label className="block text-xs text-gray-500 mb-1">Period field</label>
+                        {(() => {
+                          const q = periodFieldSearch.trim().toLowerCase();
+                          const filtered = q
+                            ? jiraEpicFields.filter(f => f.name.toLowerCase().includes(q) || f.key.toLowerCase().includes(q))
+                            : jiraEpicFields;
+                          const exact = q && filtered.some(f => f.name.toLowerCase() === q);
+                          const selected = jiraEpicFields.find(f => f.key === periodFieldKey);
+                          const handleCreate = async () => {
+                            const name = periodFieldSearch.trim();
+                            if (!name) return;
+                            if (creatingPeriodField) return;
+                            if (!window.confirm(`Create a new Jira custom field "${name}" with options for every active app period?`)) return;
+                            setCreatingPeriodField(true);
+                            setJiraError(null);
+                            try {
+                              const res = await fetch(`${API_URL}/api/admin/jira/create-period-field`, {
+                                method: 'POST',
+                                credentials: 'include',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ name }),
+                              });
+                              if (!res.ok) { const t = await res.text().catch(() => ''); throw new Error(t || `HTTP ${res.status}`); }
+                              const data = await res.json();
+                              if (data.warnings && data.warnings.length > 0) {
+                                window.alert(`Created field "${data.fieldName}", but:\n\n${data.warnings.join('\n')}`);
+                              } else {
+                                window.alert(`Created field "${data.fieldName}" and attached to ${data.attachedScreens} Epic screen(s).`);
+                              }
+                              setPeriodFieldKey(data.fieldId);
+                              setPeriodValueMap(data.periodValueMap || {});
+                              setPeriodFieldSearch('');
+                              setPeriodFieldMenuOpen(false);
+                              await loadEpicFields();
+                            } catch (err) {
+                              setJiraError(String(err));
+                            } finally {
+                              setCreatingPeriodField(false);
+                            }
+                          };
+                          return (
+                            <div className="relative">
+                              <input
+                                type="text"
+                                value={periodFieldMenuOpen ? periodFieldSearch : (selected ? `${selected.name} (${selected.key})` : '')}
+                                onFocus={() => { setPeriodFieldMenuOpen(true); setPeriodFieldSearch(''); }}
+                                onChange={(e) => { setPeriodFieldSearch(e.target.value); setPeriodFieldMenuOpen(true); }}
+                                placeholder="— None (don't set) —"
+                                className="w-full text-xs border border-gray-300 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              />
+                              {periodFieldKey && !periodFieldMenuOpen && (
+                                <button
+                                  type="button"
+                                  onClick={() => { setPeriodFieldKey(''); saveJiraConfig({ periodFieldKey: '' }); }}
+                                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 text-xs"
+                                  title="Clear"
+                                >
+                                  ✕
+                                </button>
+                              )}
+                              {periodFieldMenuOpen && (
+                                <div className="absolute left-0 right-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded shadow-lg max-h-60 overflow-y-auto">
+                                  <button
+                                    type="button"
+                                    onClick={() => { setPeriodFieldKey(''); saveJiraConfig({ periodFieldKey: '' }); setPeriodFieldMenuOpen(false); }}
+                                    className="w-full text-left px-2 py-1.5 text-xs text-gray-700 hover:bg-gray-50 border-b border-gray-100"
+                                  >
+                                    — None (don't set) —
+                                  </button>
+                                  {filtered.length === 0 ? (
+                                    <div className="px-2 py-2 text-xs text-gray-400">No matching fields.</div>
+                                  ) : filtered.slice(0, 30).map(f => (
+                                    <button
+                                      key={f.key}
+                                      type="button"
+                                      onClick={() => { setPeriodFieldKey(f.key); saveJiraConfig({ periodFieldKey: f.key }); setPeriodFieldMenuOpen(false); setPeriodFieldSearch(''); }}
+                                      className={`w-full text-left px-2 py-1.5 text-xs hover:bg-gray-50 ${f.key === periodFieldKey ? 'bg-blue-50 text-blue-700' : 'text-gray-700'}`}
+                                    >
+                                      {f.name} <span className="text-gray-400">({f.key})</span>
+                                    </button>
+                                  ))}
+                                  {q && !exact && (
+                                    <button
+                                      type="button"
+                                      onClick={handleCreate}
+                                      disabled={creatingPeriodField}
+                                      className="w-full text-left px-2 py-1.5 text-xs text-blue-700 hover:bg-blue-50 border-t border-gray-100 disabled:opacity-50"
+                                    >
+                                      {creatingPeriodField ? 'Creating…' : `+ Create new field "${periodFieldSearch.trim()}" (dropdown of active periods)`}
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                      {periodFieldKey && (
+                        <div className="border border-gray-200 rounded bg-white max-h-48 overflow-y-auto">
+                          <table className="min-w-full text-xs">
+                            <thead className="bg-gray-50 sticky top-0">
+                              <tr>
+                                <th className="text-left px-2 py-1 font-medium text-gray-500 uppercase tracking-wider">App period</th>
+                                <th className="text-left px-2 py-1 font-medium text-gray-500 uppercase tracking-wider">→ Jira value</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                              {[...periodsAll].sort((a, b) => (a.startDate || '').localeCompare(b.startDate || '')).map(p => {
+                                const mapped = periodValueMap[p.id];
+                                const mappedStr = typeof mapped === 'string' ? mapped : (mapped && (mapped.value || mapped.id)) || '';
+                                const commit = (val: string | { id?: string; value?: string }) => {
+                                  const next = { ...periodValueMap, [p.id]: val };
+                                  setPeriodValueMap(next);
+                                  saveJiraConfig({ periodValueMap: next });
+                                };
+                                return (
+                                  <tr key={p.id}>
+                                    <td className="px-2 py-1 text-gray-800">{p.name}</td>
+                                    <td className="px-2 py-1">
+                                      {selectedField?.allowedValues && selectedField.allowedValues.length > 0 ? (
+                                        <select
+                                          value={typeof mapped === 'object' ? (mapped.id || '') : ''}
+                                          onChange={(e) => {
+                                            const id = e.target.value;
+                                            if (!id) { const { [p.id]: _drop, ...rest } = periodValueMap; void _drop; setPeriodValueMap(rest); saveJiraConfig({ periodValueMap: rest }); return; }
+                                            const av = selectedField.allowedValues!.find(v => v.id === id);
+                                            commit(av ? { id: av.id, value: av.value || av.name } : { id });
+                                          }}
+                                          className="text-xs border border-gray-300 rounded px-1 py-0.5 bg-white"
+                                        >
+                                          <option value="">— Use period name —</option>
+                                          {selectedField.allowedValues.map(v => <option key={v.id || v.value} value={v.id || ''}>{v.name || v.value || v.key}</option>)}
+                                        </select>
+                                      ) : (
+                                        <input
+                                          type="text"
+                                          defaultValue={mappedStr}
+                                          onBlur={(e) => {
+                                            const v = e.target.value;
+                                            if (v.trim() === '') { const { [p.id]: _drop, ...rest } = periodValueMap; void _drop; setPeriodValueMap(rest); saveJiraConfig({ periodValueMap: rest }); }
+                                            else commit(v);
+                                          }}
+                                          placeholder={`(default: ${p.name})`}
+                                          className="text-xs border border-gray-300 rounded px-1 py-0.5 bg-white w-full"
+                                        />
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+                {jiraEpicFields.length > 0 && (
+                  <div className="mt-2 border border-gray-200 rounded max-h-72 overflow-y-auto">
+                    <table className="min-w-full text-xs">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr>
+                          <th className="text-left px-2 py-1 font-medium text-gray-500 uppercase tracking-wider">Field</th>
+                          <th className="text-left px-2 py-1 font-medium text-gray-500 uppercase tracking-wider">Key</th>
+                          <th className="text-left px-2 py-1 font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                          <th className="text-left px-2 py-1 font-medium text-gray-500 uppercase tracking-wider">Req</th>
+                          <th className="text-left px-2 py-1 font-medium text-gray-500 uppercase tracking-wider">Allowed</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {jiraEpicFields.map(f => (
+                          <tr key={f.key} className="hover:bg-gray-50">
+                            <td className="px-2 py-1 text-gray-800">{f.name}</td>
+                            <td className="px-2 py-1 text-gray-500 font-mono">{f.key}</td>
+                            <td className="px-2 py-1 text-gray-500">{f.schema?.type || '—'}{f.schema?.custom ? ` (${f.schema.custom.split(':').pop()})` : ''}</td>
+                            <td className="px-2 py-1">{f.required ? <span className="text-amber-700">yes</span> : <span className="text-gray-400">no</span>}</td>
+                            <td className="px-2 py-1 text-gray-500">
+                              {f.allowedValues && f.allowedValues.length > 0
+                                ? <span title={f.allowedValues.map(v => v.name || v.value || v.key).join(', ')}>{f.allowedValues.length} options</span>
+                                : <span className="text-gray-300">—</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {jiraError && (
+                <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded p-2 whitespace-pre-wrap">{jiraError}</div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
