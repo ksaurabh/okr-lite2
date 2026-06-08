@@ -83,6 +83,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     checkAuth();
   }, [checkAuth]);
 
+  // Detect lost connection or expired session: install a global fetch wrapper
+  // that watches for 401s and network failures on our API URL, then logs out.
+  useEffect(() => {
+    const origFetch = window.fetch.bind(window);
+    let signedOut = false;
+    const apiBase = API_URL || window.location.origin;
+    const isOurApi = (url: string) => {
+      if (!url) return false;
+      if (apiBase && url.startsWith(apiBase)) return true;
+      // Relative URLs from this app's origin
+      if (url.startsWith('/api') || url.startsWith('/auth')) return true;
+      return false;
+    };
+    const triggerSignOut = (reason: string) => {
+      if (signedOut) return;
+      signedOut = true;
+      console.warn('Auth lost — signing out:', reason);
+      setState({
+        isLoading: false,
+        isAuthenticated: false,
+        isAllowed: false,
+        user: null,
+        isSuperAdmin: false,
+        isOrgAdmin: false,
+        organization: null,
+      });
+    };
+    const wrapped: typeof window.fetch = async (input, init) => {
+      const url = typeof input === 'string' ? input : (input instanceof URL ? input.toString() : input.url);
+      try {
+        const res = await origFetch(input, init);
+        if (isOurApi(url) && res.status === 401) {
+          // Don't sign out on the auth-check endpoint itself — its 401 just
+          // means "not signed in yet"; checkAuth handles that path already.
+          if (!url.includes('/auth/user')) triggerSignOut(`401 from ${url}`);
+        }
+        return res;
+      } catch (err) {
+        if (isOurApi(url)) triggerSignOut(`network error on ${url}: ${String(err)}`);
+        throw err;
+      }
+    };
+    window.fetch = wrapped;
+    return () => { window.fetch = origFetch; };
+  }, []);
+
   const login = () => {
     window.location.href = `${API_URL}/auth/google`;
   };
