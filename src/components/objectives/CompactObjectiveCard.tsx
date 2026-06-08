@@ -25,6 +25,7 @@ interface CompactObjectiveCardProps {
   quickAddTooltip?: string;
   kebabActions?: boolean;
   addToPlanBookmark?: boolean;
+  removeFromListId?: string;
 }
 
 const getChildLevel = (parentLevel: ObjectiveLevel): ObjectiveLevel => {
@@ -72,7 +73,7 @@ function getNextStepDateIndicator(nextStepDate?: string): { color: string; toolt
   }
 }
 
-export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filteredObjectiveIds, directlyMatchingIds, defaultCollapsed = false, visibleColumnsOverride, onRowClick, onTitleClick, groupPeriodsByDate = false, hideRowActions = false, quickAddToListId, alwaysShowQuickAdd = false, quickAddTooltip, kebabActions = false, addToPlanBookmark = false }: CompactObjectiveCardProps) {
+export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filteredObjectiveIds, directlyMatchingIds, defaultCollapsed = false, visibleColumnsOverride, onRowClick, onTitleClick, groupPeriodsByDate = false, hideRowActions = false, quickAddToListId, alwaysShowQuickAdd = false, quickAddTooltip, kebabActions = false, addToPlanBookmark = false, removeFromListId }: CompactObjectiveCardProps) {
   // Only root-level items (depth 0) are expanded by default, unless caller opts into collapsed
   const [isExpanded, setIsExpanded] = useState(depth === 0 && !defaultCollapsed);
   const forcedExpandedIds = useOKRStore((s: OKRStore) => s.forcedExpandedIds);
@@ -1497,6 +1498,14 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
                       className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
                     >
                       Clone
+                    </button>
+                  )}
+                  {removeFromListId && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setShowKebabMenu(false); removeItemFromList(removeFromListId, objective.id); }}
+                      className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 border-t border-gray-100"
+                    >
+                      Remove from this plan
                     </button>
                   )}
                   {canModify && (

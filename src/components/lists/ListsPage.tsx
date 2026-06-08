@@ -2969,6 +2969,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                     defaultCollapsed
                                     kebabActions
                                     addToPlanBookmark
+                                    removeFromListId={child.id}
                                     filteredObjectiveIds={NO_CHILDREN_PLAN_LIST}
                                     onTitleClick={(o) => showPathInTree(o.id)}
                                   />
