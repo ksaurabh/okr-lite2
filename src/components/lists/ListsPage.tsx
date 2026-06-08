@@ -1862,6 +1862,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                 defaultCollapsed
                                 kebabActions
                                 addToPlanBookmark
+                                removeFromListId={selectedList.id}
                                 filteredObjectiveIds={NO_CHILDREN_PLAN_LIST}
                                 onTitleClick={() => togglePlanSelectedObjective(obj)}
                               />

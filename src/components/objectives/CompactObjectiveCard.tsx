@@ -957,8 +957,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
         }
       );
       setQuickAddTitle('');
-      // Keep input open for rapid entry
-      quickAddInputRef.current?.focus();
+      setShowQuickAdd(false);
     } catch (err) {
       console.error('Failed to add objective:', err);
     } finally {
@@ -1357,6 +1356,21 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
                           </button>
                         </div>
                       ))}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                          setShowKebabMenu(false);
+                          setPlanPickerSearch('');
+                          const w = 260;
+                          setPlanPickerPos({ top: r.bottom + 4, left: Math.max(8, Math.min(window.innerWidth - w - 8, r.right - w)) });
+                          setShowPlanPicker(true);
+                        }}
+                        className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 border-t border-gray-100"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" /></svg>
+                        Add to Plan…
+                      </button>
                       {!objective.jiraEpicKey ? (
                         <button
                           onClick={async (e) => {
@@ -1557,7 +1571,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
                       onClick={(e) => { e.stopPropagation(); setShowKebabMenu(false); removeItemFromList(removeFromListId, objective.id); }}
                       className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 border-t border-gray-100"
                     >
-                      Remove from this plan
+                      Remove from current plan
                     </button>
                   )}
                   {canModify && (
@@ -1577,55 +1591,55 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
                 </div>,
                 document.body
               )}
-              {showPlanPicker && planPickerPos && createPortal(
-                (() => {
-                  const plans = lists.filter(l => l.ownerId && l.periodId);
-                  const q = planPickerSearch.trim().toLowerCase();
-                  const matches = q ? plans.filter(p => p.name.toLowerCase().includes(q)) : plans;
-                  return (
-                    <div ref={planPickerRef} style={{ position: 'fixed', top: planPickerPos.top, left: planPickerPos.left, width: 260 }} className="z-[100] bg-white border border-gray-200 rounded-md shadow-lg py-1 max-h-72 overflow-y-auto">
-                      <div className="px-2 py-1 border-b border-gray-100 sticky top-0 bg-white">
-                        <input
-                          type="text"
-                          autoFocus
-                          value={planPickerSearch}
-                          onChange={(e) => setPlanPickerSearch(e.target.value)}
-                          placeholder="Search plans…"
-                          className="w-full text-xs px-2 py-1 border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                        />
-                      </div>
-                      {plans.length === 0 ? (
-                        <div className="px-3 py-2 text-xs text-gray-400">No plans available.</div>
-                      ) : matches.length === 0 ? (
-                        <div className="px-3 py-2 text-xs text-gray-400">No matches.</div>
-                      ) : (
-                        matches.map(p => {
-                          const already = p.items.some(it => it.objectiveId === objective.id);
-                          return (
-                            <button
-                              key={p.id}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (!already) addItemToList(p.id, objective.id);
-                                setShowPlanPicker(false);
-                                setPlanPickerPos(null);
-                              }}
-                              disabled={already}
-                              className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 ${already ? 'text-gray-400 cursor-not-allowed' : 'text-gray-700 hover:bg-gray-50'}`}
-                            >
-                              <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: p.color || '#6b7280' }} />
-                              <span className="flex-1 truncate">{p.name}</span>
-                              {already && <span className="text-[10px] text-gray-400">added</span>}
-                            </button>
-                          );
-                        })
-                      )}
-                    </div>
-                  );
-                })(),
-                document.body
-              )}
             </div>
+          )}
+          {showPlanPicker && planPickerPos && createPortal(
+            (() => {
+              const plans = lists.filter(l => l.ownerId && l.periodId);
+              const q = planPickerSearch.trim().toLowerCase();
+              const matches = q ? plans.filter(p => p.name.toLowerCase().includes(q)) : plans;
+              return (
+                <div ref={planPickerRef} style={{ position: 'fixed', top: planPickerPos.top, left: planPickerPos.left, width: 260 }} className="z-[100] bg-white border border-gray-200 rounded-md shadow-lg py-1 max-h-72 overflow-y-auto">
+                  <div className="px-2 py-1 border-b border-gray-100 sticky top-0 bg-white">
+                    <input
+                      type="text"
+                      autoFocus
+                      value={planPickerSearch}
+                      onChange={(e) => setPlanPickerSearch(e.target.value)}
+                      placeholder="Search plans…"
+                      className="w-full text-xs px-2 py-1 border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                  {plans.length === 0 ? (
+                    <div className="px-3 py-2 text-xs text-gray-400">No plans available.</div>
+                  ) : matches.length === 0 ? (
+                    <div className="px-3 py-2 text-xs text-gray-400">No matches.</div>
+                  ) : (
+                    matches.map(p => {
+                      const already = p.items.some(it => it.objectiveId === objective.id);
+                      return (
+                        <button
+                          key={p.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!already) addItemToList(p.id, objective.id);
+                            setShowPlanPicker(false);
+                            setPlanPickerPos(null);
+                          }}
+                          disabled={already}
+                          className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 ${already ? 'text-gray-400 cursor-not-allowed' : 'text-gray-700 hover:bg-gray-50'}`}
+                        >
+                          <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: p.color || '#6b7280' }} />
+                          <span className="flex-1 truncate">{p.name}</span>
+                          {already && <span className="text-[10px] text-gray-400">added</span>}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              );
+            })(),
+            document.body
           )}
         </div>
 
