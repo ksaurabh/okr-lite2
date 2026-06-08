@@ -1523,6 +1523,10 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                 <div className="border border-gray-200 rounded-lg overflow-y-auto bg-white" style={{ width: `${listPlanLeftWidth}%` }}>
                   <div className="px-3 py-2 border-b border-gray-100 flex items-center gap-2 bg-gray-50">
                     <span className="text-xs font-semibold text-gray-700 truncate flex-1" title={selectedList.name}>Parent/Current Plan ({selectedList.name})</span>
+                    {(() => {
+                      const total = sortedItems.reduce((sum, it) => { const o = getObjective(it.objectiveId); return sum + (o?.valuePoints ?? 0); }, 0);
+                      return <span className="text-[10px] text-gray-500 flex-shrink-0" title="Total VP across items in this plan">Total VP: <span className="font-semibold text-gray-700">{total}</span></span>;
+                    })()}
                     <div ref={firstColFilterRef} className="relative">
                       <button
                         onClick={() => setShowFirstColFilter(!showFirstColFilter)}
@@ -2572,6 +2576,10 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                         <div className="px-3 py-2 border-b border-gray-100 flex items-center gap-2 bg-gray-50">
                           <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: child.color || '#6b7280' }} />
                           <span className="text-xs font-semibold text-gray-700 truncate flex-1" title={child.name}>Child Plan ({child.name})</span>
+                          {(() => {
+                            const total = (child.items || []).reduce((sum, it) => { const o = getObjective(it.objectiveId); return sum + (o?.valuePoints ?? 0); }, 0);
+                            return <span className="text-[10px] text-gray-500 flex-shrink-0" title="Total VP across items in this child plan">Total VP: <span className="font-semibold text-gray-700">{total}</span></span>;
+                          })()}
                           <div ref={thirdColFilterRef} className="relative">
                             <button
                               onClick={() => setShowThirdColFilter(!showThirdColFilter)}
