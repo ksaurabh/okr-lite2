@@ -301,20 +301,31 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
     } catch { return 20; }
   });
   const listPlanSplitRef = useRef<HTMLDivElement>(null);
-  const draggingListPlanSep = useRef<'left' | 'right' | null>(null);
+  const rightStackRef = useRef<HTMLDivElement>(null);
+  const draggingListPlanSep = useRef<'left' | 'right' | 'horiz' | null>(null);
+  const [listPlanRightTopHeight, setListPlanRightTopHeight] = useState<number>(() => {
+    try {
+      const v = localStorage.getItem('okr-list-plan-right-top-height');
+      const n = v ? parseFloat(v) : NaN;
+      return Number.isFinite(n) && n >= 15 && n <= 85 ? n : 40;
+    } catch { return 40; }
+  });
 
   useEffect(() => {
     const handleMove = (e: MouseEvent) => {
       if (!draggingListPlanSep.current || !listPlanSplitRef.current) return;
       const rect = listPlanSplitRef.current.getBoundingClientRect();
-      const pct = ((e.clientX - rect.left) / rect.width) * 100;
       if (draggingListPlanSep.current === 'left') {
-        const clamped = Math.max(10, Math.min(100 - listPlanRightWidth - 10, pct));
+        const pct = ((e.clientX - rect.left) / rect.width) * 100;
+        const clamped = Math.max(10, Math.min(80, pct));
         setListPlanLeftWidth(clamped);
-      } else {
-        const fromRight = 100 - pct;
-        const clamped = Math.max(10, Math.min(100 - listPlanLeftWidth - 10, fromRight));
-        setListPlanRightWidth(clamped);
+      } else if (draggingListPlanSep.current === 'horiz') {
+        const stack = rightStackRef.current;
+        if (!stack) return;
+        const sr = stack.getBoundingClientRect();
+        const pct = ((e.clientY - sr.top) / sr.height) * 100;
+        const clamped = Math.max(15, Math.min(85, pct));
+        setListPlanRightTopHeight(clamped);
       }
     };
     const handleUp = () => {
@@ -324,7 +335,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
       document.body.style.userSelect = '';
       try {
         localStorage.setItem('okr-list-plan-left-width', String(Math.round(listPlanLeftWidth * 10) / 10));
-        localStorage.setItem('okr-list-plan-right-width', String(Math.round(listPlanRightWidth * 10) / 10));
+        localStorage.setItem('okr-list-plan-right-top-height', String(Math.round(listPlanRightTopHeight * 10) / 10));
       } catch { /* ignore */ }
     };
     document.addEventListener('mousemove', handleMove);
@@ -333,7 +344,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
       document.removeEventListener('mousemove', handleMove);
       document.removeEventListener('mouseup', handleUp);
     };
-  }, [listPlanLeftWidth, listPlanRightWidth]);
+  }, [listPlanLeftWidth, listPlanRightTopHeight]);
   const resizeStartX = useRef<number>(0);
   const resizeStartWidth = useRef<number>(0);
 
@@ -1822,7 +1833,8 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                   title="Drag to resize"
                 />
                 )}
-                <div className="min-w-0 border border-gray-200 rounded-lg overflow-auto bg-white" style={{ width: `${planTopLevel ? 100 - listPlanRightWidth : 100 - listPlanLeftWidth - listPlanRightWidth}%` }}>
+                <div ref={rightStackRef} className="flex flex-col-reverse" style={{ width: `${planTopLevel ? 100 : 100 - listPlanLeftWidth}%`, minHeight: 600 }}>
+                <div className="min-w-0 border border-gray-200 rounded-lg overflow-auto bg-white" style={{ width: '100%', height: `${100 - listPlanRightTopHeight}%` }}>
                   {planTopLevel ? (
                     (() => {
                       const allRoots = orgObjectives.filter(o => !o.parentId).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.title.localeCompare(b.title));
@@ -2543,14 +2555,14 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                 </div>
                 <div
                   onMouseDown={() => {
-                    draggingListPlanSep.current = 'right';
-                    document.body.style.cursor = 'col-resize';
+                    draggingListPlanSep.current = 'horiz';
+                    document.body.style.cursor = 'row-resize';
                     document.body.style.userSelect = 'none';
                   }}
-                  className="w-1 cursor-col-resize bg-gray-200 hover:bg-blue-400 active:bg-blue-500 flex-shrink-0 mx-1"
+                  className="h-1 cursor-row-resize bg-gray-200 hover:bg-blue-400 active:bg-blue-500 flex-shrink-0 my-1 w-full"
                   title="Drag to resize"
                 />
-                <div className="border border-gray-200 rounded-lg overflow-y-auto bg-white flex flex-col" style={{ width: `${listPlanRightWidth}%` }}>
+                <div className="border border-gray-200 rounded-lg overflow-y-auto bg-white flex flex-col" style={{ width: '100%', height: `${listPlanRightTopHeight}%` }}>
                   {(planTopLevel || planSelectedChildListId) ? (() => {
                     const child = planTopLevel ? selectedList : lists.find(l => l.id === planSelectedChildListId);
                     if (!child) {
@@ -2905,6 +2917,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                       Pick a child list from the toolbar to see its contents.
                     </div>
                   )}
+                </div>
                 </div>
               </div>
             ) : sortedItems.length === 0 ? (

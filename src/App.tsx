@@ -115,6 +115,8 @@ function AppContent() {
 
   // Show main app if authenticated and allowed
   return (
+    <>
+      <ServerStatusBanner />
     <Layout
       currentView={currentView}
       onViewChange={setCurrentView}
@@ -150,6 +152,17 @@ function AppContent() {
         <ObjectiveForm onClose={() => setShowAddObjective(false)} />
       </Modal>
     </Layout>
+    </>
+  );
+}
+
+function ServerStatusBanner() {
+  const { serverReachable } = useAuth();
+  if (serverReachable) return null;
+  return (
+    <div className="fixed top-0 left-0 right-0 z-[100] bg-red-600 text-white text-sm text-center py-1.5 shadow-md">
+      <span className="font-medium">Cannot reach the server.</span> Some actions may fail. Trying to reconnect…
+    </div>
   );
 }
 

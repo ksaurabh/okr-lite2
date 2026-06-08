@@ -27,11 +27,13 @@ interface AuthContextType extends AuthState {
   login: () => void;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
+  serverReachable: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const [serverReachable, setServerReachable] = useState(true);
   const [state, setState] = useState<AuthState>({
     isLoading: true,
     isAuthenticated: false,
@@ -114,20 +116,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const url = typeof input === 'string' ? input : (input instanceof URL ? input.toString() : input.url);
       try {
         const res = await origFetch(input, init);
-        if (isOurApi(url) && res.status === 401) {
-          // Don't sign out on the auth-check endpoint itself — its 401 just
-          // means "not signed in yet"; checkAuth handles that path already.
-          if (!url.includes('/auth/user')) triggerSignOut(`401 from ${url}`);
+        if (isOurApi(url)) {
+          if (res.status === 401) {
+            // Don't sign out on the auth-check endpoint itself — its 401 just
+            // means "not signed in yet"; checkAuth handles that path already.
+            if (!url.includes('/auth/user')) triggerSignOut(`401 from ${url}`);
+          } else {
+            // Reachable
+            setServerReachable(prev => prev ? prev : true);
+          }
         }
         return res;
       } catch (err) {
-        if (isOurApi(url)) triggerSignOut(`network error on ${url}: ${String(err)}`);
+        if (isOurApi(url)) {
+          setServerReachable(false);
+        }
         throw err;
       }
     };
     window.fetch = wrapped;
     return () => { window.fetch = origFetch; };
   }, []);
+
+  // When server is unreachable, poll periodically to detect recovery.
+  useEffect(() => {
+    if (serverReachable) return;
+    const id = setInterval(async () => {
+      try {
+        const res = await fetch(`${API_URL}/auth/user`, { credentials: 'include' });
+        if (res.status < 500) setServerReachable(true);
+      } catch { /* still down */ }
+    }, 5000);
+    return () => clearInterval(id);
+  }, [serverReachable]);
 
   const login = () => {
     window.location.href = `${API_URL}/auth/google`;
@@ -153,7 +174,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ ...state, login, logout, checkAuth }}>
+    <AuthContext.Provider value={{ ...state, login, logout, checkAuth, serverReachable }}>
       {children}
     </AuthContext.Provider>
   );
