@@ -310,6 +310,34 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
       return Number.isFinite(n) && n >= 15 && n <= 85 ? n : 40;
     } catch { return 40; }
   });
+  const [listPlanTotalHeight, setListPlanTotalHeight] = useState<number>(() => {
+    try {
+      const v = localStorage.getItem('okr-list-plan-total-height');
+      const n = v ? parseFloat(v) : NaN;
+      return Number.isFinite(n) && n >= 300 && n <= 4000 ? n : 600;
+    } catch { return 600; }
+  });
+  const heightDragRef = useRef<{ startY: number; startH: number } | null>(null);
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!heightDragRef.current) return;
+      const next = Math.max(300, Math.min(4000, heightDragRef.current.startH + (e.clientY - heightDragRef.current.startY)));
+      setListPlanTotalHeight(next);
+    };
+    const onUp = () => {
+      if (!heightDragRef.current) return;
+      heightDragRef.current = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      try { localStorage.setItem('okr-list-plan-total-height', String(Math.round(listPlanTotalHeight))); } catch { /* ignore */ }
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    return () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+  }, [listPlanTotalHeight]);
 
   useEffect(() => {
     const handleMove = (e: MouseEvent) => {
@@ -1529,7 +1557,8 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
             )}
 
             {isListPlanMode ? (
-              <div ref={listPlanSplitRef} className="flex relative" style={{ minHeight: 600 }}>
+              <>
+              <div ref={listPlanSplitRef} className="flex relative" style={{ height: listPlanTotalHeight }}>
                 {!planTopLevel && (
                 <div className="border border-gray-200 rounded-lg overflow-y-auto bg-white" style={{ width: `${listPlanLeftWidth}%` }}>
                   <div className="px-3 py-2 border-b border-gray-100 flex items-center gap-2 bg-gray-50">
@@ -1833,7 +1862,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                   title="Drag to resize"
                 />
                 )}
-                <div ref={rightStackRef} className="flex flex-col-reverse" style={{ width: `${planTopLevel ? 100 : 100 - listPlanLeftWidth}%`, minHeight: 600 }}>
+                <div ref={rightStackRef} className="flex flex-col-reverse" style={{ width: `${planTopLevel ? 100 : 100 - listPlanLeftWidth}%`, height: '100%' }}>
                 <div className="min-w-0 border border-gray-200 rounded-lg overflow-auto bg-white" style={{ width: '100%', height: `${100 - listPlanRightTopHeight}%` }}>
                   {planTopLevel ? (
                     (() => {
@@ -2920,6 +2949,16 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                 </div>
                 </div>
               </div>
+              <div
+                onMouseDown={(e) => {
+                  heightDragRef.current = { startY: e.clientY, startH: listPlanTotalHeight };
+                  document.body.style.cursor = 'row-resize';
+                  document.body.style.userSelect = 'none';
+                }}
+                className="h-2 cursor-row-resize bg-gray-200 hover:bg-blue-400 active:bg-blue-500 rounded mt-1"
+                title="Drag to resize the Plan view height"
+              />
+              </>
             ) : sortedItems.length === 0 ? (
               <div className="text-center py-12 text-gray-500">
                 <svg className="w-12 h-12 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
