@@ -274,6 +274,13 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
   const isListPlanMode = !!selectedListId;
   const [planSelectedObjective, setPlanSelectedObjective] = useState<Objective | null>(null);
   const [planTopLevel, setPlanTopLevel] = useState(false);
+  const [showObjectiveTree, setShowObjectiveTree] = useState<boolean>(() => {
+    try { const v = localStorage.getItem('okr-list-plan-show-tree'); return v == null ? true : v === 'true'; } catch { return true; }
+  });
+  const setShowObjectiveTreePersist = (v: boolean) => {
+    setShowObjectiveTree(v);
+    try { localStorage.setItem('okr-list-plan-show-tree', String(v)); } catch { /* ignore */ }
+  };
   const [topLevelFilterOn, setTopLevelFilterOn] = useState(false);
   const [planSelectedChildListId, setPlanSelectedChildListId] = useState<string | null>(null);
 
@@ -1524,6 +1531,17 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                     Top Level
                   </label>
                 )}
+                {isListPlanMode && (
+                  <label className="inline-flex items-center gap-1 text-xs text-gray-600 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={showObjectiveTree}
+                      onChange={(e) => setShowObjectiveTreePersist(e.target.checked)}
+                      className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    Objective Tree
+                  </label>
+                )}
                 {isReadOnlyList && (
                   <span className="px-2 py-0.5 text-xs rounded bg-amber-50 border border-amber-300 text-amber-700">Read-only · shared by {((selectedList as List & { createdByEmail?: string }).createdByEmail) || 'another user'}</span>
                 )}
@@ -1863,6 +1881,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                 />
                 )}
                 <div ref={rightStackRef} className="flex flex-col-reverse" style={{ width: `${planTopLevel ? 100 : 100 - listPlanLeftWidth}%`, height: '100%' }}>
+                {showObjectiveTree && (
                 <div className="min-w-0 border border-gray-200 rounded-lg overflow-auto bg-white" style={{ width: '100%', height: `${100 - listPlanRightTopHeight}%` }}>
                   {planTopLevel ? (
                     (() => {
@@ -2582,6 +2601,8 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                     </div>
                   )}
                 </div>
+                )}
+                {showObjectiveTree && (
                 <div
                   onMouseDown={() => {
                     draggingListPlanSep.current = 'horiz';
@@ -2591,7 +2612,8 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                   className="h-1 cursor-row-resize bg-gray-200 hover:bg-blue-400 active:bg-blue-500 flex-shrink-0 my-1 w-full"
                   title="Drag to resize"
                 />
-                <div className="border border-gray-200 rounded-lg overflow-y-auto bg-white flex flex-col" style={{ width: '100%', height: `${listPlanRightTopHeight}%` }}>
+                )}
+                <div className="border border-gray-200 rounded-lg overflow-y-auto bg-white flex flex-col" style={{ width: '100%', height: showObjectiveTree ? `${listPlanRightTopHeight}%` : '100%' }}>
                   {(planTopLevel || planSelectedChildListId) ? (() => {
                     const child = planTopLevel ? selectedList : lists.find(l => l.id === planSelectedChildListId);
                     if (!child) {
@@ -2917,26 +2939,42 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                             })}
                           </div>
                         ) : (
-                          <div>
-                            {child.items.slice().sort((a, b) => a.order - b.order).map(item => {
-                              const obj = getObjective(item.objectiveId);
-                              if (!obj) return null;
-                              if (!passesFilters(obj, thirdColStatusFilter, thirdColOwnerFilter, thirdColAssigneeFilter, thirdColPeriodFilter)) return null;
-                              if (!passesSelection(obj.id)) return null;
-                              return (
-                                <CompactObjectiveCard
-                                  key={item.objectiveId}
-                                  objective={obj}
-                                  depth={0}
-                                  visibleColumnsOverride={listPlanColumns}
-                                  defaultCollapsed
-                                  kebabActions
-                                addToPlanBookmark
-                                  filteredObjectiveIds={NO_CHILDREN_PLAN_LIST}
-                                  onTitleClick={(o) => showPathInTree(o.id)}
-                                />
-                              );
-                            })}
+                          <div className={`overflow-x-auto ${resizingPlanCol ? 'select-none' : ''}`}>
+                            <div className="min-w-max">
+                              <div className="flex items-center bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <div className="relative flex items-center px-2 py-2 flex-shrink-0" style={{ width: planColumnWidths.title, minWidth: 150 }}>
+                                  <div className="flex-1">{COLUMN_LABELS.title}</div>
+                                  <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handlePlanResizeStart('title', e)} />
+                                </div>
+                                {(Object.keys(COLUMN_LABELS) as ColumnKey[])
+                                  .filter(col => col !== 'title' && listPlanColumns.includes(col))
+                                  .map(col => (
+                                    <div key={col} className="relative flex items-center" style={{ width: planColumnWidths[col] }}>
+                                      <div className="px-1 py-2 flex-1">{COLUMN_LABELS[col]}</div>
+                                      <div className="absolute right-0 top-0 bottom-0 w-px cursor-col-resize bg-gray-300 hover:bg-blue-400 hover:w-1 z-10" onMouseDown={(e) => handlePlanResizeStart(col, e)} />
+                                    </div>
+                                  ))}
+                              </div>
+                              {child.items.slice().sort((a, b) => a.order - b.order).map(item => {
+                                const obj = getObjective(item.objectiveId);
+                                if (!obj) return null;
+                                if (!passesFilters(obj, thirdColStatusFilter, thirdColOwnerFilter, thirdColAssigneeFilter, thirdColPeriodFilter)) return null;
+                                if (!passesSelection(obj.id)) return null;
+                                return (
+                                  <CompactObjectiveCard
+                                    key={item.objectiveId}
+                                    objective={obj}
+                                    depth={0}
+                                    visibleColumnsOverride={listPlanColumns}
+                                    defaultCollapsed
+                                    kebabActions
+                                    addToPlanBookmark
+                                    filteredObjectiveIds={NO_CHILDREN_PLAN_LIST}
+                                    onTitleClick={(o) => showPathInTree(o.id)}
+                                  />
+                                );
+                              })}
+                            </div>
                           </div>
                         )}
                       </>
