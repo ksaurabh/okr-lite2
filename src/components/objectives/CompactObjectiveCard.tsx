@@ -111,6 +111,10 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   const kebabMenuRef = useRef<HTMLDivElement>(null);
   const kebabButtonRef = useRef<HTMLButtonElement>(null);
   const [kebabMenuPos, setKebabMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const [showPlanPicker, setShowPlanPicker] = useState(false);
+  const [planPickerPos, setPlanPickerPos] = useState<{ top: number; left: number } | null>(null);
+  const [planPickerSearch, setPlanPickerSearch] = useState('');
+  const planPickerRef = useRef<HTMLDivElement>(null);
   const { isPinned, togglePin } = usePinnedRowActions();
   const [showAddPlanMenu, setShowAddPlanMenu] = useState(false);
   const [addPlanSearch, setAddPlanSearch] = useState('');
@@ -626,6 +630,17 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
     document.addEventListener('mousedown', onClick);
     return () => document.removeEventListener('mousedown', onClick);
   }, [showKebabMenu]);
+
+  useEffect(() => {
+    if (!showPlanPicker) return;
+    const onClick = (e: MouseEvent) => {
+      if (planPickerRef.current && planPickerRef.current.contains(e.target as Node)) return;
+      setShowPlanPicker(false);
+      setPlanPickerPos(null);
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [showPlanPicker]);
 
   useEffect(() => {
     if (!showAddPlanMenu) return;
@@ -1512,6 +1527,23 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
                       {quickAddTooltip || 'Add to Plan'}
                     </button>
                   )}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const r = kebabButtonRef.current?.getBoundingClientRect();
+                      setShowKebabMenu(false);
+                      setKebabMenuPos(null);
+                      setPlanPickerSearch('');
+                      if (r) {
+                        const w = 260;
+                        setPlanPickerPos({ top: r.bottom + 4, left: Math.max(8, Math.min(window.innerWidth - w - 8, r.right - w)) });
+                      }
+                      setShowPlanPicker(true);
+                    }}
+                    className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    Add to Plan…
+                  </button>
                   {canModify && (
                     <button
                       onClick={(e) => { e.stopPropagation(); setShowKebabMenu(false); cloneObjective(objective.id, { orgId: organization?.id || '', userEmail, shared: objective.shared }); }}
@@ -1543,6 +1575,54 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
                     </button>
                   )}
                 </div>,
+                document.body
+              )}
+              {showPlanPicker && planPickerPos && createPortal(
+                (() => {
+                  const plans = lists.filter(l => l.ownerId && l.periodId);
+                  const q = planPickerSearch.trim().toLowerCase();
+                  const matches = q ? plans.filter(p => p.name.toLowerCase().includes(q)) : plans;
+                  return (
+                    <div ref={planPickerRef} style={{ position: 'fixed', top: planPickerPos.top, left: planPickerPos.left, width: 260 }} className="z-[100] bg-white border border-gray-200 rounded-md shadow-lg py-1 max-h-72 overflow-y-auto">
+                      <div className="px-2 py-1 border-b border-gray-100 sticky top-0 bg-white">
+                        <input
+                          type="text"
+                          autoFocus
+                          value={planPickerSearch}
+                          onChange={(e) => setPlanPickerSearch(e.target.value)}
+                          placeholder="Search plans…"
+                          className="w-full text-xs px-2 py-1 border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                      </div>
+                      {plans.length === 0 ? (
+                        <div className="px-3 py-2 text-xs text-gray-400">No plans available.</div>
+                      ) : matches.length === 0 ? (
+                        <div className="px-3 py-2 text-xs text-gray-400">No matches.</div>
+                      ) : (
+                        matches.map(p => {
+                          const already = p.items.some(it => it.objectiveId === objective.id);
+                          return (
+                            <button
+                              key={p.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (!already) addItemToList(p.id, objective.id);
+                                setShowPlanPicker(false);
+                                setPlanPickerPos(null);
+                              }}
+                              disabled={already}
+                              className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 ${already ? 'text-gray-400 cursor-not-allowed' : 'text-gray-700 hover:bg-gray-50'}`}
+                            >
+                              <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: p.color || '#6b7280' }} />
+                              <span className="flex-1 truncate">{p.name}</span>
+                              {already && <span className="text-[10px] text-gray-400">added</span>}
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  );
+                })(),
                 document.body
               )}
             </div>

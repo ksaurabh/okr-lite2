@@ -80,6 +80,7 @@ export function ObjectiveTree({ highlightObjectiveId, onHighlightClear, onViewCh
   const [showChildren, setShowChildren] = useState(false);
   const [directChildrenOnly, setDirectChildrenOnly] = useState(false);
   const openChildrenOnly = useOKRStore((state: OKRStore) => state.openChildrenOnly);
+  const clearAllFilters = useOKRStore((state: OKRStore) => state.clearAllFilters);
   const [filterLastUpdated, setFilterLastUpdated] = useState<string | null>(null);
   const [orgUsers, setOrgUsers] = useState<User[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -807,6 +808,18 @@ export function ObjectiveTree({ highlightObjectiveId, onHighlightClear, onViewCh
         setFilterLastUpdated={setFilterLastUpdated}
         showListMembershipOption
       />
+
+      {hasActiveFilters && (
+        <div className="flex items-center justify-end mb-2">
+          <button
+            onClick={() => { clearAllFilters(); setSearchQuery(''); }}
+            className="px-2 py-1 text-xs text-blue-600 border border-blue-200 rounded hover:bg-blue-50"
+            title="Reset all filters to show the full objective tree"
+          >
+            Clear filters
+          </button>
+        </div>
+      )}
 
       {/* Empty state for filtered results */}
       {filteredObjectives.length === 0 && (
