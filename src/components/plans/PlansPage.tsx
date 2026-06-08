@@ -860,7 +860,32 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
             <h3 className="text-lg font-semibold text-gray-900 mb-3">Create plan</h3>
             <div className="space-y-3">
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Name</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-medium text-gray-500">Name</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const u = orgUsers.find(uu => uu.id === newOwnerId);
+                      const initials = ((u?.name || u?.email || '').trim()
+                        .split(/[\s@.]+/)
+                        .filter(Boolean)
+                        .map(s => s[0])
+                        .join('')
+                        .toUpperCase()) || '';
+                      const lvl = newLevel ? LEVEL_LABEL[newLevel] : '';
+                      const period = periods.find((p: Period) => p.id === newPeriodId);
+                      const periodName = period?.name || '';
+                      const parts = [initials, lvl, periodName].filter(Boolean);
+                      if (parts.length === 0) return;
+                      setNewName(parts.join('-'));
+                    }}
+                    disabled={!newOwnerId && !newLevel && !newPeriodId}
+                    className="text-[11px] text-blue-600 hover:text-blue-700 disabled:opacity-40"
+                    title="Build name from owner initials, level, and period"
+                  >
+                    Auto-fill
+                  </button>
+                </div>
                 <input
                   type="text"
                   value={newName}

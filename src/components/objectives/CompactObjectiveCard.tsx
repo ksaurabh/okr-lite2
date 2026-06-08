@@ -109,6 +109,8 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   const [showListDropdown, setShowListDropdown] = useState(false);
   const [showKebabMenu, setShowKebabMenu] = useState(false);
   const kebabMenuRef = useRef<HTMLDivElement>(null);
+  const kebabButtonRef = useRef<HTMLButtonElement>(null);
+  const [kebabMenuPos, setKebabMenuPos] = useState<{ top: number; left: number } | null>(null);
   const { isPinned, togglePin } = usePinnedRowActions();
   const [showAddPlanMenu, setShowAddPlanMenu] = useState(false);
   const [addPlanSearch, setAddPlanSearch] = useState('');
@@ -615,7 +617,11 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
   useEffect(() => {
     if (!showKebabMenu) return;
     const onClick = (e: MouseEvent) => {
-      if (kebabMenuRef.current && !kebabMenuRef.current.contains(e.target as Node)) setShowKebabMenu(false);
+      const target = e.target as Node;
+      if (kebabMenuRef.current && kebabMenuRef.current.contains(target)) return;
+      if (kebabButtonRef.current && kebabButtonRef.current.contains(target)) return;
+      setShowKebabMenu(false);
+      setKebabMenuPos(null);
     };
     document.addEventListener('mousedown', onClick);
     return () => document.removeEventListener('mousedown', onClick);
@@ -1444,9 +1450,23 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
 
           {/* Kebab actions menu */}
           {!minimalActions && kebabActions && (
-            <div ref={kebabMenuRef} className="relative flex-shrink-0">
+            <div className="relative flex-shrink-0">
               <button
-                onClick={(e) => { e.stopPropagation(); setShowKebabMenu(!showKebabMenu); }}
+                ref={kebabButtonRef}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (showKebabMenu) {
+                    setShowKebabMenu(false);
+                    setKebabMenuPos(null);
+                  } else {
+                    const r = kebabButtonRef.current?.getBoundingClientRect();
+                    if (r) {
+                      const menuWidth = 200;
+                      setKebabMenuPos({ top: r.bottom + 4, left: Math.max(8, Math.min(window.innerWidth - menuWidth - 8, r.right - menuWidth)) });
+                    }
+                    setShowKebabMenu(true);
+                  }
+                }}
                 className="p-1 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100"
                 title="Actions"
               >
@@ -1456,8 +1476,8 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
                   <circle cx="12" cy="18" r="1.5" />
                 </svg>
               </button>
-              {showKebabMenu && (
-                <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-md shadow-lg py-1 min-w-[180px]">
+              {showKebabMenu && kebabMenuPos && createPortal(
+                <div ref={kebabMenuRef} style={{ position: 'fixed', top: kebabMenuPos.top, left: kebabMenuPos.left }} className="z-[100] bg-white border border-gray-200 rounded-md shadow-lg py-1 min-w-[180px]">
                   {canModify && (
                     <button
                       onClick={(e) => { e.stopPropagation(); setShowKebabMenu(false); setShowEdit(true); }}
@@ -1522,7 +1542,8 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
                       Delete
                     </button>
                   )}
-                </div>
+                </div>,
+                document.body
               )}
             </div>
           )}
