@@ -288,8 +288,12 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
     if (!selectedListId) { setPlanSelectedChildListId(null); return; }
     const currentChildIsValid = planSelectedChildListId && listsEarly.some(l => l.id === planSelectedChildListId && l.parentId === selectedListId);
     if (currentChildIsValid) return;
-    const firstChildPlan = listsEarly.find(l => l.parentId === selectedListId && l.ownerId && l.periodId);
-    setPlanSelectedChildListId(firstChildPlan ? firstChildPlan.id : null);
+    const candidates = listsEarly.filter(l => l.parentId === selectedListId && l.ownerId && l.periodId);
+    const tsOf = (l: List) => (l.updatedAt || l.createdAt || '');
+    const mostRecent = candidates.length > 0
+      ? candidates.reduce((a, b) => (tsOf(a) >= tsOf(b) ? a : b))
+      : null;
+    setPlanSelectedChildListId(mostRecent ? mostRecent.id : null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedListId, listsEarly]);
 
