@@ -351,6 +351,35 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
+// Effective-user middleware: a super admin may impersonate another user.
+// When active, swap req.user to the impersonated user so all downstream data
+// scoping (which keys off req.user.email / req.user.domain) behaves exactly as
+// if that user had logged in. The real authenticated user is preserved on
+// req.realUser for authorization of the impersonation controls themselves.
+app.use((req, _res, next) => {
+  req.realUser = req.user || null;
+  const targetEmail = req.session?.impersonatedEmail;
+  if (req.user && targetEmail && isSuperAdmin(req.user.email)) {
+    const target = getUsers().find(
+      u => u.email?.toLowerCase() === targetEmail.toLowerCase()
+    );
+    if (target) {
+      req.user = {
+        id: target.id,
+        email: target.email,
+        name: target.name,
+        picture: target.picture,
+        domain: target.domain,
+      };
+      req.isImpersonating = true;
+    } else {
+      // Target no longer exists — drop the stale impersonation.
+      delete req.session.impersonatedEmail;
+    }
+  }
+  next();
+});
+
 // Passport configuration
 passport.serializeUser((user, done) => {
   done(null, user);
@@ -415,9 +444,12 @@ app.get('/auth/user', (req, res) => {
     ? org.admins?.some(a => a.email === req.user.email?.toLowerCase() && a.status === 'accepted')
     : false;
 
-  // Track user login
+  // Track user login. Skip while impersonating — req.user is the target, and
+  // we must not stamp lastLoginAt or overwrite their record on the admin's behalf.
   let storedUser = null;
-  if (isAllowed && org) {
+  if (req.isImpersonating) {
+    storedUser = getUsers().find(u => u.email === req.user.email) || null;
+  } else if (isAllowed && org) {
     storedUser = upsertUser({
       email: req.user.email,
       name: req.user.name,
@@ -438,7 +470,51 @@ app.get('/auth/user', (req, res) => {
     isSuperAdmin: isSuperAdminUser,
     isOrgAdmin: isOrgAdminUser,
     organization: org || null,
+    // When impersonating, expose the target so the UI can show a banner and a
+    // way back. The real super admin is always allowed to stop impersonating.
+    impersonating: req.isImpersonating
+      ? { email: req.user.email, name: storedUser?.name || req.user.name }
+      : null,
   });
+});
+
+// Start impersonating another user (super admin only). The real authenticated
+// user — not the effective one — must be a super admin.
+app.post('/api/super-admin/impersonate', (req, res) => {
+  const actor = req.realUser;
+  if (!actor) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  if (!isSuperAdmin(actor.email)) {
+    return res.status(403).json({ error: 'Super admin access required' });
+  }
+  const { email } = req.body || {};
+  if (!email) {
+    return res.status(400).json({ error: 'email is required' });
+  }
+  if (email.toLowerCase() === actor.email?.toLowerCase()) {
+    return res.status(400).json({ error: 'Cannot impersonate yourself' });
+  }
+  const target = getUsers().find(
+    u => u.email?.toLowerCase() === email.toLowerCase()
+  );
+  if (!target) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+  req.session.impersonatedEmail = target.email;
+  res.json({ success: true, impersonating: { email: target.email, name: target.name } });
+});
+
+// Stop impersonating. Allowed for the real super admin who started it.
+app.post('/api/super-admin/stop-impersonating', (req, res) => {
+  const actor = req.realUser;
+  if (!actor) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  if (req.session) {
+    delete req.session.impersonatedEmail;
+  }
+  res.json({ success: true });
 });
 
 // Middleware to check authentication and authorization

@@ -13,6 +13,11 @@ interface User {
   organizationId?: string;
 }
 
+interface Impersonation {
+  email: string;
+  name: string;
+}
+
 interface AuthState {
   isLoading: boolean;
   isAuthenticated: boolean;
@@ -21,12 +26,15 @@ interface AuthState {
   isSuperAdmin: boolean;
   isOrgAdmin: boolean;
   organization: Organization | null;
+  impersonating: Impersonation | null;
 }
 
 interface AuthContextType extends AuthState {
   login: () => void;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
+  impersonate: (email: string) => Promise<void>;
+  stopImpersonating: () => Promise<void>;
   serverReachable: boolean;
 }
 
@@ -42,6 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isSuperAdmin: false,
     isOrgAdmin: false,
     organization: null,
+    impersonating: null,
   });
 
   const checkAuth = useCallback(async () => {
@@ -66,6 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isSuperAdmin: data.isSuperAdmin || false,
         isOrgAdmin: data.isOrgAdmin || false,
         organization: data.organization || null,
+        impersonating: data.impersonating || null,
       });
     } catch (error) {
       console.error('Auth check failed:', error);
@@ -77,6 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isSuperAdmin: false,
         isOrgAdmin: false,
         organization: null,
+        impersonating: null,
       });
     }
   }, []);
@@ -110,6 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isSuperAdmin: false,
         isOrgAdmin: false,
         organization: null,
+        impersonating: null,
       });
     };
     const wrapped: typeof window.fetch = async (input, init) => {
@@ -154,6 +166,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.location.href = `${API_URL}/auth/google`;
   };
 
+  // Switching the effective user changes every scoped query in the app, so the
+  // simplest correct way to re-render as that user is a full reload — the app
+  // then re-fetches all data fresh as the impersonated (or restored) identity.
+  const impersonate = async (email: string) => {
+    const res = await fetch(`${API_URL}/api/super-admin/impersonate`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Failed to impersonate' }));
+      throw new Error(err.error || 'Failed to impersonate');
+    }
+    window.location.reload();
+  };
+
+  const stopImpersonating = async () => {
+    await fetch(`${API_URL}/api/super-admin/stop-impersonating`, {
+      method: 'POST',
+      credentials: 'include',
+    });
+    window.location.reload();
+  };
+
   const logout = async () => {
     try {
       await fetch(`${API_URL}/auth/logout`, {
@@ -167,6 +204,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isSuperAdmin: false,
         isOrgAdmin: false,
         organization: null,
+        impersonating: null,
       });
     } catch (error) {
       console.error('Logout failed:', error);
@@ -174,7 +212,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ ...state, login, logout, checkAuth, serverReachable }}>
+    <AuthContext.Provider value={{ ...state, login, logout, checkAuth, impersonate, stopImpersonating, serverReachable }}>
       {children}
     </AuthContext.Provider>
   );
