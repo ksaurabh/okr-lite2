@@ -14,7 +14,7 @@ import {
   buildObjectiveDescendantLookup,
   filterObjectives,
 } from '../../utils/objectiveFilters';
-import type { Objective, ObjectiveLevel, Period, Team, Tag, User, WorkflowStatus } from '../../types';
+import type { List, ListHistoryEntry, Objective, ObjectiveLevel, Period, Team, Tag, User, WorkflowStatus } from '../../types';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -267,6 +267,21 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
     document.addEventListener('mousedown', onClick);
     return () => document.removeEventListener('mousedown', onClick);
   }, [showListPlanColumnMenu]);
+
+  // Plan Action Menu (top-right kebab) + history pane
+  const [showPlanActionMenu, setShowPlanActionMenu] = useState(false);
+  const [showPlanHistory, setShowPlanHistory] = useState(false);
+  const planActionMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!showPlanActionMenu) return;
+    const onClick = (e: MouseEvent) => {
+      if (planActionMenuRef.current && !planActionMenuRef.current.contains(e.target as Node)) {
+        setShowPlanActionMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [showPlanActionMenu]);
   const listsEarly = useOKRStore((state: OKRStore) => state.lists);
   const sharedPlansEarly = useOKRStore((state: OKRStore) => state.sharedPlans);
   const selectedListEarly = listsEarly.find(l => l.id === selectedListId) || sharedPlansEarly.find(l => l.id === selectedListId);
@@ -729,7 +744,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
       order: index,
     }));
 
-    await reorderListItems(selectedListId!, reorderedItems);
+    await reorderListItems(selectedListId!, reorderedItems, draggedItemId);
     setDraggedItemId(null);
   };
 
@@ -747,7 +762,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
     const [moved] = items.splice(draggedIndex, 1);
     items.splice(targetIndex, 0, moved);
     const reordered = items.map((item, idx) => ({ objectiveId: item.objectiveId, order: idx }));
-    await reorderListItems(listId, reordered);
+    await reorderListItems(listId, reordered, draggedObjectiveId);
   };
 
   const getObjective = useCallback((objectiveId: string): Objective | undefined => {
@@ -1548,6 +1563,32 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                 )}
                 {isReadOnlyList && (
                   <span className="px-2 py-0.5 text-xs rounded bg-amber-50 border border-amber-300 text-amber-700">Read-only · shared by {((selectedList as List & { createdByEmail?: string }).createdByEmail) || 'another user'}</span>
+                )}
+                {isListPlanMode && (
+                  <div ref={planActionMenuRef} className="relative">
+                    <button
+                      onClick={() => setShowPlanActionMenu(o => !o)}
+                      className="p-1.5 text-gray-500 hover:text-gray-700 border border-gray-300 rounded hover:bg-gray-50"
+                      title="Plan actions"
+                    >
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                        <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
+                      </svg>
+                    </button>
+                    {showPlanActionMenu && (
+                      <div className="absolute right-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-md shadow-lg py-1 min-w-[180px]">
+                        <button
+                          onClick={() => { setShowPlanActionMenu(false); setShowPlanHistory(true); }}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 text-left"
+                        >
+                          <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          History
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -3287,6 +3328,58 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
             onClose={() => setEditingCardObjective(null)}
           />
         )}
+      </SlidePane>
+      <SlidePane
+        isOpen={showPlanHistory}
+        onClose={() => setShowPlanHistory(false)}
+        title={selectedList ? `History — ${selectedList.name}` : 'History'}
+        width="md"
+      >
+        {(() => {
+          const history = [...(selectedList?.history || [])].reverse();
+          if (history.length === 0) {
+            return (
+              <p className="text-sm text-gray-400">
+                No edits recorded yet. Adding, removing, or moving plan items will show up here.
+              </p>
+            );
+          }
+          const fmt = (ts: string) => {
+            try { return new Date(ts).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }); }
+            catch { return ts; }
+          };
+          const titleFor = (e: ListHistoryEntry) => e.objectiveTitle || getObjective(e.objectiveId)?.title || e.objectiveId;
+          return (
+            <ul className="space-y-2">
+              {history.map((e) => {
+                const who = e.userName || e.userEmail || 'Someone';
+                let dot = 'bg-gray-400';
+                let action: React.ReactNode;
+                if (e.action === 'item_added') {
+                  dot = 'bg-green-500';
+                  action = <>added at position <span className="font-medium">{(e.position ?? 0) + 1}</span></>;
+                } else if (e.action === 'item_removed') {
+                  dot = 'bg-red-500';
+                  action = <>removed{typeof e.position === 'number' && e.position >= 0 ? <> from position <span className="font-medium">{e.position + 1}</span></> : null}</>;
+                } else {
+                  dot = 'bg-blue-500';
+                  action = <>moved from position <span className="font-medium">{(e.fromPosition ?? 0) + 1}</span> to <span className="font-medium">{(e.toPosition ?? 0) + 1}</span></>;
+                }
+                return (
+                  <li key={e.id} className="flex items-start gap-2 border-b border-gray-100 pb-2">
+                    <span className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${dot}`} />
+                    <div className="min-w-0 text-sm">
+                      <div className="text-gray-800">
+                        <span className="font-medium break-words">{titleFor(e)}</span> {action}
+                      </div>
+                      <div className="text-xs text-gray-500">{who} · {fmt(e.timestamp)}</div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          );
+        })()}
       </SlidePane>
       {showCreateChildPlan && selectedList && (
         <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center p-4">

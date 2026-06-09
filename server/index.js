@@ -257,6 +257,43 @@ function generateListId() {
   return `list-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 }
 
+// Cap on retained plan-history entries per list, to keep the user record lean.
+const LIST_HISTORY_LIMIT = 1000;
+
+// Resolve the acting user (the effective user, i.e. the impersonated one when
+// a super admin is impersonating) for plan-history attribution.
+function listHistoryActor(req) {
+  const email = req.user?.email || '';
+  const stored = email ? getUsers().find(u => u.email === email) : null;
+  return { email, name: stored?.name || req.user?.name || email };
+}
+
+function objectiveTitleById(objectiveId) {
+  try {
+    const obj = getOKRData().objectives.find(o => o.id === objectiveId);
+    return obj?.title;
+  } catch {
+    return undefined;
+  }
+}
+
+// 0-based position of an objective within a list, by display (order) sort.
+function listSortedPosition(items, objectiveId) {
+  return [...items].sort((a, b) => a.order - b.order).findIndex(i => i.objectiveId === objectiveId);
+}
+
+function pushListHistory(list, entry) {
+  if (!Array.isArray(list.history)) list.history = [];
+  list.history.push({
+    id: `lh-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+    timestamp: new Date().toISOString(),
+    ...entry,
+  });
+  if (list.history.length > LIST_HISTORY_LIMIT) {
+    list.history = list.history.slice(list.history.length - LIST_HISTORY_LIMIT);
+  }
+}
+
 // Helper functions for user work logs
 function getUserWorkLogs(email) {
   const users = getUsers();
@@ -1658,6 +1695,16 @@ app.post('/api/users/me/lists/:listId/items', requireAuth, (req, res) => {
   });
   lists[listIndex].updatedAt = new Date().toISOString();
 
+  const addActor = listHistoryActor(req);
+  pushListHistory(lists[listIndex], {
+    userEmail: addActor.email,
+    userName: addActor.name,
+    action: 'item_added',
+    objectiveId,
+    objectiveTitle: objectiveTitleById(objectiveId),
+    position: lists[listIndex].items.length - 1,
+  });
+
   const savedLists = saveUserLists(req.user.email, lists);
   res.json({ list: lists[listIndex], lists: savedLists });
 });
@@ -1678,8 +1725,19 @@ app.delete('/api/users/me/lists/:listId/items/:objectiveId', requireAuth, (req, 
     return res.status(404).json({ error: 'Item not found in list' });
   }
 
+  const removedPosition = listSortedPosition(lists[listIndex].items, objectiveId);
   lists[listIndex].items.splice(itemIndex, 1);
   lists[listIndex].updatedAt = new Date().toISOString();
+
+  const removeActor = listHistoryActor(req);
+  pushListHistory(lists[listIndex], {
+    userEmail: removeActor.email,
+    userName: removeActor.name,
+    action: 'item_removed',
+    objectiveId,
+    objectiveTitle: objectiveTitleById(objectiveId),
+    position: removedPosition,
+  });
 
   const savedLists = saveUserLists(req.user.email, lists);
   res.json({ list: lists[listIndex], lists: savedLists });
@@ -1688,7 +1746,7 @@ app.delete('/api/users/me/lists/:listId/items/:objectiveId', requireAuth, (req, 
 // Reorder items in a list
 app.put('/api/users/me/lists/:listId/reorder', requireAuth, (req, res) => {
   const { listId } = req.params;
-  const { items } = req.body; // Array of { objectiveId, order }
+  const { items, movedObjectiveId } = req.body; // items: [{ objectiveId, order }]
 
   if (!Array.isArray(items)) {
     return res.status(400).json({ error: 'items array is required' });
@@ -1701,6 +1759,11 @@ app.put('/api/users/me/lists/:listId/reorder', requireAuth, (req, res) => {
     return res.status(404).json({ error: 'List not found' });
   }
 
+  // Capture the moved item's old position before re-ordering.
+  const fromPosition = movedObjectiveId
+    ? listSortedPosition(lists[listIndex].items, movedObjectiveId)
+    : -1;
+
   // Update order for each item
   items.forEach(({ objectiveId, order }) => {
     const item = lists[listIndex].items.find(i => i.objectiveId === objectiveId);
@@ -1712,6 +1775,22 @@ app.put('/api/users/me/lists/:listId/reorder', requireAuth, (req, res) => {
   // Sort by order
   lists[listIndex].items.sort((a, b) => a.order - b.order);
   lists[listIndex].updatedAt = new Date().toISOString();
+
+  if (movedObjectiveId) {
+    const toPosition = listSortedPosition(lists[listIndex].items, movedObjectiveId);
+    if (fromPosition !== -1 && toPosition !== -1 && fromPosition !== toPosition) {
+      const moveActor = listHistoryActor(req);
+      pushListHistory(lists[listIndex], {
+        userEmail: moveActor.email,
+        userName: moveActor.name,
+        action: 'item_moved',
+        objectiveId: movedObjectiveId,
+        objectiveTitle: objectiveTitleById(movedObjectiveId),
+        fromPosition,
+        toPosition,
+      });
+    }
+  }
 
   const savedLists = saveUserLists(req.user.email, lists);
   res.json({ list: lists[listIndex], lists: savedLists });

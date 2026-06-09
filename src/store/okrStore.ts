@@ -240,7 +240,7 @@ interface OKRActions {
   updateListParent: (listId: string, parentId: string | null) => Promise<void>;
   addItemToList: (listId: string, objectiveId: string) => Promise<void>;
   removeItemFromList: (listId: string, objectiveId: string) => Promise<void>;
-  reorderListItems: (listId: string, items: { objectiveId: string; order: number }[]) => Promise<void>;
+  reorderListItems: (listId: string, items: { objectiveId: string; order: number }[], movedObjectiveId?: string) => Promise<void>;
 }
 
 export interface ColumnWidths {
@@ -2336,7 +2336,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     }
   },
 
-  reorderListItems: async (listId: string, items: { objectiveId: string; order: number }[]) => {
+  reorderListItems: async (listId: string, items: { objectiveId: string; order: number }[], movedObjectiveId?: string) => {
     try {
       const response = await fetch(`${API_URL}/api/users/me/lists/${listId}/reorder`, {
         method: 'PUT',
@@ -2344,7 +2344,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ items }),
+        body: JSON.stringify({ items, movedObjectiveId }),
       });
 
       if (response.ok) {

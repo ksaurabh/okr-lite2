@@ -244,6 +244,21 @@ export interface ListItem {
   order: number;
 }
 
+export interface ListHistoryEntry {
+  id: string;
+  timestamp: string;
+  userEmail: string;
+  userName?: string;
+  action: 'item_added' | 'item_removed' | 'item_moved';
+  objectiveId: string;
+  objectiveTitle?: string;
+  // 0-based positions. `position` = where it was added / removed from.
+  // `fromPosition`/`toPosition` describe a move.
+  position?: number;
+  fromPosition?: number;
+  toPosition?: number;
+}
+
 export interface List {
   id: string;
   name: string;
@@ -257,4 +272,5 @@ export interface List {
   level?: ObjectiveLevel;
   shared?: boolean;
   createdByEmail?: string;
+  history?: ListHistoryEntry[];
 }
