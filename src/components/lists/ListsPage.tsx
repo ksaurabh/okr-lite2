@@ -1723,9 +1723,16 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                           <div key={item.objectiveId}>
                             <div
                               onClick={() => togglePlanSelectedObjective(obj)}
-                              className={`flex items-center gap-1 px-3 py-1 text-sm cursor-pointer border-b border-gray-100 ${selected ? 'bg-blue-50 text-blue-900' : 'hover:bg-gray-50 text-gray-800'}`}
+                              draggable
+                              onDragStart={(e) => { e.dataTransfer.setData('text/plain', `${selectedList.id}|${obj.id}`); e.dataTransfer.effectAllowed = 'move'; }}
+                              onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
+                              onDrop={(e) => { e.preventDefault(); const [lid, draggedId] = e.dataTransfer.getData('text/plain').split('|'); if (lid === selectedList.id && draggedId) reorderItemsInList(selectedList.id, draggedId, obj.id); }}
+                              className={`group flex items-center gap-1 px-3 py-1 text-sm cursor-pointer border-b border-gray-100 ${selected ? 'bg-blue-50 text-blue-900' : 'hover:bg-gray-50 text-gray-800'}`}
                               title={obj.title}
                             >
+                              <span className="text-gray-300 group-hover:text-gray-500 flex-shrink-0 cursor-grab active:cursor-grabbing" title="Drag to reorder">
+                                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="5" r="2" /><circle cx="9" cy="12" r="2" /><circle cx="9" cy="19" r="2" /><circle cx="15" cy="5" r="2" /><circle cx="15" cy="12" r="2" /><circle cx="15" cy="19" r="2" /></svg>
+                              </span>
                               <span className="truncate flex-1">{obj.title}</span>
                               <AddToPlanBookmark objectiveId={obj.id} size="sm" />
                               {listPlanColumns.length > 0 && (
@@ -1863,6 +1870,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                 kebabActions
                                 addToPlanBookmark
                                 removeFromListId={selectedList.id}
+                                reorderInList={{ listId: selectedList.id, onReorder: (d, t) => reorderItemsInList(selectedList.id, d, t) }}
                                 filteredObjectiveIds={NO_CHILDREN_PLAN_LIST}
                                 onTitleClick={() => togglePlanSelectedObjective(obj)}
                               />
@@ -2784,9 +2792,16 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                 <div key={item.objectiveId}>
                                   <div
                                     onClick={() => showPathInTree(obj.id)}
-                                    className="flex items-center gap-1 px-3 py-1 text-sm cursor-pointer border-b border-gray-100 hover:bg-gray-50 text-gray-800"
+                                    draggable
+                                    onDragStart={(e) => { e.dataTransfer.setData('text/plain', `${child.id}|${obj.id}`); e.dataTransfer.effectAllowed = 'move'; }}
+                                    onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
+                                    onDrop={(e) => { e.preventDefault(); const [lid, draggedId] = e.dataTransfer.getData('text/plain').split('|'); if (lid === child.id && draggedId) reorderItemsInList(child.id, draggedId, obj.id); }}
+                                    className="group flex items-center gap-1 px-3 py-1 text-sm cursor-pointer border-b border-gray-100 hover:bg-gray-50 text-gray-800"
                                     title={obj.title}
                                   >
+                                    <span className="text-gray-300 group-hover:text-gray-500 flex-shrink-0 cursor-grab active:cursor-grabbing" title="Drag to reorder">
+                                      <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="5" r="2" /><circle cx="9" cy="12" r="2" /><circle cx="9" cy="19" r="2" /><circle cx="15" cy="5" r="2" /><circle cx="15" cy="12" r="2" /><circle cx="15" cy="19" r="2" /></svg>
+                                    </span>
                                     <span className="truncate flex-1">{obj.title}</span>
                                     <AddToPlanBookmark objectiveId={obj.id} size="sm" />
                                     {listPlanColumns.length > 0 && (
@@ -2975,6 +2990,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                     kebabActions
                                     addToPlanBookmark
                                     removeFromListId={child.id}
+                                    reorderInList={{ listId: child.id, onReorder: (d, t) => reorderItemsInList(child.id, d, t) }}
                                     filteredObjectiveIds={NO_CHILDREN_PLAN_LIST}
                                     onTitleClick={(o) => showPathInTree(o.id)}
                                   />

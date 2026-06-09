@@ -26,6 +26,9 @@ interface CompactObjectiveCardProps {
   kebabActions?: boolean;
   addToPlanBookmark?: boolean;
   removeFromListId?: string;
+  // When set, the row's drag handle reorders items within this plan list
+  // (by ListItem.order) instead of reordering objective siblings by sortOrder.
+  reorderInList?: { listId: string; onReorder: (draggedObjectiveId: string, targetObjectiveId: string) => void };
 }
 
 const getChildLevel = (parentLevel: ObjectiveLevel): ObjectiveLevel => {
@@ -73,7 +76,7 @@ function getNextStepDateIndicator(nextStepDate?: string): { color: string; toolt
   }
 }
 
-export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filteredObjectiveIds, directlyMatchingIds, defaultCollapsed = false, visibleColumnsOverride, onRowClick, onTitleClick, groupPeriodsByDate = false, hideRowActions = false, quickAddToListId, alwaysShowQuickAdd = false, quickAddTooltip, kebabActions = false, addToPlanBookmark = false, removeFromListId }: CompactObjectiveCardProps) {
+export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filteredObjectiveIds, directlyMatchingIds, defaultCollapsed = false, visibleColumnsOverride, onRowClick, onTitleClick, groupPeriodsByDate = false, hideRowActions = false, quickAddToListId, alwaysShowQuickAdd = false, quickAddTooltip, kebabActions = false, addToPlanBookmark = false, removeFromListId, reorderInList }: CompactObjectiveCardProps) {
   // Only root-level items (depth 0) are expanded by default, unless caller opts into collapsed
   const [isExpanded, setIsExpanded] = useState(depth === 0 && !defaultCollapsed);
   const forcedExpandedIds = useOKRStore((s: OKRStore) => s.forcedExpandedIds);
@@ -326,6 +329,15 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
 
   // Drag and drop handlers
   const handleDragStart = (e: React.DragEvent) => {
+    if (reorderInList) {
+      e.dataTransfer.setData('text/plain', JSON.stringify({
+        planReorder: true,
+        listId: reorderInList.listId,
+        id: objective.id,
+      }));
+      e.dataTransfer.effectAllowed = 'move';
+      return;
+    }
     e.dataTransfer.setData('text/plain', JSON.stringify({
       id: objective.id,
       parentId: objective.parentId,
@@ -359,6 +371,21 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
 
     try {
       const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+
+      // Plan-item reordering mode: only act when both source and target are in
+      // the same plan list. Never fall through to sibling sortOrder reordering.
+      if (reorderInList || data.planReorder) {
+        if (
+          data.planReorder &&
+          reorderInList &&
+          data.listId === reorderInList.listId &&
+          data.id !== objective.id
+        ) {
+          reorderInList.onReorder(data.id, objective.id);
+        }
+        return;
+      }
+
       const draggedId = data.id;
       const draggedParentId = data.parentId;
 
@@ -994,7 +1021,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
             : { width: columnWidths.title, minWidth: 150, paddingLeft: depth * 20 + 8 }}
         >
           {/* Drag handle */}
-          {canModify && !minimalActions && (
+          {(reorderInList || (canModify && !minimalActions)) && (
             <div
               draggable
               onDragStart={handleDragStart}
@@ -1012,7 +1039,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
               </svg>
             </div>
           )}
-          {!canModify && !minimalActions && <div className="w-4 flex-shrink-0" />}
+          {!reorderInList && !canModify && !minimalActions && <div className="w-4 flex-shrink-0" />}
 
           {/* Expand/collapse chevron */}
           <button
@@ -1283,7 +1310,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
           )}
 
           {/* Pinned actions + Actions menu */}
-          {!minimalActions && !kebabActions && canModify && (() => {
+          {!minimalActions && !kebabActions && (() => {
             const ICONS: Record<RowAction, React.ReactNode> = {
               edit: (
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1310,7 +1337,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
             };
             return (
               <>
-                {ACTIONS.filter(a => isPinned(a)).map(a => (
+                {canModify && ACTIONS.filter(a => isPinned(a)).map(a => (
                   <span key={a} className="relative group/pinned flex-shrink-0">
                     <button
                       onClick={(e) => { e.stopPropagation(); doAction(a); }}
@@ -1337,7 +1364,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
                   </button>
                   {showKebabMenu && (
                     <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-md shadow-lg py-1 min-w-[200px]">
-                      {ACTIONS.map((a, i) => (
+                      {canModify && ACTIONS.map((a, i) => (
                         <div key={a} className={`flex items-center justify-between hover:bg-gray-50 ${i > 0 && a === 'archive' ? 'border-t border-gray-100' : ''}`}>
                           <button
                             onClick={(e) => { e.stopPropagation(); setShowKebabMenu(false); doAction(a); }}
@@ -1371,7 +1398,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" /></svg>
                         Add to Plan…
                       </button>
-                      {!objective.jiraEpicKey ? (
+                      {canModify && (!objective.jiraEpicKey ? (
                         <button
                           onClick={async (e) => {
                             e.stopPropagation();
@@ -1409,7 +1436,7 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                           Open {objective.jiraEpicKey} in Jira
                         </a>
-                      )}
+                      ))}
                     </div>
                   )}
                 </div>
