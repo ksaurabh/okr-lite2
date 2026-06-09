@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import type { ObjectiveLevel, Period, User } from '../../types';
 import { renderGroupedPeriodOptions } from '../../utils/periodOptions';
@@ -24,6 +25,11 @@ export function AddToPlanBookmark({ objectiveId, size = 'md' }: AddToPlanBookmar
   const [filterPeriodId, setFilterPeriodId] = useState('');
   const [orgUsers, setOrgUsers] = useState<User[]>([]);
   const ref = useRef<HTMLDivElement>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
+  // The menu is rendered in a portal (fixed position) so it is never clipped by
+  // a scrolling/overflow container such as the Objective tree panel.
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const MENU_WIDTH = 480;
 
   useEffect(() => {
     if (!open) return;
@@ -34,11 +40,25 @@ export function AddToPlanBookmark({ objectiveId, size = 'md' }: AddToPlanBookmar
         .catch(err => console.error('Failed to fetch users:', err));
     }
     const onClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (ref.current?.contains(t) || popupRef.current?.contains(t)) return;
+      setOpen(false);
     };
     document.addEventListener('mousedown', onClick);
     return () => document.removeEventListener('mousedown', onClick);
   }, [open, orgUsers.length]);
+
+  const toggleOpen = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (open) { setOpen(false); return; }
+    setSearch('');
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setPos({
+      top: r.bottom + 4,
+      left: Math.max(8, Math.min(window.innerWidth - MENU_WIDTH - 8, r.right - MENU_WIDTH)),
+    });
+    setOpen(true);
+  };
 
   const plans = useMemo(() => lists.filter(l => l.ownerId && l.periodId), [lists]);
   const filteredPlans = useMemo(() => plans.filter(p => {
@@ -74,7 +94,7 @@ export function AddToPlanBookmark({ objectiveId, size = 'md' }: AddToPlanBookmar
   return (
     <div ref={ref} className="relative flex-shrink-0">
       <button
-        onClick={(e) => { e.stopPropagation(); setSearch(''); setOpen(!open); }}
+        onClick={toggleOpen}
         className="p-1 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50"
         title="Add to Plan"
       >
@@ -82,8 +102,8 @@ export function AddToPlanBookmark({ objectiveId, size = 'md' }: AddToPlanBookmar
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
         </svg>
       </button>
-      {open && (
-        <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-md shadow-lg flex" style={{ width: 480 }}>
+      {open && pos && createPortal(
+        <div ref={popupRef} className="z-[100] bg-white border border-gray-200 rounded-md shadow-lg flex" style={{ position: 'fixed', top: pos.top, left: pos.left, width: MENU_WIDTH }}>
           <div className="border-r border-gray-200 bg-gray-50 p-2 space-y-2 flex-shrink-0" style={{ width: 160 }}>
             <div className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold">Filters</div>
             <div>
@@ -169,7 +189,8 @@ export function AddToPlanBookmark({ objectiveId, size = 'md' }: AddToPlanBookmar
               })
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
