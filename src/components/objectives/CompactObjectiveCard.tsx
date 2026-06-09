@@ -4,6 +4,7 @@ import type { Objective, ObjectiveLevel, ObjectiveType, WorkflowStatus, Period, 
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
 import { usePinnedRowActions, type RowAction } from '../../utils/recentRowAction';
+import { resolveJiraEpicForObjective } from '../../utils/jiraEpic';
 import { SlidePane } from '../common/SlidePane';
 import { ObjectiveForm } from './ObjectiveForm';
 
@@ -1404,20 +1405,12 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
                             e.stopPropagation();
                             setShowKebabMenu(false);
                             try {
-                              const res = await fetch(`${API_URL}/api/jira/create-epic`, {
-                                method: 'POST',
-                                credentials: 'include',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ summary: objective.title, description: objective.description, objectiveId: objective.id }),
-                              });
-                              const data = await res.json().catch(() => ({}));
-                              if (!res.ok) {
-                                window.alert(`Failed to create Jira ticket: ${data.error || res.status}`);
-                                return;
+                              const result = await resolveJiraEpicForObjective(objective);
+                              if (result) {
+                                await updateObjective(objective.id, { jiraEpicKey: result.key, jiraEpicUrl: result.url }, userEmail);
                               }
-                              await updateObjective(objective.id, { jiraEpicKey: data.key, jiraEpicUrl: data.url }, userEmail);
                             } catch (err) {
-                              window.alert(`Failed to create Jira ticket: ${String(err)}`);
+                              window.alert(`Failed to create Jira ticket: ${err instanceof Error ? err.message : String(err)}`);
                             }
                           }}
                           className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 border-t border-gray-100"

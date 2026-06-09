@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 
@@ -117,24 +117,84 @@ export function SettingsPage() {
 
   const { isSuperAdmin, isOrgAdmin, user: currentUser } = useAuth();
   const canManageRoles = isSuperAdmin || isOrgAdmin;
+  const jiraFileInputRef = useRef<HTMLInputElement>(null);
+
+  const refreshJiraConfig = useCallback(async () => {
+    try {
+      const r = await fetch(`${API_URL}/api/admin/jira-config`, { credentials: 'include' });
+      const d = r.ok ? await r.json() : { config: null };
+      const cfg = d?.config;
+      if (cfg) {
+        setJiraBaseUrl(cfg.baseUrl || '');
+        setJiraEmail(cfg.email || '');
+        setJiraProjectKey(cfg.projectKey || '');
+        setJiraHasToken(!!cfg.hasToken);
+        setPeriodFieldKey(cfg.periodFieldKey || '');
+        setPeriodValueMap(cfg.periodValueMap || {});
+      }
+    } catch { /* ignore */ }
+  }, []);
 
   useEffect(() => {
     if (!(isSuperAdmin || isOrgAdmin)) return;
-    fetch(`${API_URL}/api/admin/jira-config`, { credentials: 'include' })
-      .then(r => r.ok ? r.json() : { config: null })
-      .then(d => {
-        const cfg = d?.config;
-        if (cfg) {
-          setJiraBaseUrl(cfg.baseUrl || '');
-          setJiraEmail(cfg.email || '');
-          setJiraProjectKey(cfg.projectKey || '');
-          setJiraHasToken(!!cfg.hasToken);
-          setPeriodFieldKey(cfg.periodFieldKey || '');
-          setPeriodValueMap(cfg.periodValueMap || {});
-        }
-      })
-      .catch(() => { /* ignore */ });
-  }, [isSuperAdmin, isOrgAdmin]);
+    refreshJiraConfig();
+  }, [isSuperAdmin, isOrgAdmin, refreshJiraConfig]);
+
+  // Download the org's Jira integration settings as a JSON file.
+  const handleDownloadJira = async () => {
+    setJiraError(null);
+    try {
+      const res = await fetch(`${API_URL}/api/admin/jira-config/export`, { credentials: 'include' });
+      if (!res.ok) {
+        const t = await res.text().catch(() => '');
+        throw new Error(res.status === 404 ? 'No Jira settings saved yet.' : (t || `HTTP ${res.status}`));
+      }
+      const cfg = await res.json();
+      const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'jira-integration-settings.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setJiraError(`Download failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  // Import Jira integration settings from an uploaded JSON file.
+  const handleImportJiraFile = async (file: File) => {
+    setJiraError(null); setJiraSaved(false);
+    try {
+      const parsed = JSON.parse(await file.text());
+      if (!parsed || typeof parsed !== 'object') throw new Error('File is not a valid settings object.');
+      const body: Record<string, unknown> = {};
+      if (typeof parsed.baseUrl === 'string') body.baseUrl = parsed.baseUrl;
+      if (typeof parsed.email === 'string') body.email = parsed.email;
+      if (typeof parsed.apiToken === 'string') body.apiToken = parsed.apiToken;
+      if (typeof parsed.projectKey === 'string') body.projectKey = parsed.projectKey;
+      if (typeof parsed.epicIssueTypeId === 'string') body.epicIssueTypeId = parsed.epicIssueTypeId;
+      if (typeof parsed.periodFieldKey === 'string') body.periodFieldKey = parsed.periodFieldKey;
+      if (parsed.periodValueMap && typeof parsed.periodValueMap === 'object') body.periodValueMap = parsed.periodValueMap;
+      if (Object.keys(body).length === 0) throw new Error('No recognizable Jira settings in this file.');
+      setJiraSaving(true);
+      const res = await fetch(`${API_URL}/api/admin/jira-config`, {
+        method: 'PUT', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) { const t = await res.text().catch(() => ''); throw new Error(t || `HTTP ${res.status}`); }
+      await refreshJiraConfig();
+      setJiraSaved(true);
+      setTimeout(() => setJiraSaved(false), 2000);
+    } catch (err) {
+      setJiraError(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setJiraSaving(false);
+    }
+  };
 
   useEffect(() => {
     fetchUsers();
@@ -716,8 +776,23 @@ export function SettingsPage() {
                 <button onClick={loadJiraProjects} disabled={jiraLoadingProjects || !jiraHasToken && !jiraToken} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50">
                   {jiraLoadingProjects ? 'Loading…' : 'Load projects'}
                 </button>
+                <span className="mx-1 h-5 w-px bg-gray-200" />
+                <button onClick={handleDownloadJira} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50" title="Download these Jira settings as a JSON file (includes the API token)">
+                  Download JSON
+                </button>
+                <button onClick={() => jiraFileInputRef.current?.click()} disabled={jiraSaving} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50" title="Import Jira settings from a JSON file">
+                  Import JSON
+                </button>
+                <input
+                  ref={jiraFileInputRef}
+                  type="file"
+                  accept="application/json,.json"
+                  className="hidden"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImportJiraFile(f); e.target.value = ''; }}
+                />
                 {jiraSaved && <span className="text-xs text-green-700">Saved.</span>}
               </div>
+              <p className="text-[11px] text-gray-400">The downloaded file contains your Jira API token — store it securely. Importing overwrites the fields present in the file.</p>
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">OKR project</label>
                 <div className="flex items-center gap-2">

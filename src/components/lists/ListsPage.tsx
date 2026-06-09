@@ -5,6 +5,7 @@ import { ObjectiveFilterPanel } from '../filters/ObjectiveFilterPanel';
 import { CompactObjectiveCard } from '../objectives/CompactObjectiveCard';
 import { AddToPlanBookmark } from '../plans/AddToPlanBookmark';
 import { renderGroupedPeriodOptions } from '../../utils/periodOptions';
+import { resolveJiraEpicForObjective } from '../../utils/jiraEpic';
 import { ObjectiveForm } from '../objectives/ObjectiveForm';
 import { SlidePane } from '../common/SlidePane';
 import {
@@ -940,17 +941,12 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
           if (busy) return;
           setBusy(true);
           try {
-            const res = await fetch(`${API_URL}/api/jira/create-epic`, {
-              method: 'POST',
-              credentials: 'include',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ summary: obj.title, description: obj.description, objectiveId: obj.id }),
-            });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) { window.alert(`Failed to create Jira ticket: ${data.error || res.status}`); return; }
-            await updateObjective(obj.id, { jiraEpicKey: data.key, jiraEpicUrl: data.url }, userEmail);
+            const result = await resolveJiraEpicForObjective(obj);
+            if (result) {
+              await updateObjective(obj.id, { jiraEpicKey: result.key, jiraEpicUrl: result.url }, userEmail);
+            }
           } catch (err) {
-            window.alert(`Failed to create Jira ticket: ${String(err)}`);
+            window.alert(`Failed to create Jira ticket: ${err instanceof Error ? err.message : String(err)}`);
           } finally {
             setBusy(false);
           }
@@ -1838,10 +1834,20 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                               <button
                                 onClick={(e) => { e.stopPropagation(); if (cardEditingId === obj.id) cancelCardEdit(); else beginCardEdit(obj.id); }}
                                 className={`p-1 rounded flex-shrink-0 ${cardEditingId === obj.id ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'}`}
-                                title={cardEditingId === obj.id ? 'Cancel edit' : 'Edit card'}
+                                title={cardEditingId === obj.id ? 'Cancel quick edit' : 'Quick edit — edit the fields shown on the card'}
                               >
                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setEditingCardObjective(obj); }}
+                                className="p-1 rounded flex-shrink-0 text-gray-400 hover:text-blue-600 hover:bg-blue-50"
+                                title="Edit all fields — opens the item in a side panel"
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 4v16" />
                                 </svg>
                               </button>
                             </div>
@@ -2916,7 +2922,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                     <button
                                       onClick={(e) => { e.stopPropagation(); if (cardEditingId === obj.id) cancelCardEdit(); else beginCardEdit(obj.id); }}
                                       className={`p-1 rounded flex-shrink-0 ${cardEditingId === obj.id ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'}`}
-                                      title={cardEditingId === obj.id ? 'Cancel edit' : 'Edit card'}
+                                      title={cardEditingId === obj.id ? 'Cancel quick edit' : 'Quick edit — edit the fields shown on the card'}
                                     >
                                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -2939,10 +2945,11 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                       <button
                                         onClick={() => setEditingCardObjective(obj)}
                                         className="p-0.5 text-gray-400 hover:text-blue-600 rounded"
-                                        title="Edit"
+                                        title="Edit all fields — opens the item in a side panel"
                                       >
                                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5z" />
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 4v16" />
                                         </svg>
                                       </button>
                                       <button

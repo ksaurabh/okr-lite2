@@ -939,6 +939,15 @@ app.get('/api/admin/jira-config', requireOrgAdminOrSuperAdmin, (req, res) => {
   res.json({ config: { ...safe, hasToken: !!cfg.apiToken } });
 });
 
+// Export the full Jira config (including the API token) as JSON for backup/transfer.
+app.get('/api/admin/jira-config/export', requireOrgAdminOrSuperAdmin, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.status(403).json({ error: 'No organization found' });
+  const cfg = getJiraConfig(org.id);
+  if (!cfg) return res.status(404).json({ error: 'No Jira configuration to export' });
+  res.json(cfg);
+});
+
 app.put('/api/admin/jira-config', requireOrgAdminOrSuperAdmin, async (req, res) => {
   const org = getOrganizationByDomain(req.user.domain);
   if (!org) return res.status(403).json({ error: 'No organization found' });
@@ -1188,6 +1197,54 @@ app.get('/api/jira/epic-fields', requireAuth, async (req, res) => {
       issueType: { id: epic.id, name: epic.name },
       fields,
     });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+// Find existing Jira issues whose title (summary) exactly matches a given
+// title, so the UI can warn before creating a duplicate.
+app.get('/api/jira/find-epics', requireAuth, async (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.json({ matches: [] });
+  const cfg = getJiraConfig(org.id);
+  if (!cfg || !cfg.baseUrl || !cfg.email || !cfg.apiToken || !cfg.projectKey) {
+    return res.json({ matches: [] });
+  }
+  const title = (req.query.title || '').toString().trim();
+  if (!title) return res.json({ matches: [] });
+
+  // Escape for a JQL string literal, then phrase-match the summary.
+  const esc = title.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  const jql = `project = "${cfg.projectKey.replace(/"/g, '')}" AND summary ~ "\\"${esc}\\"" ORDER BY created DESC`;
+
+  const toMatches = (data) => (data.issues || []).map(it => ({
+    key: it.key,
+    summary: it.fields?.summary || '',
+    url: `${cfg.baseUrl.replace(/\/$/, '')}/browse/${it.key}`,
+  }));
+
+  try {
+    let issues = [];
+    // Prefer the current Cloud enhanced-search endpoint; fall back to the classic one.
+    let r = await jiraFetch(cfg, '/rest/api/3/search/jql', {
+      method: 'POST',
+      body: JSON.stringify({ jql, fields: ['summary'], maxResults: 50 }),
+    });
+    if (r.ok) {
+      issues = toMatches(await r.json());
+    } else {
+      r = await jiraFetch(cfg, `/rest/api/3/search?jql=${encodeURIComponent(jql)}&fields=summary&maxResults=50`);
+      if (!r.ok) {
+        const text = await r.text().catch(() => '');
+        return res.status(r.status).json({ error: `Jira: ${r.status} ${text.slice(0, 300)}` });
+      }
+      issues = toMatches(await r.json());
+    }
+    // Keep only exact (case-insensitive, trimmed) title matches.
+    const norm = (s) => s.trim().toLowerCase();
+    const matches = issues.filter(i => norm(i.summary) === norm(title));
+    res.json({ matches });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
