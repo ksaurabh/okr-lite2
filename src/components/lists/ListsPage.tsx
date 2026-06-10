@@ -1824,32 +1824,34 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                 reorderItemsInList(selectedList.id, draggedId, obj.id);
                               }
                             }}
-                            className={`w-full text-left border rounded p-2 cursor-grab active:cursor-grabbing ${selected ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
+                            className={`group w-full text-left border rounded p-2 cursor-grab active:cursor-grabbing ${selected ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
                           >
                             <div className="flex items-start gap-1">
                               <div className="text-sm font-medium text-gray-900 break-words flex-1 min-w-0" title={obj.title}>{obj.title}</div>
                               <ChildPlanBadges objectiveId={obj.id} />
-                              <AddToPlanBookmark objectiveId={obj.id} size="sm" />
-                              <JiraTicketButton obj={obj} />
-                              <button
-                                onClick={(e) => { e.stopPropagation(); if (cardEditingId === obj.id) cancelCardEdit(); else beginCardEdit(obj.id); }}
-                                className={`p-1 rounded flex-shrink-0 ${cardEditingId === obj.id ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'}`}
-                                title={cardEditingId === obj.id ? 'Cancel quick edit' : 'Quick edit — edit the fields shown on the card'}
-                              >
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                </svg>
-                              </button>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); setEditingCardObjective(obj); }}
-                                className="p-1 rounded flex-shrink-0 text-gray-400 hover:text-blue-600 hover:bg-blue-50"
-                                title="Edit all fields — opens the item in a side panel"
-                              >
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5z" />
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 4v16" />
-                                </svg>
-                              </button>
+                              <div className={`flex items-center gap-1 flex-shrink-0 transition-opacity ${cardEditingId === obj.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'}`}>
+                                <AddToPlanBookmark objectiveId={obj.id} size="sm" />
+                                <JiraTicketButton obj={obj} />
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); if (cardEditingId === obj.id) cancelCardEdit(); else beginCardEdit(obj.id); }}
+                                  className={`p-1 rounded flex-shrink-0 ${cardEditingId === obj.id ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'}`}
+                                  title={cardEditingId === obj.id ? 'Cancel quick edit' : 'Quick edit — edit the fields shown on the card'}
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                  </svg>
+                                </button>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setEditingCardObjective(obj); }}
+                                  className="p-1 rounded flex-shrink-0 text-gray-400 hover:text-blue-600 hover:bg-blue-50"
+                                  title="Edit all fields — opens the item in a side panel"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 4v16" />
+                                  </svg>
+                                </button>
+                              </div>
                             </div>
                             {listPlanColumns.length > 0 && (
                               <div className="mt-1 grid gap-x-3 gap-y-0.5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }} onClick={(e) => e.stopPropagation()}>
@@ -2913,21 +2915,23 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                                     >
                                       {obj.title}
                                     </button>
-                                    <div onClick={(e) => e.stopPropagation()}>
-                                      <AddToPlanBookmark objectiveId={obj.id} size="sm" />
+                                    <div className={`flex items-center gap-1 flex-shrink-0 transition-opacity ${cardEditingId === obj.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'}`}>
+                                      <div onClick={(e) => e.stopPropagation()}>
+                                        <AddToPlanBookmark objectiveId={obj.id} size="sm" />
+                                      </div>
+                                      <div onClick={(e) => e.stopPropagation()}>
+                                        <JiraTicketButton obj={obj} />
+                                      </div>
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); if (cardEditingId === obj.id) cancelCardEdit(); else beginCardEdit(obj.id); }}
+                                        className={`p-1 rounded flex-shrink-0 ${cardEditingId === obj.id ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'}`}
+                                        title={cardEditingId === obj.id ? 'Cancel quick edit' : 'Quick edit — edit the fields shown on the card'}
+                                      >
+                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                        </svg>
+                                      </button>
                                     </div>
-                                    <div onClick={(e) => e.stopPropagation()}>
-                                      <JiraTicketButton obj={obj} />
-                                    </div>
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); if (cardEditingId === obj.id) cancelCardEdit(); else beginCardEdit(obj.id); }}
-                                      className={`p-1 rounded flex-shrink-0 ${cardEditingId === obj.id ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'}`}
-                                      title={cardEditingId === obj.id ? 'Cancel quick edit' : 'Quick edit — edit the fields shown on the card'}
-                                    >
-                                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                      </svg>
-                                    </button>
                                     <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                                       {obj.link?.url && (
                                         <a
