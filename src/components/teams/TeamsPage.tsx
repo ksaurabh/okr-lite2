@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
 import { Modal, Button } from '../common';
-import type { Team, User } from '../../types';
+import type { Team, User, TeamAssignment } from '../../types';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -117,6 +117,9 @@ export function TeamsPage() {
   const userEmail = user?.email || '';
   const isAdmin = isSuperAdmin || isOrgAdmin;
 
+  const [showAllTeams, setShowAllTeams] = useState(true);
+  const [showAssignments, setShowAssignments] = useState(true);
+
   const teams = useOKRStore((s: OKRStore) => s.teams);
   const addTeam = useOKRStore((s: OKRStore) => s.addTeam);
   const updateTeam = useOKRStore((s: OKRStore) => s.updateTeam);
@@ -144,6 +147,17 @@ export function TeamsPage() {
   const [memberSearch, setMemberSearch] = useState('');
   const [orgUsers, setOrgUsers] = useState<User[]>([]);
 
+  // Team Assignments
+  const [assignments, setAssignments] = useState<TeamAssignment[]>([]);
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [assignEditId, setAssignEditId] = useState<string | null>(null);
+  const [assignWho, setAssignWho] = useState('');
+  const [assignTeamId, setAssignTeamId] = useState('');
+  const [assignCapacity, setAssignCapacity] = useState('');
+  const [assignStart, setAssignStart] = useState('');
+  const [assignEnd, setAssignEnd] = useState('');
+  const [assignError, setAssignError] = useState<string | null>(null);
+
   useEffect(() => {
     const fetchUsers = async () => {
       try {
@@ -168,6 +182,94 @@ export function TeamsPage() {
   const getMemberNames = (emails?: string[]): string[] => {
     if (!emails || emails.length === 0) return [];
     return emails.map(e => orgUsers.find(u => u.email === e)?.name || e);
+  };
+
+  const loadAssignments = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/assignments`, { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        setAssignments(data.assignments || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch assignments:', err);
+    }
+  };
+
+  useEffect(() => { loadAssignments(); }, []);
+
+  const teamName = (id: string): string => orgTeams.find(t => t.id === id)?.name || '(deleted team)';
+  const fmtDate = (d?: string): string => {
+    if (!d) return '—';
+    const dt = new Date(`${d}T00:00:00`);
+    return isNaN(dt.getTime()) ? d : dt.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  };
+
+  const sortedAssignments = useMemo(
+    () => [...assignments].sort((a, b) => {
+      const an = getLeadName(a.who) || a.who;
+      const bn = getLeadName(b.who) || b.who;
+      return an.localeCompare(bn) || (a.startDate || '').localeCompare(b.startDate || '');
+    }),
+    // getLeadName depends on orgUsers; recompute when either changes
+    [assignments, orgUsers] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  const openAddAssignment = () => {
+    setAssignEditId(null);
+    setAssignWho(''); setAssignTeamId(''); setAssignCapacity(''); setAssignStart(''); setAssignEnd('');
+    setAssignError(null);
+    setShowAssignModal(true);
+  };
+
+  const openEditAssignment = (a: TeamAssignment) => {
+    setAssignEditId(a.id);
+    setAssignWho(a.who);
+    setAssignTeamId(a.teamId);
+    setAssignCapacity(a.capacitySpPerWeek != null ? String(a.capacitySpPerWeek) : '');
+    setAssignStart(a.startDate || '');
+    setAssignEnd(a.endDate || '');
+    setAssignError(null);
+    setShowAssignModal(true);
+  };
+
+  const saveAssignment = async () => {
+    setAssignError(null);
+    if (!assignWho) { setAssignError('Select who is assigned.'); return; }
+    if (!assignTeamId) { setAssignError('Select a team.'); return; }
+    if (!assignStart) { setAssignError('Start date is required.'); return; }
+    if (assignEnd && assignEnd < assignStart) { setAssignError('End date cannot be before the start date.'); return; }
+    const body = {
+      who: assignWho,
+      teamId: assignTeamId,
+      capacitySpPerWeek: assignCapacity === '' ? 0 : Number(assignCapacity),
+      startDate: assignStart,
+      endDate: assignEnd || '',
+    };
+    try {
+      const url = assignEditId ? `${API_URL}/api/assignments/${assignEditId}` : `${API_URL}/api/assignments`;
+      const res = await fetch(url, {
+        method: assignEditId ? 'PUT' : 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) { const t = await res.text().catch(() => ''); throw new Error(t || `HTTP ${res.status}`); }
+      await loadAssignments();
+      setShowAssignModal(false);
+    } catch (err) {
+      setAssignError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const deleteAssignment = async (id: string) => {
+    if (!window.confirm('Delete this assignment?')) return;
+    try {
+      const res = await fetch(`${API_URL}/api/assignments/${id}`, { method: 'DELETE', credentials: 'include' });
+      if (res.ok) await loadAssignments();
+    } catch (err) {
+      console.error('Failed to delete assignment:', err);
+    }
   };
 
   const openAdd = (parentId?: string) => {
@@ -240,19 +342,24 @@ export function TeamsPage() {
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">All Teams</h2>
-            <p className="text-sm text-gray-500 mt-1">
-              {orgTeams.length} {orgTeams.length === 1 ? 'team' : 'teams'} total
-            </p>
-          </div>
+        <div className={`p-4 ${showAllTeams ? 'border-b border-gray-200' : ''} flex items-center justify-between`}>
+          <button onClick={() => setShowAllTeams(v => !v)} className="flex items-center gap-2 text-left">
+            <svg className={`w-4 h-4 text-gray-400 transition-transform ${showAllTeams ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">All Teams</h2>
+              <p className="text-sm text-gray-500 mt-1">
+                {orgTeams.length} {orgTeams.length === 1 ? 'team' : 'teams'} total
+              </p>
+            </div>
+          </button>
           {isAdmin && (
             <Button onClick={() => openAdd()}>+ Add Team</Button>
           )}
         </div>
 
-        {rootTeams.length === 0 ? (
+        {showAllTeams && (rootTeams.length === 0 ? (
           <div className="p-8 text-center text-sm text-gray-500">
             No teams yet. {isAdmin ? 'Click "Add Team" to create one.' : 'Ask an admin to add one.'}
           </div>
@@ -275,7 +382,71 @@ export function TeamsPage() {
               />
             ))}
           </div>
-        )}
+        ))}
+      </div>
+
+      {/* Team Assignments */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+        <div className={`p-4 ${showAssignments ? 'border-b border-gray-200' : ''} flex items-center justify-between`}>
+          <button onClick={() => setShowAssignments(v => !v)} className="flex items-center gap-2 text-left">
+            <svg className={`w-4 h-4 text-gray-400 transition-transform ${showAssignments ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Team Assignments</h2>
+              <p className="text-sm text-gray-500 mt-1">
+                {assignments.length} {assignments.length === 1 ? 'assignment' : 'assignments'}
+              </p>
+            </div>
+          </button>
+          {isAdmin && (
+            <Button onClick={openAddAssignment} disabled={orgTeams.length === 0}>+ Add Assignment</Button>
+          )}
+        </div>
+
+        {showAssignments && (sortedAssignments.length === 0 ? (
+          <div className="p-8 text-center text-sm text-gray-500">
+            No assignments yet. {isAdmin ? 'Click "Add Assignment" to create one.' : 'Ask an admin to add one.'}
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200">
+                  <th className="py-2 px-4">Who</th>
+                  <th className="py-2 px-4">Team</th>
+                  <th className="py-2 px-4 whitespace-nowrap">Capacity (SP/week)</th>
+                  <th className="py-2 px-4">Start</th>
+                  <th className="py-2 px-4">End</th>
+                  {isAdmin && <th className="py-2 px-4 w-px"></th>}
+                </tr>
+              </thead>
+              <tbody>
+                {sortedAssignments.map(a => (
+                  <tr key={a.id} className="group border-b border-gray-100 hover:bg-gray-50">
+                    <td className="py-2 px-4 text-gray-900">{getLeadName(a.who) || a.who}</td>
+                    <td className="py-2 px-4 text-gray-700">{teamName(a.teamId)}</td>
+                    <td className="py-2 px-4 text-gray-700">{a.capacitySpPerWeek}</td>
+                    <td className="py-2 px-4 text-gray-700 whitespace-nowrap">{fmtDate(a.startDate)}</td>
+                    <td className="py-2 px-4 text-gray-500 whitespace-nowrap">{fmtDate(a.endDate)}</td>
+                    {isAdmin && (
+                      <td className="py-2 px-4 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={() => openEditAssignment(a)} className="text-gray-400 hover:text-blue-600 p-1" title="Edit assignment">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                          </button>
+                          <button onClick={() => deleteAssignment(a.id)} className="text-gray-400 hover:text-red-600 p-1" title="Delete assignment">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                          </button>
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
       </div>
 
       <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title={parentTeamId ? 'Add Sub-team' : 'Add Team'}>
@@ -404,6 +575,75 @@ export function TeamsPage() {
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setEditTarget(null)}>Cancel</Button>
             <Button onClick={handleEditSave}>Save</Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal isOpen={showAssignModal} onClose={() => setShowAssignModal(false)} title={assignEditId ? 'Edit Assignment' : 'Add Assignment'}>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Who</label>
+            <select
+              value={assignWho}
+              onChange={(e) => setAssignWho(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">— Select a person —</option>
+              {[...orgUsers].sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email)).map(u => (
+                <option key={u.email} value={u.email}>{u.name || u.email}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Team</label>
+            <select
+              value={assignTeamId}
+              onChange={(e) => setAssignTeamId(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">— Select a team —</option>
+              {[...orgTeams].sort((a, b) => a.name.localeCompare(b.name)).map(t => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Capacity assigned (SP per week)</label>
+            <input
+              type="number"
+              min="0"
+              step="any"
+              value={assignCapacity}
+              onChange={(e) => setAssignCapacity(e.target.value)}
+              placeholder="e.g. 8"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Start date</label>
+              <input
+                type="date"
+                value={assignStart}
+                onChange={(e) => setAssignStart(e.target.value)}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">End date <span className="text-gray-400">(optional)</span></label>
+              <input
+                type="date"
+                value={assignEnd}
+                min={assignStart || undefined}
+                onChange={(e) => setAssignEnd(e.target.value)}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+          {assignError && <p className="text-sm text-red-600">{assignError}</p>}
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setShowAssignModal(false)}>Cancel</Button>
+            <Button onClick={saveAssignment}>{assignEditId ? 'Save' : 'Add Assignment'}</Button>
           </div>
         </div>
       </Modal>

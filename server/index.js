@@ -2307,6 +2307,75 @@ app.delete('/api/teams/:id', requireAuth, (req, res) => {
   res.json({ success: true });
 });
 
+// Team Assignments (per-organization): who is assigned to which team, at what
+// weekly story-point capacity, over a date range.
+app.get('/api/assignments', requireAuth, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.json({ assignments: [] });
+  const data = getOKRData();
+  const assignments = (data.assignments || []).filter(a => a.orgId === org.id);
+  res.json({ assignments });
+});
+
+app.post('/api/assignments', requireAuth, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.status(403).json({ error: 'No organization found' });
+  const { who, teamId, capacitySpPerWeek, startDate, endDate } = req.body || {};
+  if (!who || !teamId || !startDate) {
+    return res.status(400).json({ error: 'who, teamId, and startDate are required' });
+  }
+  const data = getOKRData();
+  data.assignments = data.assignments || [];
+  const now = new Date().toISOString();
+  const assignment = {
+    id: generateId(),
+    orgId: org.id,
+    who,
+    teamId,
+    capacitySpPerWeek: Number(capacitySpPerWeek) || 0,
+    startDate,
+    endDate: endDate || undefined,
+    createdBy: req.user.email,
+    createdAt: now,
+    updatedAt: now,
+  };
+  data.assignments.push(assignment);
+  saveOKRData(data);
+  res.json(assignment);
+});
+
+app.put('/api/assignments/:id', requireAuth, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.status(403).json({ error: 'No organization found' });
+  const data = getOKRData();
+  data.assignments = data.assignments || [];
+  const idx = data.assignments.findIndex(a => a.id === req.params.id && a.orgId === org.id);
+  if (idx === -1) return res.status(404).json({ error: 'Assignment not found' });
+  const { who, teamId, capacitySpPerWeek, startDate, endDate } = req.body || {};
+  const next = { ...data.assignments[idx] };
+  if (typeof who === 'string' && who) next.who = who;
+  if (typeof teamId === 'string' && teamId) next.teamId = teamId;
+  if (capacitySpPerWeek !== undefined) next.capacitySpPerWeek = Number(capacitySpPerWeek) || 0;
+  if (typeof startDate === 'string' && startDate) next.startDate = startDate;
+  if ('endDate' in (req.body || {})) next.endDate = endDate || undefined;
+  next.updatedAt = new Date().toISOString();
+  data.assignments[idx] = next;
+  saveOKRData(data);
+  res.json(next);
+});
+
+app.delete('/api/assignments/:id', requireAuth, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.status(403).json({ error: 'No organization found' });
+  const data = getOKRData();
+  data.assignments = data.assignments || [];
+  const idx = data.assignments.findIndex(a => a.id === req.params.id && a.orgId === org.id);
+  if (idx === -1) return res.status(404).json({ error: 'Assignment not found' });
+  data.assignments.splice(idx, 1);
+  saveOKRData(data);
+  res.json({ success: true });
+});
+
 // Periods
 app.post('/api/periods', requireAuth, (req, res) => {
   const org = getOrganizationByDomain(req.user.domain);

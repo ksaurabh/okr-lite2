@@ -244,6 +244,19 @@ export interface ListItem {
   order: number;
 }
 
+export interface TeamAssignment {
+  id: string;
+  orgId: string;
+  who: string;              // user email
+  teamId: string;           // references Team.id
+  capacitySpPerWeek: number; // story points per week
+  startDate: string;        // yyyy-mm-dd (required)
+  endDate?: string;         // yyyy-mm-dd (optional)
+  createdBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface ListHistoryEntry {
   id: string;
   timestamp: string;
