@@ -250,7 +250,8 @@ export interface TeamAssignment {
   id: string;
   orgId: string;
   who: string;              // user email
-  teamId: string;           // references Team.id
+  teamId: string;           // references Team.id (empty when isSelf)
+  isSelf?: boolean;         // self/individual capacity, not tied to a team
   capacitySpPerWeek: number; // story points per week
   startDate: string;        // yyyy-mm-dd (required)
   endDate?: string;         // yyyy-mm-dd (optional)

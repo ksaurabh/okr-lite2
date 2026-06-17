@@ -159,6 +159,7 @@ export function TeamsPage() {
   const [assignEditId, setAssignEditId] = useState<string | null>(null);
   const [assignWho, setAssignWho] = useState('');
   const [assignTeamId, setAssignTeamId] = useState('');
+  const [assignSelf, setAssignSelf] = useState(false);
   const [assignCapacity, setAssignCapacity] = useState('');
   const [assignStart, setAssignStart] = useState('');
   const [assignEnd, setAssignEnd] = useState('');
@@ -236,8 +237,14 @@ export function TeamsPage() {
   const CAPACITY_BASELINE = 40;
   const capacityByUser = useMemo(
     () => {
+      // Only count assignments active today: started on/before today, and not
+      // yet ended (open-ended assignments count as active).
+      const today = new Date().toLocaleDateString('en-CA'); // yyyy-mm-dd, local
+      const isActive = (a: TeamAssignment) =>
+        (!a.startDate || a.startDate <= today) && (!a.endDate || a.endDate >= today);
       const totals = new Map<string, number>();
       for (const a of assignments) {
+        if (!isActive(a)) continue;
         totals.set(a.who, (totals.get(a.who) || 0) + (Number(a.capacitySpPerWeek) || 0));
       }
       return Array.from(totals.entries())
@@ -249,7 +256,7 @@ export function TeamsPage() {
 
   const openAddAssignment = () => {
     setAssignEditId(null);
-    setAssignWho(''); setAssignTeamId(''); setAssignCapacity(''); setAssignStart(''); setAssignEnd('');
+    setAssignWho(''); setAssignTeamId(''); setAssignSelf(false); setAssignCapacity(''); setAssignStart(''); setAssignEnd('');
     setAssignError(null);
     setShowAssignModal(true);
   };
@@ -258,6 +265,7 @@ export function TeamsPage() {
     setAssignEditId(a.id);
     setAssignWho(a.who);
     setAssignTeamId(a.teamId);
+    setAssignSelf(!!a.isSelf);
     setAssignCapacity(a.capacitySpPerWeek != null ? String(a.capacitySpPerWeek) : '');
     setAssignStart(a.startDate || '');
     setAssignEnd(a.endDate || '');
@@ -268,12 +276,13 @@ export function TeamsPage() {
   const saveAssignment = async () => {
     setAssignError(null);
     if (!assignWho) { setAssignError('Select who is assigned.'); return; }
-    if (!assignTeamId) { setAssignError('Select a team.'); return; }
+    if (!assignSelf && !assignTeamId) { setAssignError('Select a team, or mark this as self capacity.'); return; }
     if (!assignStart) { setAssignError('Start date is required.'); return; }
     if (assignEnd && assignEnd < assignStart) { setAssignError('End date cannot be before the start date.'); return; }
     const body = {
       who: assignWho,
-      teamId: assignTeamId,
+      teamId: assignSelf ? '' : assignTeamId,
+      isSelf: assignSelf,
       capacitySpPerWeek: assignCapacity === '' ? 0 : Number(assignCapacity),
       startDate: assignStart,
       endDate: assignEnd || '',
@@ -441,7 +450,7 @@ export function TeamsPage() {
             </div>
           </button>
           {isAdmin && (
-            <Button onClick={openAddAssignment} disabled={orgTeams.length === 0}>+ Add Assignment</Button>
+            <Button onClick={openAddAssignment}>+ Add Assignment</Button>
           )}
         </div>
 
@@ -466,7 +475,11 @@ export function TeamsPage() {
                 {sortedAssignments.map(a => (
                   <tr key={a.id} className="group border-b border-gray-100 hover:bg-gray-50">
                     <td className="py-2 px-4 text-gray-900">{getLeadName(a.who) || a.who}</td>
-                    <td className="py-2 px-4 text-gray-700">{teamName(a.teamId)}</td>
+                    <td className="py-2 px-4 text-gray-700">
+                      {a.isSelf
+                        ? <span className="inline-flex items-center px-2 py-0.5 text-xs rounded bg-indigo-50 border border-indigo-200 text-indigo-700">Self (individual)</span>
+                        : teamName(a.teamId)}
+                    </td>
                     <td className="py-2 px-4 text-gray-700">{a.capacitySpPerWeek}</td>
                     <td className="py-2 px-4 text-gray-700 whitespace-nowrap">{fmtDate(a.startDate)}</td>
                     <td className="py-2 px-4 text-gray-500 whitespace-nowrap">{fmtDate(a.endDate)}</td>
@@ -501,7 +514,7 @@ export function TeamsPage() {
           </svg>
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Capacity Assigned by Individual</h2>
-            <p className="text-sm text-gray-500 mt-1">Total SP/week assigned per person, as a % of {CAPACITY_BASELINE} SP/week</p>
+            <p className="text-sm text-gray-500 mt-1">Total SP/week from currently active assignments, as a % of {CAPACITY_BASELINE} SP/week</p>
           </div>
         </button>
         {showCapacity && (capacityByUser.length === 0 ? (
@@ -709,14 +722,24 @@ export function TeamsPage() {
               ))}
             </select>
           </div>
+          <label className="flex items-center gap-2 text-sm text-gray-600">
+            <input
+              type="checkbox"
+              checked={assignSelf}
+              onChange={(e) => { setAssignSelf(e.target.checked); if (e.target.checked) setAssignTeamId(''); }}
+              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            Self / individual capacity (not tied to a team)
+          </label>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Team</label>
             <select
               value={assignTeamId}
               onChange={(e) => setAssignTeamId(e.target.value)}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={assignSelf}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-400"
             >
-              <option value="">— Select a team —</option>
+              <option value="">{assignSelf ? '— Self (no team) —' : '— Select a team —'}</option>
               {renderTeamOptions(undefined, 0)}
             </select>
           </div>

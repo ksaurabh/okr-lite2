@@ -2324,9 +2324,9 @@ app.get('/api/assignments', requireAuth, (req, res) => {
 app.post('/api/assignments', requireAuth, (req, res) => {
   const org = getOrganizationByDomain(req.user.domain);
   if (!org) return res.status(403).json({ error: 'No organization found' });
-  const { who, teamId, capacitySpPerWeek, startDate, endDate } = req.body || {};
-  if (!who || !teamId || !startDate) {
-    return res.status(400).json({ error: 'who, teamId, and startDate are required' });
+  const { who, teamId, isSelf, capacitySpPerWeek, startDate, endDate } = req.body || {};
+  if (!who || !startDate || (!isSelf && !teamId)) {
+    return res.status(400).json({ error: 'who, startDate, and either a team or isSelf are required' });
   }
   const data = getOKRData();
   data.assignments = data.assignments || [];
@@ -2335,7 +2335,8 @@ app.post('/api/assignments', requireAuth, (req, res) => {
     id: generateId(),
     orgId: org.id,
     who,
-    teamId,
+    teamId: isSelf ? '' : teamId,
+    isSelf: !!isSelf,
     capacitySpPerWeek: Number(capacitySpPerWeek) || 0,
     startDate,
     endDate: endDate || undefined,
@@ -2355,10 +2356,12 @@ app.put('/api/assignments/:id', requireAuth, (req, res) => {
   data.assignments = data.assignments || [];
   const idx = data.assignments.findIndex(a => a.id === req.params.id && a.orgId === org.id);
   if (idx === -1) return res.status(404).json({ error: 'Assignment not found' });
-  const { who, teamId, capacitySpPerWeek, startDate, endDate } = req.body || {};
+  const { who, teamId, isSelf, capacitySpPerWeek, startDate, endDate } = req.body || {};
   const next = { ...data.assignments[idx] };
   if (typeof who === 'string' && who) next.who = who;
-  if (typeof teamId === 'string' && teamId) next.teamId = teamId;
+  if (typeof isSelf === 'boolean') next.isSelf = isSelf;
+  if (typeof teamId === 'string') next.teamId = teamId;
+  if (next.isSelf) next.teamId = '';
   if (capacitySpPerWeek !== undefined) next.capacitySpPerWeek = Number(capacitySpPerWeek) || 0;
   if (typeof startDate === 'string' && startDate) next.startDate = startDate;
   if ('endDate' in (req.body || {})) next.endDate = endDate || undefined;
