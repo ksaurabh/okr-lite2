@@ -122,6 +122,7 @@ export function TeamsPage() {
 
   const [showAllTeams, setShowAllTeams] = useState(true);
   const [showAssignments, setShowAssignments] = useState(true);
+  const [showCapacity, setShowCapacity] = useState(true);
 
   const teams = useOKRStore((s: OKRStore) => s.teams);
   const addTeam = useOKRStore((s: OKRStore) => s.addTeam);
@@ -228,6 +229,21 @@ export function TeamsPage() {
       return an.localeCompare(bn) || (a.startDate || '').localeCompare(b.startDate || '');
     }),
     // getLeadName depends on orgUsers; recompute when either changes
+    [assignments, orgUsers] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  // Total capacity assigned per individual, and that total as a % of a 40 SP/week baseline.
+  const CAPACITY_BASELINE = 40;
+  const capacityByUser = useMemo(
+    () => {
+      const totals = new Map<string, number>();
+      for (const a of assignments) {
+        totals.set(a.who, (totals.get(a.who) || 0) + (Number(a.capacitySpPerWeek) || 0));
+      }
+      return Array.from(totals.entries())
+        .map(([who, total]) => ({ who, name: getLeadName(who) || who, total, pct: Math.round((total / CAPACITY_BASELINE) * 100) }))
+        .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+    },
     [assignments, orgUsers] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
@@ -468,6 +484,56 @@ export function TeamsPage() {
                     )}
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
+      </div>
+
+      {/* Capacity Assigned by Individual */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+        <button
+          onClick={() => setShowCapacity(v => !v)}
+          className={`w-full p-4 ${showCapacity ? 'border-b border-gray-200' : ''} flex items-center gap-2 text-left`}
+        >
+          <svg className={`w-4 h-4 text-gray-400 transition-transform ${showCapacity ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Capacity Assigned by Individual</h2>
+            <p className="text-sm text-gray-500 mt-1">Total SP/week assigned per person, as a % of {CAPACITY_BASELINE} SP/week</p>
+          </div>
+        </button>
+        {showCapacity && (capacityByUser.length === 0 ? (
+          <div className="p-8 text-center text-sm text-gray-500">No assignments yet.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200">
+                  <th className="py-2 px-4">Who</th>
+                  <th className="py-2 px-4 whitespace-nowrap">Capacity assigned (SP/week)</th>
+                  <th className="py-2 px-4 w-1/2">% of {CAPACITY_BASELINE}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {capacityByUser.map(row => {
+                  const over = row.pct > 100;
+                  return (
+                    <tr key={row.who} className="border-b border-gray-100 hover:bg-gray-50">
+                      <td className="py-2 px-4 text-gray-900">{row.name}</td>
+                      <td className="py-2 px-4 text-gray-700">{row.total}</td>
+                      <td className="py-2 px-4">
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-2 bg-gray-100 rounded overflow-hidden max-w-xs">
+                            <div className={`h-full ${over ? 'bg-red-500' : 'bg-blue-500'}`} style={{ width: `${Math.min(100, row.pct)}%` }} />
+                          </div>
+                          <span className={`text-xs font-medium ${over ? 'text-red-600' : 'text-gray-600'}`}>{row.pct}%</span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
