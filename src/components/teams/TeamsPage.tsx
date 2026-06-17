@@ -123,6 +123,7 @@ export function TeamsPage() {
   const [showAllTeams, setShowAllTeams] = useState(true);
   const [showAssignments, setShowAssignments] = useState(true);
   const [showCapacity, setShowCapacity] = useState(true);
+  const [asOfDate, setAsOfDate] = useState<string>(() => new Date().toLocaleDateString('en-CA'));
 
   const teams = useOKRStore((s: OKRStore) => s.teams);
   const addTeam = useOKRStore((s: OKRStore) => s.addTeam);
@@ -237,11 +238,11 @@ export function TeamsPage() {
   const CAPACITY_BASELINE = 40;
   const capacityByUser = useMemo(
     () => {
-      // Only count assignments active today: started on/before today, and not
-      // yet ended (open-ended assignments count as active).
-      const today = new Date().toLocaleDateString('en-CA'); // yyyy-mm-dd, local
+      // Only count assignments active as of the selected date: started on/before
+      // it, and not yet ended (open-ended assignments count as active).
+      const ref = asOfDate || new Date().toLocaleDateString('en-CA'); // yyyy-mm-dd
       const isActive = (a: TeamAssignment) =>
-        (!a.startDate || a.startDate <= today) && (!a.endDate || a.endDate >= today);
+        (!a.startDate || a.startDate <= ref) && (!a.endDate || a.endDate >= ref);
       const totals = new Map<string, number>();
       for (const a of assignments) {
         if (!isActive(a)) continue;
@@ -251,7 +252,7 @@ export function TeamsPage() {
         .map(([who, total]) => ({ who, name: getLeadName(who) || who, total, pct: Math.round((total / CAPACITY_BASELINE) * 100) }))
         .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
     },
-    [assignments, orgUsers] // eslint-disable-line react-hooks/exhaustive-deps
+    [assignments, orgUsers, asOfDate] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   const openAddAssignment = () => {
@@ -505,18 +506,26 @@ export function TeamsPage() {
 
       {/* Capacity Assigned by Individual */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <button
-          onClick={() => setShowCapacity(v => !v)}
-          className={`w-full p-4 ${showCapacity ? 'border-b border-gray-200' : ''} flex items-center gap-2 text-left`}
-        >
-          <svg className={`w-4 h-4 text-gray-400 transition-transform ${showCapacity ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">Capacity Assigned by Individual</h2>
-            <p className="text-sm text-gray-500 mt-1">Total SP/week from currently active assignments, as a % of {CAPACITY_BASELINE} SP/week</p>
-          </div>
-        </button>
+        <div className={`p-4 ${showCapacity ? 'border-b border-gray-200' : ''} flex items-center justify-between gap-3`}>
+          <button onClick={() => setShowCapacity(v => !v)} className="flex items-center gap-2 text-left min-w-0">
+            <svg className={`w-4 h-4 text-gray-400 transition-transform flex-shrink-0 ${showCapacity ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+            <div className="min-w-0">
+              <h2 className="text-lg font-semibold text-gray-900">Capacity Assigned by Individual</h2>
+              <p className="text-sm text-gray-500 mt-1">Total SP/week from assignments active as of the selected date, as a % of {CAPACITY_BASELINE} SP/week</p>
+            </div>
+          </button>
+          <label className="flex items-center gap-2 text-sm text-gray-600 flex-shrink-0">
+            As of
+            <input
+              type="date"
+              value={asOfDate}
+              onChange={(e) => setAsOfDate(e.target.value || new Date().toLocaleDateString('en-CA'))}
+              className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </label>
+        </div>
         {showCapacity && (capacityByUser.length === 0 ? (
           <div className="p-8 text-center text-sm text-gray-500">No assignments yet.</div>
         ) : (
