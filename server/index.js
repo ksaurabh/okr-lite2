@@ -2265,6 +2265,8 @@ app.post('/api/teams', requireAuth, (req, res) => {
     orgId: org.id,
     createdBy: req.user.email,
   };
+  // Self (individual contributor) teams cannot have other members.
+  if (newTeam.type === 'self') newTeam.memberEmails = [];
 
   data.teams.push(newTeam);
   saveOKRData(data);
@@ -2285,6 +2287,8 @@ app.put('/api/teams/:id', requireAuth, (req, res) => {
   }
 
   data.teams[index] = { ...data.teams[index], ...req.body };
+  // Self (individual contributor) teams cannot have other members.
+  if (data.teams[index].type === 'self') data.teams[index].memberEmails = [];
   saveOKRData(data);
   res.json(data.teams[index]);
 });

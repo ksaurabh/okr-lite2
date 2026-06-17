@@ -100,6 +100,8 @@ export interface Team {
   parentId?: string;
   leadEmail?: string;
   memberEmails?: string[];
+  // 'self' marks an individual-contributor team that cannot have other members.
+  type?: 'self' | 'standard';
 }
 
 export type PeriodType = 'quarter' | 'month' | 'week' | 'oneoff';

@@ -51,6 +51,9 @@ function TeamRow({ team, teams, depth, isAdmin, leadName, memberNames, onAddChil
           {memberNames.length > 0 && (
             <span className="text-xs text-gray-500 truncate" title={memberNames.join(', ')}>· {memberNames.length} {memberNames.length === 1 ? 'member' : 'members'}: {memberNames.slice(0, 3).join(', ')}{memberNames.length > 3 ? ` +${memberNames.length - 3}` : ''}</span>
           )}
+          {team.type === 'self' && (
+            <span className="text-[10px] uppercase tracking-wide text-indigo-500 ml-2">individual</span>
+          )}
           {team.shared === false && (
             <span className="text-[10px] uppercase tracking-wide text-gray-400 ml-2">private</span>
           )}
@@ -138,12 +141,14 @@ export function TeamsPage() {
   const [parentTeamId, setParentTeamId] = useState<string | undefined>(undefined);
   const [newTeamName, setNewTeamName] = useState('');
   const [isPrivate, setIsPrivate] = useState(false);
+  const [isSelf, setIsSelf] = useState(false);
 
   const [editTarget, setEditTarget] = useState<Team | null>(null);
   const [editName, setEditName] = useState('');
   const [editLeadEmail, setEditLeadEmail] = useState<string>('');
   const [editParentId, setEditParentId] = useState<string>('');
   const [editMemberEmails, setEditMemberEmails] = useState<string[]>([]);
+  const [editIsSelf, setEditIsSelf] = useState(false);
   const [memberSearch, setMemberSearch] = useState('');
   const [orgUsers, setOrgUsers] = useState<User[]>([]);
 
@@ -199,6 +204,17 @@ export function TeamsPage() {
   useEffect(() => { loadAssignments(); }, []);
 
   const teamName = (id: string): string => orgTeams.find(t => t.id === id)?.name || '(deleted team)';
+
+  // Hierarchical <option> list (indented by depth) for the assignment team picker.
+  const visibleTeamIds = useMemo(() => new Set(orgTeams.map(t => t.id)), [orgTeams]);
+  const renderTeamOptions = (parentId: string | undefined, depth: number): React.ReactNode[] =>
+    orgTeams
+      .filter(t => depth === 0 ? (!t.parentId || !visibleTeamIds.has(t.parentId)) : t.parentId === parentId)
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .flatMap(t => [
+        <option key={t.id} value={t.id}>{`${'  '.repeat(depth)}${depth > 0 ? '↳ ' : ''}${t.name}`}</option>,
+        ...renderTeamOptions(t.id, depth + 1),
+      ]);
   const fmtDate = (d?: string): string => {
     if (!d) return '—';
     const dt = new Date(`${d}T00:00:00`);
@@ -276,12 +292,13 @@ export function TeamsPage() {
     setParentTeamId(parentId);
     setNewTeamName('');
     setIsPrivate(false);
+    setIsSelf(false);
     setShowAddModal(true);
   };
 
   const handleAdd = async () => {
     if (!newTeamName.trim()) return;
-    await addTeam({ name: newTeamName.trim(), parentId: parentTeamId }, { orgId, userEmail, shared: !isPrivate });
+    await addTeam({ name: newTeamName.trim(), parentId: parentTeamId, type: isSelf ? 'self' : undefined }, { orgId, userEmail, shared: !isPrivate });
     setShowAddModal(false);
   };
 
@@ -291,6 +308,7 @@ export function TeamsPage() {
     setEditLeadEmail(team.leadEmail || '');
     setEditParentId(team.parentId || '');
     setEditMemberEmails(team.memberEmails || []);
+    setEditIsSelf(team.type === 'self');
     setMemberSearch('');
   };
 
@@ -320,10 +338,17 @@ export function TeamsPage() {
     if (newLead !== editTarget.leadEmail) updates.leadEmail = newLead;
     const newParent = editParentId || undefined;
     if (newParent !== editTarget.parentId) updates.parentId = newParent;
-    const prevMembers = [...(editTarget.memberEmails || [])].sort();
-    const nextMembers = [...editMemberEmails].sort();
-    if (prevMembers.length !== nextMembers.length || prevMembers.some((e, i) => e !== nextMembers[i])) {
-      updates.memberEmails = editMemberEmails;
+    const prevIsSelf = editTarget.type === 'self';
+    if (editIsSelf !== prevIsSelf) updates.type = editIsSelf ? 'self' : 'standard';
+    if (editIsSelf) {
+      // Self (individual contributor) teams cannot have other members.
+      if ((editTarget.memberEmails || []).length > 0) updates.memberEmails = [];
+    } else {
+      const prevMembers = [...(editTarget.memberEmails || [])].sort();
+      const nextMembers = [...editMemberEmails].sort();
+      if (prevMembers.length !== nextMembers.length || prevMembers.some((e, i) => e !== nextMembers[i])) {
+        updates.memberEmails = editMemberEmails;
+      }
     }
     if (Object.keys(updates).length > 0) {
       await updateTeam(editTarget.id, updates);
@@ -473,6 +498,15 @@ export function TeamsPage() {
             />
             Private (only visible to me)
           </label>
+          <label className="flex items-center gap-2 text-sm text-gray-600">
+            <input
+              type="checkbox"
+              checked={isSelf}
+              onChange={(e) => setIsSelf(e.target.checked)}
+              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            Self (individual contributor) — no other members
+          </label>
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setShowAddModal(false)}>Cancel</Button>
             <Button onClick={handleAdd}>{parentTeamId ? 'Add Sub-team' : 'Add Team'}</Button>
@@ -518,6 +552,20 @@ export function TeamsPage() {
               ))}
             </select>
           </div>
+          <label className="flex items-center gap-2 text-sm text-gray-600">
+            <input
+              type="checkbox"
+              checked={editIsSelf}
+              onChange={(e) => { setEditIsSelf(e.target.checked); if (e.target.checked) setEditMemberEmails([]); }}
+              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            Self (individual contributor) — no other members
+          </label>
+          {editIsSelf ? (
+            <div className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded px-3 py-2">
+              Individual contributor — no other members can be assigned to this team.
+            </div>
+          ) : (
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Members ({editMemberEmails.length})</label>
             {editMemberEmails.length > 0 && (
@@ -572,6 +620,7 @@ export function TeamsPage() {
               )}
             </div>
           </div>
+          )}
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setEditTarget(null)}>Cancel</Button>
             <Button onClick={handleEditSave}>Save</Button>
@@ -602,9 +651,7 @@ export function TeamsPage() {
               className="w-full border border-gray-300 rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="">— Select a team —</option>
-              {[...orgTeams].sort((a, b) => a.name.localeCompare(b.name)).map(t => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
+              {renderTeamOptions(undefined, 0)}
             </select>
           </div>
           <div>
