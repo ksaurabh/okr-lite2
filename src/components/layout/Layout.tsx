@@ -2,7 +2,7 @@ import { useState, useCallback, type ReactNode } from 'react';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 
-type View = 'objectives' | 'checklist' | 'progress' | 'updates' | 'lists' | 'logwork' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin';
+type View = 'objectives' | 'agent' | 'checklist' | 'progress' | 'updates' | 'lists' | 'logwork' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin';
 
 const SIDEBAR_COLLAPSED_KEY = 'okr-sidebar-collapsed';
 
