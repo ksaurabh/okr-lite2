@@ -1619,7 +1619,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
               <>
               <div ref={listPlanSplitRef} className="flex relative" style={{ height: listPlanTotalHeight }}>
                 {!planTopLevel && (
-                <div className="border border-gray-200 rounded-lg overflow-y-auto bg-white" style={{ width: `${listPlanLeftWidth}%` }}>
+                <div className="min-w-0 border border-gray-200 rounded-lg overflow-y-auto bg-white" style={{ width: `${listPlanLeftWidth}%` }}>
                   <div className="px-3 py-2 border-b border-gray-100 flex items-center gap-2 bg-gray-50">
                     <span className="text-xs font-semibold text-gray-700 truncate flex-1" title={selectedList.name}>Parent/Current Plan ({selectedList.name})</span>
                     {(() => {
@@ -1942,7 +1942,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                   title="Drag to resize"
                 />
                 )}
-                <div ref={rightStackRef} className="flex flex-col-reverse" style={{ width: `${planTopLevel ? 100 : 100 - listPlanLeftWidth}%`, height: '100%' }}>
+                <div ref={rightStackRef} className="min-w-0 flex flex-col-reverse" style={{ width: `${planTopLevel ? 100 : 100 - listPlanLeftWidth}%`, height: '100%' }}>
                 {showObjectiveTree && (
                 <div className="min-w-0 border border-gray-200 rounded-lg overflow-auto bg-white" style={{ width: '100%', height: `${100 - listPlanRightTopHeight}%` }}>
                   {planTopLevel ? (
@@ -2675,7 +2675,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                   title="Drag to resize"
                 />
                 )}
-                <div className="border border-gray-200 rounded-lg overflow-y-auto bg-white flex flex-col" style={{ width: '100%', height: showObjectiveTree ? `${listPlanRightTopHeight}%` : '100%' }}>
+                <div className="min-w-0 border border-gray-200 rounded-lg overflow-y-auto bg-white flex flex-col" style={{ width: '100%', height: showObjectiveTree ? `${listPlanRightTopHeight}%` : '100%' }}>
                   {(planTopLevel || planSelectedChildListId) ? (() => {
                     const child = planTopLevel ? selectedList : lists.find(l => l.id === planSelectedChildListId);
                     if (!child) {
