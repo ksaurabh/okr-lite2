@@ -257,6 +257,22 @@ function generateListId() {
   return `list-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 }
 
+// Helper functions for per-user Agent chat sessions
+function getUserAgentSessions(email) {
+  const users = getUsers();
+  const user = users.find(u => u.email === email);
+  return user?.agentSessions || [];
+}
+
+function saveUserAgentSessions(email, sessions) {
+  const users = getUsers();
+  const userIndex = users.findIndex(u => u.email === email);
+  if (userIndex === -1) return null;
+  users[userIndex].agentSessions = sessions;
+  saveUsers(users);
+  return users[userIndex].agentSessions;
+}
+
 // Cap on retained plan-history entries per list, to keep the user record lean.
 const LIST_HISTORY_LIMIT = 1000;
 
@@ -1851,6 +1867,44 @@ app.put('/api/users/me/lists/:listId/reorder', requireAuth, (req, res) => {
 
   const savedLists = saveUserLists(req.user.email, lists);
   res.json({ list: lists[listIndex], lists: savedLists });
+});
+
+// ============ Agent Sessions API Routes ============
+
+app.get('/api/users/me/agent-sessions', requireAuth, (req, res) => {
+  res.json({ sessions: getUserAgentSessions(req.user.email) });
+});
+
+app.post('/api/users/me/agent-sessions', requireAuth, (req, res) => {
+  const { title, transcript, state } = req.body || {};
+  const sessions = getUserAgentSessions(req.user.email);
+  const now = new Date().toISOString();
+  const session = {
+    id: `as-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    title: typeof title === 'string' && title.trim() ? title : 'New chat',
+    archived: false,
+    transcript: Array.isArray(transcript) ? transcript : [],
+    state: state && typeof state === 'object' ? state : {},
+    createdAt: now,
+    updatedAt: now,
+  };
+  sessions.unshift(session);
+  saveUserAgentSessions(req.user.email, sessions);
+  res.json({ session });
+});
+
+app.put('/api/users/me/agent-sessions/:id', requireAuth, (req, res) => {
+  const sessions = getUserAgentSessions(req.user.email);
+  const idx = sessions.findIndex(s => s.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Session not found' });
+  const { title, transcript, state, archived } = req.body || {};
+  if (typeof title === 'string') sessions[idx].title = title;
+  if (Array.isArray(transcript)) sessions[idx].transcript = transcript;
+  if (state && typeof state === 'object') sessions[idx].state = state;
+  if (typeof archived === 'boolean') sessions[idx].archived = archived;
+  sessions[idx].updatedAt = new Date().toISOString();
+  saveUserAgentSessions(req.user.email, sessions);
+  res.json({ session: sessions[idx] });
 });
 
 // ============ Work Logs API Routes ============

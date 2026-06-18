@@ -4,12 +4,36 @@ import { useAuth } from '../../context/AuthContext';
 import type { List, User } from '../../types';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
+const SESSIONS_URL = `${API_URL}/api/users/me/agent-sessions`;
 
 type Step = 'root' | 'user' | 'durationType' | 'duration' | 'result' | 'vpEach' | 'vpPick' | 'vpItem';
 
-interface Entry {
-  role: 'agent' | 'user';
-  content: React.ReactNode;
+// Serializable chat messages (so sessions can be persisted and resumed).
+type Msg =
+  | { role: 'user'; kind: 'text'; text: string }
+  | { role: 'agent'; kind: 'text'; text: string; tone?: 'error' }
+  | { role: 'agent'; kind: 'menu'; title: string; options: string[]; baseCount: number }
+  | { role: 'agent'; kind: 'plan'; planName: string; who: string; period: string; items: { title: string; vp: number; missing?: boolean }[]; total: number }
+  | { role: 'agent'; kind: 'children'; parent: string; items: { title: string; vp: number }[] };
+
+interface SessionState {
+  step: Step;
+  selectedUserId: string;
+  durationType: string;
+  resultPeriodId: string;
+  resultObjectiveIds: string[];
+  vpTargetId: string;
+  vpEachIndex: number;
+}
+
+interface AgentSession {
+  id: string;
+  title: string;
+  archived: boolean;
+  transcript: Msg[];
+  state: SessionState;
+  createdAt: string;
+  updatedAt: string;
 }
 
 const ROOT_OPTIONS = ['Set my OKRs'];
@@ -19,11 +43,9 @@ const DURATION_TYPES = [
   { label: 'Weekly', type: 'week' },
 ] as const;
 const RESULT_ACTIONS = ['Update VP on every item', 'Update VP on a selected item'];
-
 const BACK_LABEL = 'Go back';
 const RESTART_LABEL = 'Start over';
 
-// Which step "Go back" returns to from each step.
 const PREV: Record<Step, Step> = {
   root: 'root',
   user: 'root',
@@ -35,8 +57,16 @@ const PREV: Record<Step, Step> = {
   vpItem: 'vpPick',
 };
 
-// Steps where the typed input is a free value (the VP number) rather than a menu index.
 const VALUE_STEPS: Step[] = ['vpEach', 'vpItem'];
+
+const menuMsg = (title: string, baseOpts: string[]): Msg => ({ role: 'agent', kind: 'menu', title, options: [...baseOpts, BACK_LABEL, RESTART_LABEL], baseCount: baseOpts.length });
+const textMsg = (text: string, tone?: 'error'): Msg => ({ role: 'agent', kind: 'text', text, ...(tone ? { tone } : {}) });
+const userMsg = (text: string): Msg => ({ role: 'user', kind: 'text', text });
+const planMsg = (planName: string, who: string, period: string, items: { title: string; vp: number; missing?: boolean }[], total: number): Msg => ({ role: 'agent', kind: 'plan', planName, who, period, items, total });
+const childrenMsg = (parent: string, items: { title: string; vp: number }[]): Msg => ({ role: 'agent', kind: 'children', parent, items });
+
+const rootPromptMsg = (): Msg => menuMsg("Hi — I'm your OKR agent. Type the number of an option:", ROOT_OPTIONS);
+const initialState = (): SessionState => ({ step: 'root', selectedUserId: '', durationType: '', resultPeriodId: '', resultObjectiveIds: [], vpTargetId: '', vpEachIndex: 0 });
 
 function fmtDate(d?: string): string {
   if (!d) return '';
@@ -44,9 +74,84 @@ function fmtDate(d?: string): string {
   return isNaN(dt.getTime()) ? d : dt.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
+function fmtDateTime(iso?: string): string {
+  if (!iso) return '';
+  const dt = new Date(iso);
+  return isNaN(dt.getTime()) ? '' : dt.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
 function periodLabel(p: { name: string; startDate?: string; endDate?: string }): string {
   const range = [fmtDate(p.startDate), fmtDate(p.endDate)].filter(Boolean).join(' – ');
   return range ? `${p.name} (${range})` : p.name;
+}
+
+function renderMsg(m: Msg): React.ReactNode {
+  if (m.role === 'user') return <>{m.text}</>;
+  switch (m.kind) {
+    case 'text':
+      return <span className={m.tone === 'error' ? 'text-red-600' : undefined}>{m.text}</span>;
+    case 'menu':
+      return (
+        <div>
+          <p className="mb-1">{m.title}</p>
+          <ol className="space-y-0.5">
+            {m.options.map((o, i) => (
+              <li key={i} className={i >= m.baseCount ? 'text-gray-500' : undefined}>
+                <span className="text-gray-400 tabular-nums">{i + 1}.</span> {o}
+              </li>
+            ))}
+          </ol>
+        </div>
+      );
+    case 'plan':
+      return (
+        <div>
+          <p>
+            Plan <span className="font-medium">{m.planName}</span> for <span className="font-medium">{m.who}</span> · <span className="font-medium">{m.period}</span>
+            {' '}— {m.items.length} {m.items.length === 1 ? 'item' : 'items'}:
+          </p>
+          {m.items.length > 0 ? (
+            <table className="mt-2 text-sm">
+              <tbody>
+                {m.items.map((it, i) => (
+                  <tr key={i} className="border-b border-gray-100 last:border-0">
+                    <td className="py-1 pr-4 text-gray-400 tabular-nums align-top">{i + 1}.</td>
+                    <td className="py-1 pr-6 text-gray-800">{it.title}{it.missing && <span className="text-gray-400"> (not visible)</span>}</td>
+                    <td className="py-1 text-gray-600 tabular-nums whitespace-nowrap">{it.vp} VP</td>
+                  </tr>
+                ))}
+                <tr>
+                  <td></td>
+                  <td className="py-1 pr-6 font-medium text-gray-800">Total</td>
+                  <td className="py-1 font-medium text-gray-800 tabular-nums whitespace-nowrap">{m.total} VP</td>
+                </tr>
+              </tbody>
+            </table>
+          ) : (
+            <p className="text-gray-500 mt-1">This plan has no items yet.</p>
+          )}
+        </div>
+      );
+    case 'children':
+      return (
+        <div>
+          <p>Children of "{m.parent}" ({m.items.length}):</p>
+          <table className="mt-1 text-sm">
+            <tbody>
+              {m.items.map((c, i) => (
+                <tr key={i} className="border-b border-gray-100 last:border-0">
+                  <td className="py-1 pr-4 text-gray-400 tabular-nums align-top">{i + 1}.</td>
+                  <td className="py-1 pr-6 text-gray-800">{c.title}</td>
+                  <td className="py-1 text-gray-600 tabular-nums whitespace-nowrap">{c.vp} VP</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    default:
+      return null;
+  }
 }
 
 export function AgentPage() {
@@ -60,6 +165,11 @@ export function AgentPage() {
   const updateObjective = useOKRStore((s: OKRStore) => s.updateObjective);
 
   const [orgUsers, setOrgUsers] = useState<User[]>([]);
+  const [sessions, setSessions] = useState<AgentSession[]>([]);
+  const [activeId, setActiveId] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
+  const [sessionTitle, setSessionTitle] = useState('New chat');
+
   const [step, setStep] = useState<Step>('root');
   const [selectedUserId, setSelectedUserId] = useState('');
   const [durationType, setDurationType] = useState<string>('');
@@ -68,7 +178,7 @@ export function AgentPage() {
   const [vpTargetId, setVpTargetId] = useState('');
   const [vpEachIndex, setVpEachIndex] = useState(0);
   const [input, setInput] = useState('');
-  const [transcript, setTranscript] = useState<Entry[]>([]);
+  const [transcript, setTranscript] = useState<Msg[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const usersSorted = useMemo(
@@ -85,8 +195,6 @@ export function AgentPage() {
     return Array.from(byId.values());
   }, [lists, sharedPlans]);
 
-  // Durations of the given type that are still active or start in the future
-  // (not already ended). Periods with no end date are treated as ongoing.
   const periodsOfType = (type: string) => {
     const today = new Date().toLocaleDateString('en-CA'); // yyyy-mm-dd, local
     return periodsSorted.filter(p => p.type === type && (!p.endDate || p.endDate >= today));
@@ -106,42 +214,15 @@ export function AgentPage() {
     return `${o?.title || id} — ${o?.valuePoints ?? 0} VP`;
   };
 
-  // Renders a menu prompt: domain options, then "Go back" and "Start over",
-  // numbered continuously so the user can type any of them.
-  const optionsNode = (title: string, baseOpts: string[]) => {
-    const all = [...baseOpts, BACK_LABEL, RESTART_LABEL];
-    return (
-      <div>
-        <p className="mb-1">{title}</p>
-        <ol className="space-y-0.5">
-          {all.map((o, i) => (
-            <li key={i} className={i >= baseOpts.length ? 'text-gray-500' : undefined}>
-              <span className="text-gray-400 tabular-nums">{i + 1}.</span> {o}
-            </li>
-          ))}
-        </ol>
-      </div>
-    );
+  const userPrompt = () => menuMsg('Whose OKRs would you like to set? Type the number:', userOptions());
+  const durationTypePrompt = () => menuMsg('What kind of duration? Type the number:', durationTypeOptions());
+  const durationPrompt = (type: string) => menuMsg('For which duration? Type the number:', durationOptions(type));
+  const vpPickPrompt = () => menuMsg('Which item? Type the number:', resultObjectiveIds.map(itemLabel));
+  const vpEachPrompt = (index: number): Msg => {
+    const o = useOKRStore.getState().objectives.find(x => x.id === resultObjectiveIds[index]);
+    return textMsg(`Item ${index + 1} of ${resultObjectiveIds.length} — type the value points for "${o?.title || resultObjectiveIds[index]}" (currently ${o?.valuePoints ?? 0} VP). (Type b to go back, s to start over, or c to see its children.)`);
   };
-
-  const rootPrompt = () => optionsNode("Hi — I'm your OKR agent. Type the number of an option:", ROOT_OPTIONS);
-  const userPrompt = () => optionsNode('Whose OKRs would you like to set? Type the number:', userOptions());
-  const durationTypePrompt = () => optionsNode('What kind of duration? Type the number:', durationTypeOptions());
-  const durationPrompt = (type: string) => optionsNode('For which duration? Type the number:', durationOptions(type));
-  const vpPickPrompt = () => optionsNode('Which item? Type the number:', resultObjectiveIds.map(itemLabel));
-  const vpEachPrompt = (index: number) => {
-    const id = resultObjectiveIds[index];
-    const o = useOKRStore.getState().objectives.find(x => x.id === id);
-    return (
-      <>
-        Item {index + 1} of {resultObjectiveIds.length} — type the value points for "{o?.title || id}" (currently {o?.valuePoints ?? 0} VP).
-        {' '}(Type <span className="font-medium">b</span> to go back, <span className="font-medium">s</span> to start over, or <span className="font-medium">c</span> to see its children.)
-      </>
-    );
-  };
-  const vpItemPrompt = (title: string) => (
-    <>Type the value points to set on "{title}". (Type <span className="font-medium">b</span> to go back, <span className="font-medium">s</span> to start over, or <span className="font-medium">c</span> to see its children.)</>
-  );
+  const vpItemPrompt = (title: string): Msg => textMsg(`Type the value points to set on "${title}". (Type b to go back, s to start over, or c to see its children.)`);
 
   const baseOptions = (s: Step): string[] => {
     switch (s) {
@@ -155,8 +236,62 @@ export function AgentPage() {
     }
   };
 
-  const appendAgent = (content: React.ReactNode) => setTranscript(t => [...t, { role: 'agent', content }]);
-  const appendUser = (content: React.ReactNode) => setTranscript(t => [...t, { role: 'user', content }]);
+  const appendAgent = (m: Msg) => setTranscript(t => [...t, m]);
+  const appendUser = (text: string) => setTranscript(t => [...t, userMsg(text)]);
+
+  // ---- Sessions ----
+  const loadSession = (s: AgentSession) => {
+    setActiveId(s.id);
+    setSessionTitle(s.title || 'New chat');
+    setTranscript(s.transcript || []);
+    const st = s.state || initialState();
+    setStep(st.step || 'root');
+    setSelectedUserId(st.selectedUserId || '');
+    setDurationType(st.durationType || '');
+    setResultPeriodId(st.resultPeriodId || '');
+    setResultObjectiveIds(st.resultObjectiveIds || []);
+    setVpTargetId(st.vpTargetId || '');
+    setVpEachIndex(st.vpEachIndex || 0);
+    setInput('');
+  };
+
+  const startNew = async () => {
+    try {
+      const res = await fetch(SESSIONS_URL, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'New chat', transcript: [rootPromptMsg()], state: initialState() }),
+      });
+      if (res.ok) {
+        const d = await res.json();
+        setSessions(prev => [d.session, ...prev]);
+        loadSession(d.session);
+      }
+    } catch { /* ignore */ }
+  };
+
+  const setArchived = async (id: string, archived: boolean) => {
+    try {
+      const res = await fetch(`${SESSIONS_URL}/${id}`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ archived }),
+      });
+      if (res.ok) {
+        const d = await res.json();
+        setSessions(prev => prev.map(s => (s.id === id ? d.session : s)));
+      }
+    } catch { /* ignore */ }
+    if (archived && id === activeId) {
+      const others = sessions
+        .filter(s => s.id !== id && !s.archived)
+        .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+      if (others.length) loadSession(others[0]);
+      else await startNew();
+    }
+  };
 
   useEffect(() => {
     fetchSharedPlans();
@@ -164,13 +299,49 @@ export function AgentPage() {
       .then(r => (r.ok ? r.json() : { users: [] }))
       .then(d => setOrgUsers(d.users || []))
       .catch(() => { /* ignore */ });
-    setTranscript([{ role: 'agent', content: rootPrompt() }]);
+    (async () => {
+      try {
+        const res = await fetch(SESSIONS_URL, { credentials: 'include' });
+        const d = res.ok ? await res.json() : { sessions: [] };
+        const all: AgentSession[] = d.sessions || [];
+        setSessions(all);
+        const active = all.filter(s => !s.archived).sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))[0];
+        if (active) loadSession(active);
+        else await startNew();
+      } catch {
+        await startNew();
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchSharedPlans]);
+  }, []);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [transcript]);
+
+  // Persist the active session (debounced) whenever its content/state changes.
+  useEffect(() => {
+    if (!activeId) return;
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`${SESSIONS_URL}/${activeId}`, {
+          method: 'PUT',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: sessionTitle,
+            transcript,
+            state: { step, selectedUserId, durationType, resultPeriodId, resultObjectiveIds, vpTargetId, vpEachIndex },
+          }),
+        });
+        if (res.ok) {
+          const d = await res.json();
+          setSessions(prev => prev.map(s => (s.id === activeId ? d.session : s)));
+        }
+      } catch { /* ignore */ }
+    }, 500);
+    return () => clearTimeout(t);
+  }, [transcript, step, selectedUserId, durationType, resultPeriodId, resultObjectiveIds, vpTargetId, vpEachIndex, sessionTitle, activeId]);
 
   const showPlanResult = (periodId: string) => {
     setResultPeriodId(periodId);
@@ -180,57 +351,30 @@ export function AgentPage() {
     const periodName = period ? periodLabel(period) : 'that duration';
     const plan = allPlans.find(p => p.ownerId === selectedUserId && p.periodId === periodId);
     const objs = useOKRStore.getState().objectives;
+    setSessionTitle(`${userName} · ${periodName}`);
 
     if (!plan) {
       setResultObjectiveIds([]);
-      appendAgent(<p>No plan is defined for <span className="font-medium">{userName}</span> for <span className="font-medium">{periodName}</span>.</p>);
-      appendAgent(optionsNode('What would you like to do next?', []));
+      appendAgent(textMsg(`No plan is defined for ${userName} for ${periodName}.`));
+      appendAgent(menuMsg('What would you like to do next?', []));
       return;
     }
 
-    const sortedItems = [...plan.items].sort((a, b) => a.order - b.order);
-    setResultObjectiveIds(sortedItems.map(it => it.objectiveId));
-    const items = sortedItems.map(it => {
+    const sorted = [...plan.items].sort((a, b) => a.order - b.order);
+    setResultObjectiveIds(sorted.map(it => it.objectiveId));
+    const items = sorted.map(it => {
       const obj = objs.find(o => o.id === it.objectiveId);
       return { title: obj?.title || it.objectiveId, vp: obj?.valuePoints ?? 0, missing: !obj };
     });
     const total = items.reduce((sum, i) => sum + i.vp, 0);
-
-    appendAgent(
-      <div>
-        <p>
-          Plan <span className="font-medium">{plan.name}</span> for <span className="font-medium">{userName}</span> · <span className="font-medium">{periodName}</span>
-          {' '}— {items.length} {items.length === 1 ? 'item' : 'items'}:
-        </p>
-        {items.length > 0 ? (
-          <table className="mt-2 text-sm">
-            <tbody>
-              {items.map((it, i) => (
-                <tr key={i} className="border-b border-gray-100 last:border-0">
-                  <td className="py-1 pr-4 text-gray-400 tabular-nums align-top">{i + 1}.</td>
-                  <td className="py-1 pr-6 text-gray-800">{it.title}{it.missing && <span className="text-gray-400"> (not visible)</span>}</td>
-                  <td className="py-1 text-gray-600 tabular-nums whitespace-nowrap">{it.vp} VP</td>
-                </tr>
-              ))}
-              <tr>
-                <td></td>
-                <td className="py-1 pr-6 font-medium text-gray-800">Total</td>
-                <td className="py-1 font-medium text-gray-800 tabular-nums whitespace-nowrap">{total} VP</td>
-              </tr>
-            </tbody>
-          </table>
-        ) : (
-          <p className="text-gray-500 mt-1">This plan has no items yet.</p>
-        )}
-      </div>
-    );
-    appendAgent(optionsNode('What would you like to do next?', items.length > 0 ? RESULT_ACTIONS : []));
+    appendAgent(planMsg(plan.name, userName, periodName, items, total));
+    appendAgent(menuMsg('What would you like to do next?', items.length > 0 ? RESULT_ACTIONS : []));
   };
 
   const showPromptFor = (s: Step) => {
     setStep(s);
     switch (s) {
-      case 'root': appendAgent(rootPrompt()); break;
+      case 'root': appendAgent(rootPromptMsg()); break;
       case 'user': appendAgent(userPrompt()); break;
       case 'durationType': appendAgent(durationTypePrompt()); break;
       case 'duration': appendAgent(durationPrompt(durationType)); break;
@@ -253,9 +397,9 @@ export function AgentPage() {
   const applyVp = async (ids: string[], v: number) => {
     try {
       for (const id of ids) await updateObjective(id, { valuePoints: v }, userEmail);
-      appendAgent(<>Set value points to <span className="font-medium">{v}</span> on {ids.length} {ids.length === 1 ? 'item' : 'items'}.</>);
+      appendAgent(textMsg(`Set value points to ${v} on ${ids.length} ${ids.length === 1 ? 'item' : 'items'}.`));
     } catch (err) {
-      appendAgent(<span className="text-red-600">Couldn't update value points: {err instanceof Error ? err.message : String(err)}</span>);
+      appendAgent(textMsg(`Couldn't update value points: ${err instanceof Error ? err.message : String(err)}`, 'error'));
     }
     setStep('result');
     showPlanResult(resultPeriodId);
@@ -267,14 +411,14 @@ export function AgentPage() {
     try {
       await updateObjective(id, { valuePoints: v }, userEmail);
     } catch (err) {
-      appendAgent(<span className="text-red-600">Couldn't update "{objTitle(id)}": {err instanceof Error ? err.message : String(err)}</span>);
+      appendAgent(textMsg(`Couldn't update "${objTitle(id)}": ${err instanceof Error ? err.message : String(err)}`, 'error'));
     }
     const next = vpEachIndex + 1;
     if (next < resultObjectiveIds.length) {
       setVpEachIndex(next);
       appendAgent(vpEachPrompt(next));
     } else {
-      appendAgent(<>Done — updated value points on all {resultObjectiveIds.length} {resultObjectiveIds.length === 1 ? 'item' : 'items'}.</>);
+      appendAgent(textMsg(`Done — updated value points on all ${resultObjectiveIds.length} ${resultObjectiveIds.length === 1 ? 'item' : 'items'}.`));
       setStep('result');
       showPlanResult(resultPeriodId);
     }
@@ -287,25 +431,10 @@ export function AgentPage() {
       .filter(o => o.parentId === id)
       .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.title.localeCompare(b.title));
     if (children.length === 0) {
-      appendAgent(<>"{parent?.title || id}" has no children.</>);
+      appendAgent(textMsg(`"${parent?.title || id}" has no children.`));
       return;
     }
-    appendAgent(
-      <div>
-        <p>Children of "{parent?.title || id}" ({children.length}):</p>
-        <table className="mt-1 text-sm">
-          <tbody>
-            {children.map((c, i) => (
-              <tr key={c.id} className="border-b border-gray-100 last:border-0">
-                <td className="py-1 pr-4 text-gray-400 tabular-nums align-top">{i + 1}.</td>
-                <td className="py-1 pr-6 text-gray-800">{c.title}</td>
-                <td className="py-1 text-gray-600 tabular-nums whitespace-nowrap">{c.valuePoints ?? 0} VP</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
+    appendAgent(childrenMsg(parent?.title || id, children.map(c => ({ title: c.title, vp: c.valuePoints ?? 0 }))));
   };
 
   const handleSubmit = () => {
@@ -314,11 +443,10 @@ export function AgentPage() {
     setInput('');
     appendUser(raw);
 
-    // Free value-entry steps: the input is the VP number (or a back/start command).
+    // Free value-entry steps: the input is the VP number (or a command).
     if (VALUE_STEPS.includes(step)) {
       const lower = raw.toLowerCase();
       if (lower === 'b' || lower === 'back') {
-        // In the per-item walk, "back" steps to the previous item first.
         if (step === 'vpEach' && vpEachIndex > 0) {
           const prev = vpEachIndex - 1;
           setVpEachIndex(prev);
@@ -332,14 +460,13 @@ export function AgentPage() {
       if (lower === 'c' || lower === 'children') {
         const curId = step === 'vpEach' ? resultObjectiveIds[vpEachIndex] : vpTargetId;
         showChildren(curId);
-        // Re-show the current prompt so the user can keep entering the value.
         if (step === 'vpEach') appendAgent(vpEachPrompt(vpEachIndex));
         else appendAgent(vpItemPrompt(objTitle(vpTargetId)));
         return;
       }
       const v = Number(raw);
       if (!Number.isFinite(v) || v < 0) {
-        appendAgent(<>Please type a number for the value points, or <span className="font-medium">b</span> to go back, <span className="font-medium">s</span> to start over, or <span className="font-medium">c</span> to see its children.</>);
+        appendAgent(textMsg("Please type a number for the value points, or b to go back, s to start over, or c to see its children."));
         return;
       }
       if (step === 'vpEach') handleVpEach(v);
@@ -352,7 +479,7 @@ export function AgentPage() {
     const totalOpts = base.length + 2;
     const n = Number(raw);
     if (!Number.isInteger(n) || n < 1 || n > totalOpts) {
-      appendAgent(<>Please type a number between 1 and {totalOpts}.</>);
+      appendAgent(textMsg(`Please type a number between 1 and ${totalOpts}.`));
       return;
     }
     if (n === base.length + 1) { goBack(); return; }
@@ -371,7 +498,7 @@ export function AgentPage() {
         setDurationType(dt.type);
         const ps = periodsOfType(dt.type);
         if (ps.length === 0) {
-          appendAgent(<>No {dt.label.toLowerCase()} durations are active or upcoming. Pick another type:</>);
+          appendAgent(textMsg(`No ${dt.label.toLowerCase()} durations are active or upcoming. Pick another type:`));
           appendAgent(durationTypePrompt());
         } else {
           setStep('duration');
@@ -399,39 +526,79 @@ export function AgentPage() {
     }
   };
 
+  const visibleSessions = sessions
+    .filter(s => (showArchived ? true : !s.archived))
+    .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+
   return (
-    <div className="max-w-3xl mx-auto">
+    <div>
       <h1 className="text-xl font-bold text-gray-900 mb-4">Agent</h1>
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col" style={{ height: '70vh' }}>
-        <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
-          {transcript.map((e, i) => (
-            <div key={i} className={e.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
-              <div
-                className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
-                  e.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-800'
-                }`}
-              >
-                {e.content}
-              </div>
-            </div>
-          ))}
+      <div className="flex gap-4" style={{ height: '72vh' }}>
+        {/* Sessions */}
+        <div className="w-64 flex-shrink-0 bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col">
+          <div className="p-3 border-b border-gray-200 flex items-center justify-between">
+            <span className="text-sm font-semibold text-gray-700">Sessions</span>
+            <button onClick={startNew} className="text-xs text-blue-600 hover:text-blue-700 font-medium">+ New</button>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {visibleSessions.length === 0 ? (
+              <p className="p-3 text-xs text-gray-400">No sessions yet.</p>
+            ) : (
+              visibleSessions.map(s => (
+                <div
+                  key={s.id}
+                  onClick={() => loadSession(s)}
+                  className={`group px-3 py-2 border-b border-gray-100 cursor-pointer ${s.id === activeId ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+                >
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-sm text-gray-800 truncate" title={s.title}>{s.title || 'New chat'}</span>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setArchived(s.id, !s.archived); }}
+                      className="text-[11px] text-gray-400 hover:text-gray-700 opacity-0 group-hover:opacity-100 flex-shrink-0"
+                      title={s.archived ? 'Restore' : 'Archive'}
+                    >
+                      {s.archived ? 'Restore' : 'Archive'}
+                    </button>
+                  </div>
+                  <div className="text-[11px] text-gray-400">{fmtDateTime(s.updatedAt)}{s.archived ? ' · archived' : ''}</div>
+                </div>
+              ))
+            )}
+          </div>
+          <label className="p-2 border-t border-gray-200 flex items-center gap-2 text-xs text-gray-500 cursor-pointer">
+            <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+            Show archived
+          </label>
         </div>
-        <form
-          onSubmit={(e) => { e.preventDefault(); handleSubmit(); }}
-          className="border-t border-gray-200 p-3 flex items-center gap-2"
-        >
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Type a number…"
-            autoFocus
-            className="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700">
-            Send
-          </button>
-        </form>
+
+        {/* Chat */}
+        <div className="flex-1 min-w-0 bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col">
+          <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
+            {transcript.map((m, i) => (
+              <div key={i} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
+                <div className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-800'}`}>
+                  {renderMsg(m)}
+                </div>
+              </div>
+            ))}
+          </div>
+          <form
+            onSubmit={(e) => { e.preventDefault(); handleSubmit(); }}
+            className="border-t border-gray-200 p-3 flex items-center gap-2"
+          >
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Type a number…"
+              autoFocus
+              className="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700">
+              Send
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   );
