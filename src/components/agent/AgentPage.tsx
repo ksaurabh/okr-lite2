@@ -6,7 +6,7 @@ import type { List, User } from '../../types';
 const API_URL = import.meta.env.VITE_API_URL || '';
 const SESSIONS_URL = `${API_URL}/api/users/me/agent-sessions`;
 
-type Step = 'root' | 'user' | 'durationType' | 'duration' | 'result' | 'vpEach' | 'vpPick' | 'vpItem';
+type Step = 'root' | 'user' | 'durationType' | 'duration' | 'planPick' | 'result' | 'vpEach' | 'vpPick' | 'vpItem';
 
 // Serializable chat messages (so sessions can be persisted and resumed).
 type Msg =
@@ -14,7 +14,8 @@ type Msg =
   | { role: 'agent'; kind: 'text'; text: string; tone?: 'error' }
   | { role: 'agent'; kind: 'menu'; title: string; options: string[]; baseCount: number }
   | { role: 'agent'; kind: 'plan'; planName: string; who: string; period: string; items: { title: string; vp: number; missing?: boolean }[]; total: number }
-  | { role: 'agent'; kind: 'children'; parent: string; items: { title: string; vp: number }[] };
+  | { role: 'agent'; kind: 'children'; parent: string; items: { title: string; vp: number }[] }
+  | { role: 'agent'; kind: 'plans'; who: string; items: { name: string; type: string; period: string }[] };
 
 interface SessionState {
   step: Step;
@@ -24,6 +25,8 @@ interface SessionState {
   resultObjectiveIds: string[];
   vpTargetId: string;
   vpEachIndex: number;
+  resultPlanId: string;
+  planChoiceIds: string[];
 }
 
 interface AgentSession {
@@ -51,6 +54,7 @@ const PREV: Record<Step, Step> = {
   user: 'root',
   durationType: 'user',
   duration: 'durationType',
+  planPick: 'duration',
   result: 'duration',
   vpEach: 'result',
   vpPick: 'result',
@@ -64,9 +68,10 @@ const textMsg = (text: string, tone?: 'error'): Msg => ({ role: 'agent', kind: '
 const userMsg = (text: string): Msg => ({ role: 'user', kind: 'text', text });
 const planMsg = (planName: string, who: string, period: string, items: { title: string; vp: number; missing?: boolean }[], total: number): Msg => ({ role: 'agent', kind: 'plan', planName, who, period, items, total });
 const childrenMsg = (parent: string, items: { title: string; vp: number }[]): Msg => ({ role: 'agent', kind: 'children', parent, items });
+const plansMsg = (who: string, items: { name: string; type: string; period: string }[]): Msg => ({ role: 'agent', kind: 'plans', who, items });
 
 const rootPromptMsg = (): Msg => menuMsg("Hi — I'm your OKR agent. Type the number of an option:", ROOT_OPTIONS);
-const initialState = (): SessionState => ({ step: 'root', selectedUserId: '', durationType: '', resultPeriodId: '', resultObjectiveIds: [], vpTargetId: '', vpEachIndex: 0 });
+const initialState = (): SessionState => ({ step: 'root', selectedUserId: '', durationType: '', resultPeriodId: '', resultObjectiveIds: [], vpTargetId: '', vpEachIndex: 0, resultPlanId: '', planChoiceIds: [] });
 
 function fmtDate(d?: string): string {
   if (!d) return '';
@@ -149,6 +154,28 @@ function renderMsg(m: Msg): React.ReactNode {
           </table>
         </div>
       );
+    case 'plans':
+      return (
+        <div>
+          <p>{m.who}'s plans ({m.items.length}):</p>
+          {m.items.length > 0 ? (
+            <table className="mt-1 text-sm">
+              <tbody>
+                {m.items.map((it, i) => (
+                  <tr key={i} className="border-b border-gray-100 last:border-0">
+                    <td className="py-1 pr-4 text-gray-400 tabular-nums align-top">{i + 1}.</td>
+                    <td className="py-1 pr-6 text-gray-800">{it.name}</td>
+                    <td className="py-1 pr-6 text-gray-600">{it.type}</td>
+                    <td className="py-1 text-gray-500">{it.period}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="text-gray-500 mt-1">No plans.</p>
+          )}
+        </div>
+      );
     default:
       return null;
   }
@@ -177,8 +204,12 @@ export function AgentPage() {
   const [resultObjectiveIds, setResultObjectiveIds] = useState<string[]>([]);
   const [vpTargetId, setVpTargetId] = useState('');
   const [vpEachIndex, setVpEachIndex] = useState(0);
+  const [resultPlanId, setResultPlanId] = useState('');
+  const [planChoiceIds, setPlanChoiceIds] = useState<string[]>([]);
   const [input, setInput] = useState('');
-  const [transcript, setTranscript] = useState<Msg[]>([]);
+  // Seed with the opening prompt so the chat is never blank, even before a
+  // session loads or if the sessions API is unreachable.
+  const [transcript, setTranscript] = useState<Msg[]>(() => [rootPromptMsg()]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const usersSorted = useMemo(
@@ -205,7 +236,10 @@ export function AgentPage() {
   const planCount = (predicate: (p: List) => boolean) => allPlans.filter(predicate).length;
   const withCount = (label: string, c: number) => `${label} (${c} ${c === 1 ? 'plan' : 'plans'})`;
   const userOptions = () => usersSorted.map(u => withCount(u.name || u.email, planCount(p => p.ownerId === u.id)));
-  const durationTypeOptions = () => DURATION_TYPES.map(d => withCount(d.label, planCount(p => p.ownerId === selectedUserId && periodTypeOf(p.periodId) === d.type)));
+  const durationTypeOptions = (userId = selectedUserId) => [
+    ...DURATION_TYPES.map(d => withCount(d.label, planCount(p => p.ownerId === userId && periodTypeOf(p.periodId) === d.type))),
+    withCount('Show all plans and their duration type', planCount(p => p.ownerId === userId)),
+  ];
   const durationOptions = (type: string) => periodsOfType(type).map(p => withCount(periodLabel(p), planCount(pl => pl.ownerId === selectedUserId && pl.periodId === p.id)));
 
   const objTitle = (id: string) => useOKRStore.getState().objectives.find(o => o.id === id)?.title || id;
@@ -215,7 +249,7 @@ export function AgentPage() {
   };
 
   const userPrompt = () => menuMsg('Whose OKRs would you like to set? Type the number:', userOptions());
-  const durationTypePrompt = () => menuMsg('What kind of duration? Type the number:', durationTypeOptions());
+  const durationTypePrompt = (userId = selectedUserId) => menuMsg('What kind of duration? Type the number:', durationTypeOptions(userId));
   const durationPrompt = (type: string) => menuMsg('For which duration? Type the number:', durationOptions(type));
   const vpPickPrompt = () => menuMsg('Which item? Type the number:', resultObjectiveIds.map(itemLabel));
   const vpEachPrompt = (index: number): Msg => {
@@ -231,6 +265,7 @@ export function AgentPage() {
       case 'durationType': return durationTypeOptions();
       case 'duration': return durationOptions(durationType);
       case 'result': return resultObjectiveIds.length > 0 ? RESULT_ACTIONS : [];
+      case 'planPick': return planChoiceIds.map(planLabel);
       case 'vpPick': return resultObjectiveIds.map(itemLabel);
       default: return [];
     }
@@ -243,7 +278,7 @@ export function AgentPage() {
   const loadSession = (s: AgentSession) => {
     setActiveId(s.id);
     setSessionTitle(s.title || 'New chat');
-    setTranscript(s.transcript || []);
+    setTranscript(s.transcript && s.transcript.length > 0 ? s.transcript : [rootPromptMsg()]);
     const st = s.state || initialState();
     setStep(st.step || 'root');
     setSelectedUserId(st.selectedUserId || '');
@@ -252,6 +287,8 @@ export function AgentPage() {
     setResultObjectiveIds(st.resultObjectiveIds || []);
     setVpTargetId(st.vpTargetId || '');
     setVpEachIndex(st.vpEachIndex || 0);
+    setResultPlanId(st.resultPlanId || '');
+    setPlanChoiceIds(st.planChoiceIds || []);
     setInput('');
   };
 
@@ -331,7 +368,7 @@ export function AgentPage() {
           body: JSON.stringify({
             title: sessionTitle,
             transcript,
-            state: { step, selectedUserId, durationType, resultPeriodId, resultObjectiveIds, vpTargetId, vpEachIndex },
+            state: { step, selectedUserId, durationType, resultPeriodId, resultObjectiveIds, vpTargetId, vpEachIndex, resultPlanId, planChoiceIds },
           }),
         });
         if (res.ok) {
@@ -341,25 +378,24 @@ export function AgentPage() {
       } catch { /* ignore */ }
     }, 500);
     return () => clearTimeout(t);
-  }, [transcript, step, selectedUserId, durationType, resultPeriodId, resultObjectiveIds, vpTargetId, vpEachIndex, sessionTitle, activeId]);
+  }, [transcript, step, selectedUserId, durationType, resultPeriodId, resultObjectiveIds, vpTargetId, vpEachIndex, resultPlanId, planChoiceIds, sessionTitle, activeId]);
 
-  const showPlanResult = (periodId: string) => {
-    setResultPeriodId(periodId);
-    const period = periodsSorted.find(p => p.id === periodId);
+  const planLabel = (id: string) => {
+    const p = allPlans.find(x => x.id === id);
+    if (!p) return id;
+    return `${p.name} (${p.items.length} ${p.items.length === 1 ? 'item' : 'items'})`;
+  };
+  const planPickPrompt = () => menuMsg('Multiple plans match this duration. Which one? Type the number:', planChoiceIds.map(planLabel));
+
+  const showPlanItems = (plan: List) => {
     const u = usersSorted.find(x => x.id === selectedUserId);
     const userName = u?.name || u?.email || 'that user';
+    const period = periodsSorted.find(p => p.id === plan.periodId);
     const periodName = period ? periodLabel(period) : 'that duration';
-    const plan = allPlans.find(p => p.ownerId === selectedUserId && p.periodId === periodId);
     const objs = useOKRStore.getState().objectives;
-    setSessionTitle(`${userName} · ${periodName}`);
-
-    if (!plan) {
-      setResultObjectiveIds([]);
-      appendAgent(textMsg(`No plan is defined for ${userName} for ${periodName}.`));
-      appendAgent(menuMsg('What would you like to do next?', []));
-      return;
-    }
-
+    setResultPlanId(plan.id);
+    setResultPeriodId(plan.periodId || '');
+    setSessionTitle(`${userName} · ${plan.name}`);
     const sorted = [...plan.items].sort((a, b) => a.order - b.order);
     setResultObjectiveIds(sorted.map(it => it.objectiveId));
     const items = sorted.map(it => {
@@ -369,6 +405,39 @@ export function AgentPage() {
     const total = items.reduce((sum, i) => sum + i.vp, 0);
     appendAgent(planMsg(plan.name, userName, periodName, items, total));
     appendAgent(menuMsg('What would you like to do next?', items.length > 0 ? RESULT_ACTIONS : []));
+    setStep('result');
+  };
+
+  const showNoPlan = (periodId: string) => {
+    const u = usersSorted.find(x => x.id === selectedUserId);
+    const userName = u?.name || u?.email || 'that user';
+    const period = periodsSorted.find(p => p.id === periodId);
+    const periodName = period ? periodLabel(period) : 'that duration';
+    setResultPlanId('');
+    setResultPeriodId(periodId);
+    setResultObjectiveIds([]);
+    setSessionTitle(`${userName} · ${periodName}`);
+    appendAgent(textMsg(`No plan is defined for ${userName} for ${periodName}.`));
+    appendAgent(menuMsg('What would you like to do next?', []));
+    setStep('result');
+  };
+
+  // After a duration is chosen, resolve the plan(s) for owner + period.
+  // 0 -> "no plan", 1 -> show it, many -> ask which one first.
+  const enterDuration = (periodId: string) => {
+    const matches = allPlans.filter(p => p.ownerId === selectedUserId && p.periodId === periodId);
+    if (matches.length === 0) { showNoPlan(periodId); return; }
+    if (matches.length === 1) { showPlanItems(matches[0]); return; }
+    setResultPeriodId(periodId);
+    setPlanChoiceIds(matches.map(m => m.id));
+    setStep('planPick');
+    appendAgent(menuMsg('Multiple plans match this duration. Which one? Type the number:', matches.map(m => `${m.name} (${m.items.length} ${m.items.length === 1 ? 'item' : 'items'})`)));
+  };
+
+  const reshowResult = () => {
+    const plan = allPlans.find(p => p.id === resultPlanId);
+    if (plan) showPlanItems(plan);
+    else showNoPlan(resultPeriodId);
   };
 
   const showPromptFor = (s: Step) => {
@@ -378,7 +447,8 @@ export function AgentPage() {
       case 'user': appendAgent(userPrompt()); break;
       case 'durationType': appendAgent(durationTypePrompt()); break;
       case 'duration': appendAgent(durationPrompt(durationType)); break;
-      case 'result': showPlanResult(resultPeriodId); break;
+      case 'planPick': appendAgent(planPickPrompt()); break;
+      case 'result': reshowResult(); break;
       case 'vpPick': appendAgent(vpPickPrompt()); break;
       case 'vpEach': appendAgent(vpEachPrompt(vpEachIndex)); break;
       case 'vpItem': appendAgent(vpItemPrompt(objTitle(vpTargetId))); break;
@@ -391,6 +461,8 @@ export function AgentPage() {
     setSelectedUserId('');
     setDurationType('');
     setResultObjectiveIds([]);
+    setResultPlanId('');
+    setPlanChoiceIds([]);
     showPromptFor('root');
   };
 
@@ -401,8 +473,7 @@ export function AgentPage() {
     } catch (err) {
       appendAgent(textMsg(`Couldn't update value points: ${err instanceof Error ? err.message : String(err)}`, 'error'));
     }
-    setStep('result');
-    showPlanResult(resultPeriodId);
+    reshowResult();
   };
 
   // Walk every item one at a time, setting a (possibly different) VP on each.
@@ -419,8 +490,7 @@ export function AgentPage() {
       appendAgent(vpEachPrompt(next));
     } else {
       appendAgent(textMsg(`Done — updated value points on all ${resultObjectiveIds.length} ${resultObjectiveIds.length === 1 ? 'item' : 'items'}.`));
-      setStep('result');
-      showPlanResult(resultPeriodId);
+      reshowResult();
     }
   };
 
@@ -435,6 +505,20 @@ export function AgentPage() {
       return;
     }
     appendAgent(childrenMsg(parent?.title || id, children.map(c => ({ title: c.title, vp: c.valuePoints ?? 0 }))));
+  };
+
+  const showAllPlans = () => {
+    const u = usersSorted.find(x => x.id === selectedUserId);
+    const userName = u?.name || u?.email || 'that user';
+    const typeLabel = (t?: string) => DURATION_TYPES.find(d => d.type === t)?.label || (t || '—');
+    const items = allPlans
+      .filter(p => p.ownerId === selectedUserId)
+      .map(p => {
+        const per = periods.find(pp => pp.id === p.periodId);
+        return { name: p.name, type: typeLabel(per?.type), period: per ? periodLabel(per) : '—' };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+    appendAgent(plansMsg(userName, items));
   };
 
   const handleSubmit = () => {
@@ -489,11 +573,20 @@ export function AgentPage() {
       case 'root':
         showPromptFor('user');
         break;
-      case 'user':
-        setSelectedUserId(usersSorted[n - 1].id);
-        showPromptFor('durationType');
+      case 'user': {
+        const uid = usersSorted[n - 1].id;
+        setSelectedUserId(uid);
+        setStep('durationType');
+        appendAgent(durationTypePrompt(uid));
         break;
+      }
       case 'durationType': {
+        if (n === DURATION_TYPES.length + 1) {
+          // "Show all plans and their duration type" — informational; stay on this step.
+          showAllPlans();
+          appendAgent(durationTypePrompt());
+          break;
+        }
         const dt = DURATION_TYPES[n - 1];
         setDurationType(dt.type);
         const ps = periodsOfType(dt.type);
@@ -507,9 +600,13 @@ export function AgentPage() {
         break;
       }
       case 'duration':
-        setStep('result');
-        showPlanResult(periodsOfType(durationType)[n - 1].id);
+        enterDuration(periodsOfType(durationType)[n - 1].id);
         break;
+      case 'planPick': {
+        const plan = allPlans.find(p => p.id === planChoiceIds[n - 1]);
+        if (plan) showPlanItems(plan);
+        break;
+      }
       case 'result':
         if (n === 1) { setVpEachIndex(0); setStep('vpEach'); appendAgent(vpEachPrompt(0)); }
         else if (n === 2) { setStep('vpPick'); appendAgent(vpPickPrompt()); }
