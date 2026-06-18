@@ -6,7 +6,7 @@ import type { List, User } from '../../types';
 const API_URL = import.meta.env.VITE_API_URL || '';
 const SESSIONS_URL = `${API_URL}/api/users/me/agent-sessions`;
 
-type Step = 'root' | 'user' | 'durationType' | 'duration' | 'planPick' | 'result' | 'vpEach' | 'vpPick' | 'vpItem';
+type Step = 'root' | 'user' | 'durationType' | 'duration' | 'planPick' | 'result' | 'vpEach' | 'vpPick' | 'itemAction' | 'vpItem';
 
 // Serializable chat messages (so sessions can be persisted and resumed).
 type Msg =
@@ -15,7 +15,8 @@ type Msg =
   | { role: 'agent'; kind: 'menu'; title: string; options: string[]; baseCount: number }
   | { role: 'agent'; kind: 'plan'; planName: string; who: string; period: string; items: { title: string; vp: number; missing?: boolean }[]; total: number }
   | { role: 'agent'; kind: 'children'; parent: string; items: { title: string; vp: number }[] }
-  | { role: 'agent'; kind: 'plans'; who: string; items: { name: string; type: string; period: string }[] };
+  | { role: 'agent'; kind: 'plans'; who: string; items: { name: string; type: string; period: string }[] }
+  | { role: 'agent'; kind: 'family'; subject: string; rows: { name: string; rel: string; duration: string; vp: number; owner: string; assignee: string; self?: boolean }[] };
 
 interface SessionState {
   step: Step;
@@ -45,7 +46,8 @@ const DURATION_TYPES = [
   { label: 'Monthly', type: 'month' },
   { label: 'Weekly', type: 'week' },
 ] as const;
-const RESULT_ACTIONS = ['Update VP on every item', 'Update VP on a selected item'];
+const RESULT_ACTIONS = ['Update VP on every item', 'Select an item'];
+const ITEM_ACTIONS = ['Set value points', 'Show children', 'Show parent & siblings'];
 const BACK_LABEL = 'Go back';
 const RESTART_LABEL = 'Start over';
 
@@ -58,7 +60,8 @@ const PREV: Record<Step, Step> = {
   result: 'duration',
   vpEach: 'result',
   vpPick: 'result',
-  vpItem: 'vpPick',
+  itemAction: 'vpPick',
+  vpItem: 'itemAction',
 };
 
 const VALUE_STEPS: Step[] = ['vpEach', 'vpItem'];
@@ -69,6 +72,7 @@ const userMsg = (text: string): Msg => ({ role: 'user', kind: 'text', text });
 const planMsg = (planName: string, who: string, period: string, items: { title: string; vp: number; missing?: boolean }[], total: number): Msg => ({ role: 'agent', kind: 'plan', planName, who, period, items, total });
 const childrenMsg = (parent: string, items: { title: string; vp: number }[]): Msg => ({ role: 'agent', kind: 'children', parent, items });
 const plansMsg = (who: string, items: { name: string; type: string; period: string }[]): Msg => ({ role: 'agent', kind: 'plans', who, items });
+const familyMsg = (subject: string, rows: { name: string; rel: string; duration: string; vp: number; owner: string; assignee: string; self?: boolean }[]): Msg => ({ role: 'agent', kind: 'family', subject, rows });
 
 const rootPromptMsg = (): Msg => menuMsg("Hi — I'm your OKR agent. Type the number of an option:", ROOT_OPTIONS);
 const initialState = (): SessionState => ({ step: 'root', selectedUserId: '', durationType: '', resultPeriodId: '', resultObjectiveIds: [], vpTargetId: '', vpEachIndex: 0, resultPlanId: '', planChoiceIds: [] });
@@ -176,6 +180,36 @@ function renderMsg(m: Msg): React.ReactNode {
           )}
         </div>
       );
+    case 'family':
+      return (
+        <div>
+          <p>Context for "{m.subject}":</p>
+          <table className="mt-1 text-sm">
+            <thead>
+              <tr className="text-xs text-gray-400 text-left">
+                <th className="py-1 pr-4 font-medium"></th>
+                <th className="py-1 pr-4 font-medium">Item</th>
+                <th className="py-1 pr-4 font-medium">Duration</th>
+                <th className="py-1 pr-4 font-medium">VP</th>
+                <th className="py-1 pr-4 font-medium">Owner</th>
+                <th className="py-1 font-medium">Assignee</th>
+              </tr>
+            </thead>
+            <tbody>
+              {m.rows.map((r, i) => (
+                <tr key={i} className={`border-b border-gray-100 last:border-0 ${r.self ? 'font-medium text-gray-900' : 'text-gray-700'}`}>
+                  <td className="py-1 pr-4 text-gray-400">{r.rel}</td>
+                  <td className="py-1 pr-4">{r.name}</td>
+                  <td className="py-1 pr-4 text-gray-600">{r.duration}</td>
+                  <td className="py-1 pr-4 tabular-nums">{r.vp}</td>
+                  <td className="py-1 pr-4 text-gray-600">{r.owner}</td>
+                  <td className="py-1 text-gray-600">{r.assignee}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
     default:
       return null;
   }
@@ -252,6 +286,7 @@ export function AgentPage() {
   const durationTypePrompt = (userId = selectedUserId) => menuMsg('What kind of duration? Type the number:', durationTypeOptions(userId));
   const durationPrompt = (type: string) => menuMsg('For which duration? Type the number:', durationOptions(type));
   const vpPickPrompt = () => menuMsg('Which item? Type the number:', resultObjectiveIds.map(itemLabel));
+  const itemActionPrompt = (id = vpTargetId) => menuMsg(`What would you like to do with "${objTitle(id)}"? Type the number:`, ITEM_ACTIONS);
   const vpEachPrompt = (index: number): Msg => {
     const o = useOKRStore.getState().objectives.find(x => x.id === resultObjectiveIds[index]);
     return textMsg(`Item ${index + 1} of ${resultObjectiveIds.length} — type the value points for "${o?.title || resultObjectiveIds[index]}" (currently ${o?.valuePoints ?? 0} VP). (Type b to go back, s to start over, or c to see its children.)`);
@@ -267,6 +302,7 @@ export function AgentPage() {
       case 'result': return resultObjectiveIds.length > 0 ? RESULT_ACTIONS : [];
       case 'planPick': return planChoiceIds.map(planLabel);
       case 'vpPick': return resultObjectiveIds.map(itemLabel);
+      case 'itemAction': return ITEM_ACTIONS;
       default: return [];
     }
   };
@@ -450,6 +486,7 @@ export function AgentPage() {
       case 'planPick': appendAgent(planPickPrompt()); break;
       case 'result': reshowResult(); break;
       case 'vpPick': appendAgent(vpPickPrompt()); break;
+      case 'itemAction': appendAgent(itemActionPrompt()); break;
       case 'vpEach': appendAgent(vpEachPrompt(vpEachIndex)); break;
       case 'vpItem': appendAgent(vpItemPrompt(objTitle(vpTargetId))); break;
     }
@@ -505,6 +542,32 @@ export function AgentPage() {
       return;
     }
     appendAgent(childrenMsg(parent?.title || id, children.map(c => ({ title: c.title, vp: c.valuePoints ?? 0 }))));
+  };
+
+  // Parent + siblings + the item itself, each with duration, VP, owner, assignee.
+  const showFamily = (id: string) => {
+    const objs = useOKRStore.getState().objectives;
+    const self = objs.find(o => o.id === id);
+    if (!self) { appendAgent(textMsg('That item could not be found.')); return; }
+    const durName = (pid?: string) => periods.find(p => p.id === pid)?.name || '—';
+    const uName = (uid?: string) => { const u = orgUsers.find(x => x.id === uid); return u?.name || u?.email || '—'; };
+    const toRow = (o: typeof self, rel: string) => ({
+      name: o.title,
+      rel,
+      duration: durName(o.periodId),
+      vp: o.valuePoints ?? 0,
+      owner: uName(o.ownerId),
+      assignee: uName(o.assigneeId),
+      self: o.id === id,
+    });
+    const rows = [];
+    const parent = self.parentId ? objs.find(o => o.id === self.parentId) : undefined;
+    if (parent) rows.push(toRow(parent, 'Parent'));
+    objs
+      .filter(o => (o.parentId || null) === (self.parentId || null))
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.title.localeCompare(b.title))
+      .forEach(s => rows.push(toRow(s, s.id === id ? 'Self' : 'Sibling')));
+    appendAgent(familyMsg(self.title, rows));
   };
 
   const showAllPlans = () => {
@@ -614,10 +677,15 @@ export function AgentPage() {
       case 'vpPick': {
         const id = resultObjectiveIds[n - 1];
         setVpTargetId(id);
-        setStep('vpItem');
-        appendAgent(vpItemPrompt(objTitle(id)));
+        setStep('itemAction');
+        appendAgent(itemActionPrompt(id));
         break;
       }
+      case 'itemAction':
+        if (n === 1) { setStep('vpItem'); appendAgent(vpItemPrompt(objTitle(vpTargetId))); }
+        else if (n === 2) { showChildren(vpTargetId); appendAgent(itemActionPrompt(vpTargetId)); }
+        else if (n === 3) { showFamily(vpTargetId); appendAgent(itemActionPrompt(vpTargetId)); }
+        break;
       default:
         break;
     }
