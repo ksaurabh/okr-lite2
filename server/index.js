@@ -1600,6 +1600,41 @@ app.put('/api/users/me/views/:viewId/starred', requireAuth, (req, res) => {
   res.json({ view: views[viewIndex], views: savedViews });
 });
 
+// ---- Plan stages (per-organization, configurable in Settings) ----
+const DEFAULT_PLAN_STAGES = ['New', 'In Review', 'In Execution', 'In Retrospective', 'Closed', 'Archived'];
+function getPlanStages(orgId) {
+  const data = getOKRData();
+  const stages = data.planStages && data.planStages[orgId];
+  return Array.isArray(stages) && stages.length > 0 ? stages : [...DEFAULT_PLAN_STAGES];
+}
+function savePlanStages(orgId, stages) {
+  const data = getOKRData();
+  data.planStages = data.planStages || {};
+  data.planStages[orgId] = stages;
+  saveOKRData(data);
+  return data.planStages[orgId];
+}
+
+app.get('/api/plan-stages', requireAuth, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  res.json({ stages: org ? getPlanStages(org.id) : [...DEFAULT_PLAN_STAGES] });
+});
+
+app.put('/api/admin/plan-stages', requireOrgAdminOrSuperAdmin, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.status(403).json({ error: 'No organization found' });
+  const { stages } = req.body || {};
+  if (!Array.isArray(stages)) return res.status(400).json({ error: 'stages must be an array' });
+  const clean = [];
+  for (const s of stages) {
+    const v = String(s).trim();
+    if (v && !clean.includes(v)) clean.push(v);
+  }
+  if (clean.length === 0) return res.status(400).json({ error: 'At least one stage is required' });
+  savePlanStages(org.id, clean);
+  res.json({ stages: getPlanStages(org.id) });
+});
+
 // ============ Lists API Routes ============
 
 // Get all lists for the current user
@@ -1654,11 +1689,13 @@ app.post('/api/users/me/lists', requireAuth, (req, res) => {
   }
 
   const now = new Date().toISOString();
+  const createOrg = getOrganizationByDomain(req.user.domain);
   const newList = {
     id: generateListId(),
     name: name.trim(),
     color: color || '#6b7280',
     items: [],
+    status: getPlanStages(createOrg?.id)[0],
     createdAt: now,
     updatedAt: now,
     ...(parentId ? { parentId } : {}),
@@ -1712,6 +1749,10 @@ app.put('/api/users/me/lists/:listId', requireAuth, (req, res) => {
   if ('shared' in req.body) {
     if (req.body.shared === true) lists[listIndex].shared = true;
     else delete lists[listIndex].shared;
+  }
+  if ('status' in req.body) {
+    if (req.body.status) lists[listIndex].status = req.body.status;
+    else delete lists[listIndex].status;
   }
   lists[listIndex].updatedAt = new Date().toISOString();
 

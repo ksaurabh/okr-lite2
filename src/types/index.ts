@@ -287,6 +287,7 @@ export interface List {
   periodId?: string;
   level?: ObjectiveLevel;
   shared?: boolean;
+  status?: string;
   createdByEmail?: string;
   history?: ListHistoryEntry[];
 }

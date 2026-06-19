@@ -15,6 +15,8 @@ const periodDurationType = (p: Period): DurationType => {
 };
 
 const API_URL = import.meta.env.VITE_API_URL || '';
+// Special status-filter token: match every plan except those in the "Archived" stage.
+const ALL_BUT_ARCHIVED = '__all_but_archived__';
 
 type View = 'dashboard' | 'objectives' | 'plans' | 'views' | 'checklist' | 'progress' | 'updates' | 'lists' | 'logwork' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin' | 'logs';
 
@@ -31,6 +33,7 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
   const setListShared = useOKRStore((s: OKRStore) => s.setListShared);
   const setListLevel = useOKRStore((s: OKRStore) => s.setListLevel);
   const setListOwner = useOKRStore((s: OKRStore) => s.setListOwner);
+  const setListStatus = useOKRStore((s: OKRStore) => s.setListStatus);
   const setListPeriod = useOKRStore((s: OKRStore) => s.setListPeriod);
   const renameList = useOKRStore((s: OKRStore) => s.renameList);
   const addItemToList = useOKRStore((s: OKRStore) => s.addItemToList);
@@ -40,6 +43,14 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
   const sharedPlans = useOKRStore((s: OKRStore) => s.sharedPlans);
   const fetchSharedPlans = useOKRStore((s: OKRStore) => s.fetchSharedPlans);
   const [orgUsers, setOrgUsers] = useState<User[]>([]);
+  const [planStages, setPlanStages] = useState<string[]>([]);
+
+  useEffect(() => {
+    fetch(`${API_URL}/api/plan-stages`, { credentials: 'include' })
+      .then(r => (r.ok ? r.json() : { stages: [] }))
+      .then(d => setPlanStages(d.stages || []))
+      .catch(() => { /* ignore */ });
+  }, []);
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
   const [newOwnerId, setNewOwnerId] = useState('');
@@ -50,6 +61,9 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
   const [filterLevel, setFilterLevel] = useState<ObjectiveLevel | ''>('');
   const [filterPeriodId, setFilterPeriodId] = useState('');
   const [filterDurationType, setFilterDurationType] = useState<DurationType | ''>('');
+  const [filterStatuses, setFilterStatuses] = useState<string[]>([ALL_BUT_ARCHIVED]);
+  const [showStatusFilter, setShowStatusFilter] = useState(false);
+  const statusFilterRef = useRef<HTMLDivElement>(null);
   const [viewMode, setViewMode] = useState<'list' | 'grouped'>(() => {
     try { const v = localStorage.getItem('okr-plans-view-mode'); return v === 'grouped' ? 'grouped' : 'list'; } catch { return 'list'; }
   });
@@ -66,6 +80,14 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
       return '';
     } catch { return ''; }
   });
+  useEffect(() => {
+    if (!showStatusFilter) return;
+    const onDown = (e: MouseEvent) => {
+      if (statusFilterRef.current && !statusFilterRef.current.contains(e.target as Node)) setShowStatusFilter(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [showStatusFilter]);
   useEffect(() => { try { localStorage.setItem('okr-plans-view-mode', viewMode); } catch { /* ignore */ } }, [viewMode]);
   useEffect(() => { try { localStorage.setItem('okr-plans-grouped-owner', groupedOwnerId); } catch { /* ignore */ } }, [groupedOwnerId]);
   useEffect(() => { try { localStorage.setItem('okr-plans-grouped-period', groupedPeriodId); } catch { /* ignore */ } }, [groupedPeriodId]);
@@ -196,11 +218,24 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
     if (!p) return false;
     return periodDurationType(p) === filterDurationType;
   };
+  const matchesStatus = (l: List) => {
+    if (filterStatuses.length === 0) return true;
+    return filterStatuses.some(f =>
+      f === ALL_BUT_ARCHIVED ? l.status !== 'Archived' : l.status === f
+    );
+  };
   const matchesFilters = (l: List) =>
     (filterOwnerId ? l.ownerId === filterOwnerId : true) &&
     (filterLevel ? l.level === filterLevel : true) &&
     (filterPeriodId ? l.periodId === filterPeriodId : true) &&
+    matchesStatus(l) &&
     periodMatchesDurationType(l.periodId);
+  const toggleStatusFilter = (value: string) =>
+    setFilterStatuses(prev => prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]);
+  const statusFilterSummary =
+    filterStatuses.length === 0 ? 'Any'
+    : (filterStatuses.length === 1 && filterStatuses[0] === ALL_BUT_ARCHIVED) ? 'All but archived'
+    : filterStatuses.map(s => s === ALL_BUT_ARCHIVED ? 'All but archived' : s).join(', ');
 
   const ownerSortKey = (id?: string) => {
     if (!id) return '~';
@@ -234,12 +269,12 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
         return a.name.localeCompare(b.name);
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [lists, filterOwnerId, filterLevel, filterPeriodId, filterDurationType, periods, orgUsers]
+    [lists, filterOwnerId, filterLevel, filterPeriodId, filterDurationType, filterStatuses, periods, orgUsers]
   );
   const filteredSharedPlans = useMemo(
     () => sharedPlans.filter(matchesFilters),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sharedPlans, filterOwnerId, filterLevel, filterPeriodId, filterDurationType, periods]
+    [sharedPlans, filterOwnerId, filterLevel, filterPeriodId, filterDurationType, filterStatuses, periods]
   );
   const nonPlanLists = useMemo(
     () => lists.filter(l => !(l.ownerId && l.periodId)).sort((a, b) => a.name.localeCompare(b.name)),
@@ -465,9 +500,38 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
               ))}
             </select>
           </div>
-          {(filterOwnerId || filterLevel || filterPeriodId || filterDurationType) && (
+          <div className="flex items-center gap-1 relative" ref={statusFilterRef}>
+            <label className="text-xs text-gray-500">Status</label>
             <button
-              onClick={() => { setFilterOwnerId(''); setFilterLevel(''); setFilterPeriodId(''); setFilterDurationType(''); }}
+              type="button"
+              onClick={() => setShowStatusFilter(o => !o)}
+              className="border border-gray-300 rounded px-2 py-1 text-xs bg-white flex items-center gap-1 max-w-[200px]"
+              title={statusFilterSummary}
+            >
+              <span className="truncate">{statusFilterSummary}</span>
+              <svg className="w-3 h-3 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {showStatusFilter && (
+              <div className="absolute top-full left-0 mt-1 z-30 bg-white border border-gray-200 rounded-md shadow-lg py-1 min-w-[200px] max-h-64 overflow-y-auto">
+                <label className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-gray-50 cursor-pointer">
+                  <input type="checkbox" checked={filterStatuses.includes(ALL_BUT_ARCHIVED)} onChange={() => toggleStatusFilter(ALL_BUT_ARCHIVED)} />
+                  <span className="font-medium">All but archived</span>
+                </label>
+                {planStages.length > 0 && <div className="border-t border-gray-100 my-1" />}
+                {planStages.map(s => (
+                  <label key={s} className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-gray-50 cursor-pointer">
+                    <input type="checkbox" checked={filterStatuses.includes(s)} onChange={() => toggleStatusFilter(s)} />
+                    <span>{s}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+          {(filterOwnerId || filterLevel || filterPeriodId || filterDurationType || !(filterStatuses.length === 1 && filterStatuses[0] === ALL_BUT_ARCHIVED)) && (
+            <button
+              onClick={() => { setFilterOwnerId(''); setFilterLevel(''); setFilterPeriodId(''); setFilterDurationType(''); setFilterStatuses([ALL_BUT_ARCHIVED]); }}
               className="text-xs text-gray-500 hover:text-gray-700 underline"
             >
               Clear
@@ -487,6 +551,7 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Owner</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Level</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Period</th>
@@ -506,6 +571,16 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
                       <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: list.color || '#6b7280' }} />
                       {list.name}
                     </button>
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-600">
+                    <select
+                      value={list.status || ''}
+                      onChange={(e) => setListStatus(list.id, e.target.value)}
+                      className="border border-gray-300 rounded px-1.5 py-0.5 text-xs bg-white max-w-[160px]"
+                    >
+                      {!list.status && <option value="">—</option>}
+                      {planStages.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">
                     <select

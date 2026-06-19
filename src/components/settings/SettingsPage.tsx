@@ -119,6 +119,44 @@ export function SettingsPage() {
   const canManageRoles = isSuperAdmin || isOrgAdmin;
   const jiraFileInputRef = useRef<HTMLInputElement>(null);
 
+  // ---- Plan stages ----
+  const [planStages, setPlanStagesState] = useState<string[]>([]);
+  const [planStagesOpen, setPlanStagesOpen] = useState(true);
+  const [planStagesSaving, setPlanStagesSaving] = useState(false);
+  const [planStagesError, setPlanStagesError] = useState<string | null>(null);
+  const [planStagesSaved, setPlanStagesSaved] = useState(false);
+
+  useEffect(() => {
+    fetch(`${API_URL}/api/plan-stages`, { credentials: 'include' })
+      .then(r => (r.ok ? r.json() : { stages: [] }))
+      .then(d => setPlanStagesState(d.stages || []))
+      .catch(() => { /* ignore */ });
+  }, []);
+
+  const savePlanStages = async () => {
+    setPlanStagesError(null); setPlanStagesSaved(false);
+    const clean = planStages.map(s => s.trim()).filter(Boolean);
+    if (clean.length === 0) { setPlanStagesError('Add at least one stage.'); return; }
+    setPlanStagesSaving(true);
+    try {
+      const res = await fetch(`${API_URL}/api/admin/plan-stages`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stages: clean }),
+      });
+      if (!res.ok) { const t = await res.text().catch(() => ''); throw new Error(t || `HTTP ${res.status}`); }
+      const d = await res.json();
+      setPlanStagesState(d.stages || clean);
+      setPlanStagesSaved(true);
+      setTimeout(() => setPlanStagesSaved(false), 2000);
+    } catch (err) {
+      setPlanStagesError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPlanStagesSaving(false);
+    }
+  };
+
   const refreshJiraConfig = useCallback(async () => {
     try {
       const r = await fetch(`${API_URL}/api/admin/jira-config`, { credentials: 'include' });
@@ -738,6 +776,49 @@ export function SettingsPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {(isSuperAdmin || isOrgAdmin) && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+          <button
+            type="button"
+            onClick={() => setPlanStagesOpen(!planStagesOpen)}
+            className="w-full p-4 flex items-center justify-between hover:bg-gray-50"
+          >
+            <h2 className="text-base font-semibold text-gray-900">Plan stages</h2>
+            <svg className={`w-4 h-4 text-gray-400 transition-transform ${planStagesOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {planStagesOpen && (
+            <div className="p-4 border-t border-gray-200 space-y-3">
+              <p className="text-xs text-gray-500">The stages a plan can be in. The first stage is the default for new plans; order defines the progression.</p>
+              <div className="space-y-2">
+                {planStages.map((stage, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="text-xs text-gray-400 w-5 tabular-nums">{i + 1}.</span>
+                    <input
+                      type="text"
+                      value={stage}
+                      onChange={(e) => setPlanStagesState(prev => prev.map((s, idx) => (idx === i ? e.target.value : s)))}
+                      className="flex-1 border border-gray-300 rounded px-3 py-1.5 text-sm"
+                    />
+                    <button type="button" disabled={i === 0} onClick={() => setPlanStagesState(prev => { const a = [...prev]; [a[i - 1], a[i]] = [a[i], a[i - 1]]; return a; })} className="px-1.5 text-gray-400 hover:text-gray-700 disabled:opacity-30" title="Move up">↑</button>
+                    <button type="button" disabled={i === planStages.length - 1} onClick={() => setPlanStagesState(prev => { const a = [...prev]; [a[i + 1], a[i]] = [a[i], a[i + 1]]; return a; })} className="px-1.5 text-gray-400 hover:text-gray-700 disabled:opacity-30" title="Move down">↓</button>
+                    <button type="button" onClick={() => setPlanStagesState(prev => prev.filter((_, idx) => idx !== i))} className="px-1.5 text-gray-400 hover:text-red-600" title="Remove">✕</button>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button type="button" onClick={() => setPlanStagesState(prev => [...prev, ''])} className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">+ Add stage</button>
+                <button type="button" onClick={() => setPlanStagesState(['New', 'In Review', 'In Execution', 'In Retrospective', 'Closed', 'Archived'])} className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900">Reset to defaults</button>
+                <button type="button" onClick={savePlanStages} disabled={planStagesSaving} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">{planStagesSaving ? 'Saving…' : 'Save stages'}</button>
+                {planStagesSaved && <span className="text-xs text-green-700">Saved.</span>}
+                {planStagesError && <span className="text-xs text-red-600">{planStagesError}</span>}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
