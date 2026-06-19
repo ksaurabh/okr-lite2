@@ -7,7 +7,7 @@ import type { List, User, WorkflowStatus } from '../../types';
 const API_URL = import.meta.env.VITE_API_URL || '';
 const SESSIONS_URL = `${API_URL}/api/users/me/agent-sessions`;
 
-type Step = 'root' | 'treeBrowse' | 'durationGroupPick' | 'planMembershipPick' | 'user' | 'durationType' | 'duration' | 'planPick' | 'result' | 'vpEach' | 'vpPick' | 'itemAction' | 'changeDuration' | 'vpItem';
+type Step = 'root' | 'treeBrowse' | 'durationGroupPick' | 'planMembershipPick' | 'user' | 'durationType' | 'planFilter' | 'planResults' | 'planSelect' | 'duration' | 'planPick' | 'result' | 'vpEach' | 'vpPick' | 'itemAction' | 'changeDuration' | 'vpItem';
 
 // Serializable chat messages (so sessions can be persisted and resumed).
 type Msg =
@@ -16,7 +16,7 @@ type Msg =
   | { role: 'agent'; kind: 'menu'; title: string; options: string[]; baseCount: number }
   | { role: 'agent'; kind: 'plan'; planName: string; who: string; period: string; items: { id: string; title: string; vp: number; missing?: boolean; kr?: boolean }[]; total: number }
   | { role: 'agent'; kind: 'children'; parent: string; items: { id: string; title: string; vp: number; duration: string; status: string }[] }
-  | { role: 'agent'; kind: 'plans'; who: string; items: { name: string; type: string; period: string }[] }
+  | { role: 'agent'; kind: 'plans'; who: string; filter?: string; items: { id: string; name: string; type: string; period: string; status: string }[] }
   | { role: 'agent'; kind: 'family'; subject: string; rows: { name: string; rel: string; duration: string; vp: number; owner: string; assignee: string; self?: boolean }[] }
   | { role: 'agent'; kind: 'objlist'; title: string; ids: string[] };
 
@@ -74,6 +74,9 @@ const PREV: Record<Step, Step> = {
   planMembershipPick: 'treeBrowse',
   user: 'root',
   durationType: 'user',
+  planFilter: 'durationType',
+  planResults: 'planFilter',
+  planSelect: 'planResults',
   duration: 'durationType',
   planPick: 'duration',
   result: 'duration',
@@ -91,7 +94,7 @@ const textMsg = (text: string, tone?: 'error'): Msg => ({ role: 'agent', kind: '
 const userMsg = (text: string): Msg => ({ role: 'user', kind: 'text', text });
 const planMsg = (planName: string, who: string, period: string, items: { id: string; title: string; vp: number; missing?: boolean; kr?: boolean }[], total: number): Msg => ({ role: 'agent', kind: 'plan', planName, who, period, items, total });
 const childrenMsg = (parent: string, items: { id: string; title: string; vp: number; duration: string; status: string }[]): Msg => ({ role: 'agent', kind: 'children', parent, items });
-const plansMsg = (who: string, items: { name: string; type: string; period: string }[]): Msg => ({ role: 'agent', kind: 'plans', who, items });
+const plansMsg = (who: string, items: { id: string; name: string; type: string; period: string; status: string }[], filter?: string): Msg => ({ role: 'agent', kind: 'plans', who, filter, items });
 const familyMsg = (subject: string, rows: { name: string; rel: string; duration: string; vp: number; owner: string; assignee: string; self?: boolean }[]): Msg => ({ role: 'agent', kind: 'family', subject, rows });
 const objlistMsg = (title: string, ids: string[]): Msg => ({ role: 'agent', kind: 'objlist', title, ids });
 
@@ -191,16 +194,26 @@ function renderMsg(m: Msg): React.ReactNode {
     case 'plans':
       return (
         <div>
-          <p>{m.who}'s plans ({m.items.length}):</p>
+          <p>{m.who}'s plans{m.filter ? ` · ${m.filter}` : ''} ({m.items.length}):</p>
           {m.items.length > 0 ? (
             <table className="mt-1 text-sm">
+              <thead>
+                <tr className="text-xs text-gray-400 text-left">
+                  <th className="py-1 pr-4 font-medium"></th>
+                  <th className="py-1 pr-6 font-medium">Name</th>
+                  <th className="py-1 pr-6 font-medium">Type</th>
+                  <th className="py-1 pr-6 font-medium">Period</th>
+                  <th className="py-1 font-medium">Status</th>
+                </tr>
+              </thead>
               <tbody>
                 {m.items.map((it, i) => (
                   <tr key={i} className="border-b border-gray-100 last:border-0">
                     <td className="py-1 pr-4 text-gray-400 tabular-nums align-top">{i + 1}.</td>
                     <td className="py-1 pr-6 text-gray-800">{it.name}</td>
                     <td className="py-1 pr-6 text-gray-600">{it.type}</td>
-                    <td className="py-1 text-gray-500">{it.period}</td>
+                    <td className="py-1 pr-6 text-gray-500">{it.period}</td>
+                    <td className="py-1"><EditableListStatus listId={it.id} fallback={it.status} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -253,6 +266,40 @@ function renderMsg(m: Msg): React.ReactNode {
     default:
       return null;
   }
+}
+
+// Plan stages are org-level config; cache the fetch so each status cell doesn't refetch.
+let planStagesCache: string[] | null = null;
+function usePlanStages(): string[] {
+  const [stages, setStages] = useState<string[]>(planStagesCache || []);
+  useEffect(() => {
+    if (planStagesCache) return;
+    let active = true;
+    fetch(`${API_URL}/api/plan-stages`, { credentials: 'include' })
+      .then(r => (r.ok ? r.json() : { stages: [] }))
+      .then(d => { planStagesCache = d.stages || []; if (active) setStages(planStagesCache!); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
+  return stages;
+}
+
+// Inline editor for a plan's status, bound to the live list. Writes through setListStatus.
+function EditableListStatus({ listId, fallback }: { listId: string; fallback?: string }) {
+  const list = useOKRStore((s: OKRStore) => s.lists.find(l => l.id === listId));
+  const setListStatus = useOKRStore((s: OKRStore) => s.setListStatus);
+  const stages = usePlanStages();
+  const value = list?.status ?? fallback ?? '';
+  return (
+    <select
+      value={value}
+      onChange={(e) => setListStatus(listId, e.target.value)}
+      className="border border-gray-300 rounded px-1 py-0.5 text-xs bg-white"
+    >
+      {!value && <option value="">—</option>}
+      {stages.map(s => <option key={s} value={s}>{s}</option>)}
+    </select>
+  );
 }
 
 // An inline editor bound to a live objective: number input for VP, selects for
@@ -422,6 +469,15 @@ export function AgentPage() {
     withCount('Show all plans and their duration type', planCount(p => p.ownerId === userId)),
   ];
   const durationOptions = (type: string) => periodsOfType(type).map(p => withCount(periodLabel(p), planCount(pl => pl.ownerId === selectedUserId && pl.periodId === p.id)));
+  const planStages = usePlanStages();
+  const planFilterOptions = () => {
+    const owner = (p: List) => p.ownerId === selectedUserId;
+    return [
+      withCount('All but archived', planCount(p => owner(p) && p.status !== 'Archived')),
+      withCount('All statuses', planCount(owner)),
+      ...planStages.map(s => withCount(s, planCount(p => owner(p) && p.status === s))),
+    ];
+  };
 
   const objTitle = (id: string) => useOKRStore.getState().objectives.find(o => o.id === id)?.title || id;
   const itemLabel = (id: string) => {
@@ -432,6 +488,11 @@ export function AgentPage() {
   const userPrompt = () => menuMsg('Whose OKRs would you like to set? Type the number:', userOptions());
   const durationTypePrompt = (userId = selectedUserId) => menuMsg('What kind of duration? Type the number:', durationTypeOptions(userId));
   const durationPrompt = (type: string) => menuMsg('For which duration? Type the number:', durationOptions(type));
+  const planFilterPrompt = () => menuMsg('Filter plans by status, then I\'ll list them. Type the number:', planFilterOptions());
+  const planResultsOptions = (ids = planChoiceIds): string[] =>
+    ids.length > 0 ? ['Select one of the results', 'Search again for plans'] : ['Search again for plans'];
+  const planResultsPrompt = (ids = planChoiceIds) => menuMsg('What would you like to do next? Type the number:', planResultsOptions(ids));
+  const planSelectPrompt = () => menuMsg('Select a plan. Type the number:', planChoiceIds.map(planLabel));
   const vpPickPrompt = () => menuMsg('Which item? Type the number:', resultObjectiveIds.map(itemLabel));
   const itemActionPrompt = (id = vpTargetId) => menuMsg(`What would you like to do with "${objTitle(id)}"? Type the number:`, ITEM_ACTIONS);
   const periodChoiceLabel = (p: { name: string; startDate?: string; endDate?: string; type?: string }) => {
@@ -453,6 +514,9 @@ export function AgentPage() {
       case 'planMembershipPick': return [...myPlans().map(p => p.name), 'Turn off plan membership'];
       case 'user': return userOptions();
       case 'durationType': return durationTypeOptions();
+      case 'planFilter': return planFilterOptions();
+      case 'planResults': return planResultsOptions();
+      case 'planSelect': return planChoiceIds.map(planLabel);
       case 'duration': return durationOptions(durationType);
       case 'result': return resultObjectiveIds.length > 0 ? RESULT_ACTIONS : [];
       case 'planPick': return planChoiceIds.map(planLabel);
@@ -648,6 +712,9 @@ export function AgentPage() {
       case 'planMembershipPick': appendAgent(planMembershipPrompt()); break;
       case 'user': appendAgent(userPrompt()); break;
       case 'durationType': appendAgent(durationTypePrompt()); break;
+      case 'planFilter': appendAgent(planFilterPrompt()); break;
+      case 'planResults': appendAgent(planResultsPrompt()); break;
+      case 'planSelect': appendAgent(planSelectPrompt()); break;
       case 'duration': appendAgent(durationPrompt(durationType)); break;
       case 'planPick': appendAgent(planPickPrompt()); break;
       case 'result': reshowResult(); break;
@@ -826,18 +893,21 @@ export function AgentPage() {
     appendAgent(familyMsg(self.title, rows));
   };
 
-  const showAllPlans = () => {
+  const showAllPlans = (statusPred: (p: List) => boolean = (p) => p.status !== 'Archived', filterLabel = 'all but archived') => {
     const u = usersSorted.find(x => x.id === selectedUserId);
     const userName = u?.name || u?.email || 'that user';
     const typeLabel = (t?: string) => DURATION_TYPES.find(d => d.type === t)?.label || (t || '—');
     const items = allPlans
-      .filter(p => p.ownerId === selectedUserId)
+      .filter(p => p.ownerId === selectedUserId && statusPred(p))
       .map(p => {
         const per = periods.find(pp => pp.id === p.periodId);
-        return { name: p.name, type: typeLabel(per?.type), period: per ? periodLabel(per) : '—' };
+        return { id: p.id, name: p.name, type: typeLabel(per?.type), period: per ? periodLabel(per) : '—', status: p.status || '' };
       })
       .sort((a, b) => a.name.localeCompare(b.name));
-    appendAgent(plansMsg(userName, items));
+    appendAgent(plansMsg(userName, items, filterLabel));
+    const ids = items.map(i => i.id);
+    setPlanChoiceIds(ids);
+    return ids;
   };
 
   const handleSubmit = () => {
@@ -935,9 +1005,9 @@ export function AgentPage() {
       }
       case 'durationType': {
         if (n === DURATION_TYPES.length + 1) {
-          // "Show all plans and their duration type" — informational; stay on this step.
-          showAllPlans();
-          appendAgent(durationTypePrompt());
+          // "Show all plans" — first offer status filter options, then list.
+          setStep('planFilter');
+          appendAgent(planFilterPrompt());
           break;
         }
         const dt = DURATION_TYPES[n - 1];
@@ -950,6 +1020,35 @@ export function AgentPage() {
           setStep('duration');
           appendAgent(durationPrompt(dt.type));
         }
+        break;
+      }
+      case 'planFilter': {
+        let ids: string[];
+        if (n === 1) ids = showAllPlans(p => p.status !== 'Archived', 'all but archived');
+        else if (n === 2) ids = showAllPlans(() => true, 'all statuses');
+        else {
+          const stage = planStages[n - 3];
+          ids = showAllPlans(p => p.status === stage, stage);
+        }
+        // After listing, offer to select a result or search again.
+        setStep('planResults');
+        appendAgent(planResultsPrompt(ids));
+        break;
+      }
+      case 'planResults': {
+        if (planChoiceIds.length > 0 && n === 1) {
+          setStep('planSelect');
+          appendAgent(planSelectPrompt());
+        } else {
+          // "Search again for plans" (n===1 when no results, n===2 otherwise).
+          setStep('planFilter');
+          appendAgent(planFilterPrompt());
+        }
+        break;
+      }
+      case 'planSelect': {
+        const plan = allPlans.find(p => p.id === planChoiceIds[n - 1]);
+        if (plan) showPlanItems(plan);
         break;
       }
       case 'duration':
