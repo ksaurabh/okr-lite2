@@ -1,20 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
-import type { List, User } from '../../types';
+import type { List, User, WorkflowStatus } from '../../types';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 const SESSIONS_URL = `${API_URL}/api/users/me/agent-sessions`;
 
-type Step = 'root' | 'user' | 'durationType' | 'duration' | 'planPick' | 'result' | 'vpEach' | 'vpPick' | 'itemAction' | 'vpItem';
+type Step = 'root' | 'user' | 'durationType' | 'duration' | 'planPick' | 'result' | 'vpEach' | 'vpPick' | 'itemAction' | 'changeDuration' | 'vpItem';
 
 // Serializable chat messages (so sessions can be persisted and resumed).
 type Msg =
   | { role: 'user'; kind: 'text'; text: string }
   | { role: 'agent'; kind: 'text'; text: string; tone?: 'error' }
   | { role: 'agent'; kind: 'menu'; title: string; options: string[]; baseCount: number }
-  | { role: 'agent'; kind: 'plan'; planName: string; who: string; period: string; items: { title: string; vp: number; missing?: boolean }[]; total: number }
-  | { role: 'agent'; kind: 'children'; parent: string; items: { title: string; vp: number }[] }
+  | { role: 'agent'; kind: 'plan'; planName: string; who: string; period: string; items: { id: string; title: string; vp: number; missing?: boolean; kr?: boolean }[]; total: number }
+  | { role: 'agent'; kind: 'children'; parent: string; items: { id: string; title: string; vp: number; duration: string; status: string }[] }
   | { role: 'agent'; kind: 'plans'; who: string; items: { name: string; type: string; period: string }[] }
   | { role: 'agent'; kind: 'family'; subject: string; rows: { name: string; rel: string; duration: string; vp: number; owner: string; assignee: string; self?: boolean }[] };
 
@@ -47,7 +47,12 @@ const DURATION_TYPES = [
   { label: 'Weekly', type: 'week' },
 ] as const;
 const RESULT_ACTIONS = ['Update VP on every item', 'Select an item'];
-const ITEM_ACTIONS = ['Set value points', 'Show children', 'Show parent & siblings'];
+const ITEM_ACTIONS = ['Set value points', 'Show children', 'Show parent & siblings', 'Change duration'];
+const WORKFLOW_STATUS_LABELS: Record<string, string> = {
+  todo: 'To Do', backlog: 'In Backlog', planning: 'In Planning', in_progress: 'In Progress',
+  acceptance: 'In Acceptance', done: 'Done', archived: 'Archived',
+};
+const HIDDEN_CHILD_STATUSES = new Set(['done', 'archived']);
 const BACK_LABEL = 'Go back';
 const RESTART_LABEL = 'Start over';
 
@@ -61,6 +66,7 @@ const PREV: Record<Step, Step> = {
   vpEach: 'result',
   vpPick: 'result',
   itemAction: 'vpPick',
+  changeDuration: 'itemAction',
   vpItem: 'itemAction',
 };
 
@@ -69,8 +75,8 @@ const VALUE_STEPS: Step[] = ['vpEach', 'vpItem'];
 const menuMsg = (title: string, baseOpts: string[]): Msg => ({ role: 'agent', kind: 'menu', title, options: [...baseOpts, BACK_LABEL, RESTART_LABEL], baseCount: baseOpts.length });
 const textMsg = (text: string, tone?: 'error'): Msg => ({ role: 'agent', kind: 'text', text, ...(tone ? { tone } : {}) });
 const userMsg = (text: string): Msg => ({ role: 'user', kind: 'text', text });
-const planMsg = (planName: string, who: string, period: string, items: { title: string; vp: number; missing?: boolean }[], total: number): Msg => ({ role: 'agent', kind: 'plan', planName, who, period, items, total });
-const childrenMsg = (parent: string, items: { title: string; vp: number }[]): Msg => ({ role: 'agent', kind: 'children', parent, items });
+const planMsg = (planName: string, who: string, period: string, items: { id: string; title: string; vp: number; missing?: boolean; kr?: boolean }[], total: number): Msg => ({ role: 'agent', kind: 'plan', planName, who, period, items, total });
+const childrenMsg = (parent: string, items: { id: string; title: string; vp: number; duration: string; status: string }[]): Msg => ({ role: 'agent', kind: 'children', parent, items });
 const plansMsg = (who: string, items: { name: string; type: string; period: string }[]): Msg => ({ role: 'agent', kind: 'plans', who, items });
 const familyMsg = (subject: string, rows: { name: string; rel: string; duration: string; vp: number; owner: string; assignee: string; self?: boolean }[]): Msg => ({ role: 'agent', kind: 'family', subject, rows });
 
@@ -120,22 +126,25 @@ function renderMsg(m: Msg): React.ReactNode {
             {' '}— {m.items.length} {m.items.length === 1 ? 'item' : 'items'}:
           </p>
           {m.items.length > 0 ? (
-            <table className="mt-2 text-sm">
-              <tbody>
-                {m.items.map((it, i) => (
-                  <tr key={i} className="border-b border-gray-100 last:border-0">
-                    <td className="py-1 pr-4 text-gray-400 tabular-nums align-top">{i + 1}.</td>
-                    <td className="py-1 pr-6 text-gray-800">{it.title}{it.missing && <span className="text-gray-400"> (not visible)</span>}</td>
-                    <td className="py-1 text-gray-600 tabular-nums whitespace-nowrap">{it.vp} VP</td>
-                  </tr>
-                ))}
-                <tr>
-                  <td></td>
-                  <td className="py-1 pr-6 font-medium text-gray-800">Total</td>
-                  <td className="py-1 font-medium text-gray-800 tabular-nums whitespace-nowrap">{m.total} VP</td>
-                </tr>
-              </tbody>
-            </table>
+            <ObjTable
+              columns={[
+                { key: 'idx', label: '#', width: 36 },
+                { key: 'title', label: 'Objective', width: 240 },
+                { key: 'kr', label: 'KR', width: 70 },
+                { key: 'duration', label: 'Duration', width: 150, edit: 'duration' },
+                { key: 'status', label: 'Status', width: 140, edit: 'status' },
+                { key: 'vp', label: 'VP', width: 90, align: 'right', edit: 'vp' },
+              ]}
+              rows={[
+                ...m.items.map((it, i) => ({
+                  _id: it.id,
+                  idx: `${i + 1}.`,
+                  title: <>{it.title}{it.missing && <span className="text-gray-400"> (not visible)</span>}</>,
+                  kr: `KR=${it.kr ? 'Yes' : 'No'}`,
+                })),
+                { idx: '', title: <span className="font-medium">Total</span>, kr: '', vp: <span className="font-medium">{m.total} VP</span> },
+              ]}
+            />
           ) : (
             <p className="text-gray-500 mt-1">This plan has no items yet.</p>
           )}
@@ -145,17 +154,16 @@ function renderMsg(m: Msg): React.ReactNode {
       return (
         <div>
           <p>Children of "{m.parent}" ({m.items.length}):</p>
-          <table className="mt-1 text-sm">
-            <tbody>
-              {m.items.map((c, i) => (
-                <tr key={i} className="border-b border-gray-100 last:border-0">
-                  <td className="py-1 pr-4 text-gray-400 tabular-nums align-top">{i + 1}.</td>
-                  <td className="py-1 pr-6 text-gray-800">{c.title}</td>
-                  <td className="py-1 text-gray-600 tabular-nums whitespace-nowrap">{c.vp} VP</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <ObjTable
+            columns={[
+              { key: 'idx', label: '#', width: 36 },
+              { key: 'title', label: 'Objective', width: 220 },
+              { key: 'duration', label: 'Duration', width: 150, edit: 'duration' },
+              { key: 'status', label: 'Status', width: 140, edit: 'status' },
+              { key: 'vp', label: 'VP', width: 90, align: 'right', edit: 'vp' },
+            ]}
+            rows={m.items.map((c, i) => ({ _id: c.id, idx: `${i + 1}.`, title: c.title }))}
+          />
         </div>
       );
     case 'plans':
@@ -213,6 +221,96 @@ function renderMsg(m: Msg): React.ReactNode {
     default:
       return null;
   }
+}
+
+// An inline editor bound to a live objective: number input for VP, selects for
+// status and duration. Writes through updateObjective.
+function EditableCell({ type, id }: { type: 'vp' | 'status' | 'duration'; id: string }) {
+  const obj = useOKRStore((s: OKRStore) => s.objectives.find(o => o.id === id));
+  const periods = useOKRStore((s: OKRStore) => s.periods);
+  const updateObjective = useOKRStore((s: OKRStore) => s.updateObjective);
+  const { user } = useAuth();
+  const email = user?.email || '';
+  if (!obj) return <span className="text-gray-300">—</span>;
+  const cls = 'w-full bg-transparent border border-transparent hover:border-gray-300 focus:border-blue-500 rounded px-1 py-0.5 text-sm focus:outline-none';
+  if (type === 'vp') {
+    // Uncontrolled + key so external VP changes re-seed the input without an effect.
+    return (
+      <input
+        key={obj.valuePoints ?? 0}
+        type="number"
+        min={0}
+        defaultValue={obj.valuePoints ?? 0}
+        onBlur={e => { const v = Number(e.currentTarget.value); if (Number.isFinite(v) && v >= 0 && v !== (obj.valuePoints ?? 0)) updateObjective(id, { valuePoints: v }, email); }}
+        onKeyDown={e => { if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur(); }}
+        className={`${cls} text-right tabular-nums`}
+      />
+    );
+  }
+  if (type === 'status') {
+    return (
+      <select value={obj.workflowStatus} onChange={e => updateObjective(id, { workflowStatus: e.target.value as WorkflowStatus }, email)} className={cls}>
+        {Object.entries(WORKFLOW_STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+      </select>
+    );
+  }
+  return (
+    <select value={obj.periodId || ''} onChange={e => updateObjective(id, { periodId: e.target.value }, email)} className={cls}>
+      {[...periods].sort((a, b) => (a.startDate || '').localeCompare(b.startDate || '')).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+    </select>
+  );
+}
+
+interface ObjColumn { key: string; label: string; width: number; align?: 'right'; edit?: 'vp' | 'status' | 'duration'; }
+
+// A fixed-layout table with a header and drag-to-resize columns. Each instance
+// manages its own column widths.
+function ObjTable({ columns, rows }: { columns: ObjColumn[]; rows: (Record<string, React.ReactNode> & { _id?: string })[] }) {
+  const [widths, setWidths] = useState<number[]>(() => columns.map(c => c.width));
+  const drag = useRef<{ i: number; x: number; w: number } | null>(null);
+  useEffect(() => {
+    const move = (e: MouseEvent) => {
+      const d = drag.current;
+      if (!d) return;
+      setWidths(ws => { const n = [...ws]; n[d.i] = Math.max(40, d.w + (e.clientX - d.x)); return n; });
+    };
+    const up = () => { if (drag.current) { drag.current = null; document.body.style.cursor = ''; } };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+    return () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
+  }, []);
+  return (
+    <div className="overflow-x-auto mt-1">
+      <table className="text-sm border-collapse" style={{ tableLayout: 'fixed', width: widths.reduce((a, b) => a + b, 0) }}>
+        <colgroup>{columns.map((c, i) => <col key={c.key} style={{ width: widths[i] }} />)}</colgroup>
+        <thead>
+          <tr className="text-xs text-gray-500 border-b border-gray-200">
+            {columns.map((c, i) => (
+              <th key={c.key} className={`relative py-1 px-2 font-medium ${c.align === 'right' ? 'text-right' : 'text-left'}`}>
+                <div className="truncate">{c.label}</div>
+                <span
+                  onMouseDown={(e) => { drag.current = { i, x: e.clientX, w: widths[i] }; document.body.style.cursor = 'col-resize'; e.preventDefault(); }}
+                  className="absolute -right-px top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-400"
+                  title="Drag to resize"
+                />
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, ri) => (
+            <tr key={ri} className="border-b border-gray-100 last:border-0">
+              {columns.map(c => (
+                <td key={c.key} className={`py-1 px-2 align-top ${c.align === 'right' ? 'text-right tabular-nums whitespace-nowrap' : ''}`}>
+                  {c.edit && r._id ? <EditableCell type={c.edit} id={r._id} /> : <div className="truncate">{r[c.key]}</div>}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 export function AgentPage() {
@@ -287,6 +385,11 @@ export function AgentPage() {
   const durationPrompt = (type: string) => menuMsg('For which duration? Type the number:', durationOptions(type));
   const vpPickPrompt = () => menuMsg('Which item? Type the number:', resultObjectiveIds.map(itemLabel));
   const itemActionPrompt = (id = vpTargetId) => menuMsg(`What would you like to do with "${objTitle(id)}"? Type the number:`, ITEM_ACTIONS);
+  const periodChoiceLabel = (p: { name: string; startDate?: string; endDate?: string; type?: string }) => {
+    const t = DURATION_TYPES.find(d => d.type === p.type)?.label || (p.type || '');
+    return t ? `${periodLabel(p)} · ${t}` : periodLabel(p);
+  };
+  const changeDurationPrompt = () => menuMsg('Change duration to which period? Type the number:', periodsSorted.map(periodChoiceLabel));
   const vpEachPrompt = (index: number): Msg => {
     const o = useOKRStore.getState().objectives.find(x => x.id === resultObjectiveIds[index]);
     return textMsg(`Item ${index + 1} of ${resultObjectiveIds.length} — type the value points for "${o?.title || resultObjectiveIds[index]}" (currently ${o?.valuePoints ?? 0} VP). (Type b to go back, s to start over, or c to see its children.)`);
@@ -303,6 +406,7 @@ export function AgentPage() {
       case 'planPick': return planChoiceIds.map(planLabel);
       case 'vpPick': return resultObjectiveIds.map(itemLabel);
       case 'itemAction': return ITEM_ACTIONS;
+      case 'changeDuration': return periodsSorted.map(periodChoiceLabel);
       default: return [];
     }
   };
@@ -436,7 +540,7 @@ export function AgentPage() {
     setResultObjectiveIds(sorted.map(it => it.objectiveId));
     const items = sorted.map(it => {
       const obj = objs.find(o => o.id === it.objectiveId);
-      return { title: obj?.title || it.objectiveId, vp: obj?.valuePoints ?? 0, missing: !obj };
+      return { id: it.objectiveId, title: obj?.title || it.objectiveId, vp: obj?.valuePoints ?? 0, missing: !obj, kr: !!obj?.isKeyResult };
     });
     const total = items.reduce((sum, i) => sum + i.vp, 0);
     appendAgent(planMsg(plan.name, userName, periodName, items, total));
@@ -487,6 +591,7 @@ export function AgentPage() {
       case 'result': reshowResult(); break;
       case 'vpPick': appendAgent(vpPickPrompt()); break;
       case 'itemAction': appendAgent(itemActionPrompt()); break;
+      case 'changeDuration': appendAgent(changeDurationPrompt()); break;
       case 'vpEach': appendAgent(vpEachPrompt(vpEachIndex)); break;
       case 'vpItem': appendAgent(vpItemPrompt(objTitle(vpTargetId))); break;
     }
@@ -513,6 +618,17 @@ export function AgentPage() {
     reshowResult();
   };
 
+  const changeItemDuration = async (id: string, period: { id: string; name: string }) => {
+    try {
+      await updateObjective(id, { periodId: period.id }, userEmail);
+      appendAgent(textMsg(`Changed the duration of "${objTitle(id)}" to ${period.name}.`));
+    } catch (err) {
+      appendAgent(textMsg(`Couldn't change the duration: ${err instanceof Error ? err.message : String(err)}`, 'error'));
+    }
+    setStep('itemAction');
+    appendAgent(itemActionPrompt(id));
+  };
+
   // Walk every item one at a time, setting a (possibly different) VP on each.
   const handleVpEach = async (v: number) => {
     const id = resultObjectiveIds[vpEachIndex];
@@ -534,14 +650,22 @@ export function AgentPage() {
   const showChildren = (id: string) => {
     const objs = useOKRStore.getState().objectives;
     const parent = objs.find(o => o.id === id);
+    // Hide Done/Archived children by default.
     const children = objs
-      .filter(o => o.parentId === id)
+      .filter(o => o.parentId === id && !HIDDEN_CHILD_STATUSES.has(o.workflowStatus))
       .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.title.localeCompare(b.title));
     if (children.length === 0) {
-      appendAgent(textMsg(`"${parent?.title || id}" has no children.`));
+      appendAgent(textMsg(`"${parent?.title || id}" has no active children.`));
       return;
     }
-    appendAgent(childrenMsg(parent?.title || id, children.map(c => ({ title: c.title, vp: c.valuePoints ?? 0 }))));
+    const durName = (pid?: string) => periods.find(p => p.id === pid)?.name || '—';
+    appendAgent(childrenMsg(parent?.title || id, children.map(c => ({
+      id: c.id,
+      title: c.title,
+      vp: c.valuePoints ?? 0,
+      duration: durName(c.periodId),
+      status: WORKFLOW_STATUS_LABELS[c.workflowStatus] || c.workflowStatus,
+    }))));
   };
 
   // Parent + siblings + the item itself, each with duration, VP, owner, assignee.
@@ -685,7 +809,13 @@ export function AgentPage() {
         if (n === 1) { setStep('vpItem'); appendAgent(vpItemPrompt(objTitle(vpTargetId))); }
         else if (n === 2) { showChildren(vpTargetId); appendAgent(itemActionPrompt(vpTargetId)); }
         else if (n === 3) { showFamily(vpTargetId); appendAgent(itemActionPrompt(vpTargetId)); }
+        else if (n === 4) { setStep('changeDuration'); appendAgent(changeDurationPrompt()); }
         break;
+      case 'changeDuration': {
+        const period = periodsSorted[n - 1];
+        changeItemDuration(vpTargetId, period);
+        break;
+      }
       default:
         break;
     }
