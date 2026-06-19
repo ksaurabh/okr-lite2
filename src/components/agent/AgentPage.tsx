@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Component, useEffect, useMemo, useRef, useState } from 'react';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
+import { ObjectiveTree } from '../objectives/ObjectiveTree';
 import type { List, User, WorkflowStatus } from '../../types';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 const SESSIONS_URL = `${API_URL}/api/users/me/agent-sessions`;
 
-type Step = 'root' | 'user' | 'durationType' | 'duration' | 'planPick' | 'result' | 'vpEach' | 'vpPick' | 'itemAction' | 'changeDuration' | 'vpItem';
+type Step = 'root' | 'treeBrowse' | 'durationGroupPick' | 'user' | 'durationType' | 'duration' | 'planPick' | 'result' | 'vpEach' | 'vpPick' | 'itemAction' | 'changeDuration' | 'vpItem';
 
 // Serializable chat messages (so sessions can be persisted and resumed).
 type Msg =
@@ -16,7 +17,8 @@ type Msg =
   | { role: 'agent'; kind: 'plan'; planName: string; who: string; period: string; items: { id: string; title: string; vp: number; missing?: boolean; kr?: boolean }[]; total: number }
   | { role: 'agent'; kind: 'children'; parent: string; items: { id: string; title: string; vp: number; duration: string; status: string }[] }
   | { role: 'agent'; kind: 'plans'; who: string; items: { name: string; type: string; period: string }[] }
-  | { role: 'agent'; kind: 'family'; subject: string; rows: { name: string; rel: string; duration: string; vp: number; owner: string; assignee: string; self?: boolean }[] };
+  | { role: 'agent'; kind: 'family'; subject: string; rows: { name: string; rel: string; duration: string; vp: number; owner: string; assignee: string; self?: boolean }[] }
+  | { role: 'agent'; kind: 'objlist'; title: string; ids: string[] };
 
 interface SessionState {
   step: Step;
@@ -28,6 +30,8 @@ interface SessionState {
   vpEachIndex: number;
   resultPlanId: string;
   planChoiceIds: string[];
+  durationGroupBaseIds: string[];
+  durationGroups: { periodId: string; label: string; count: number }[];
 }
 
 interface AgentSession {
@@ -40,7 +44,7 @@ interface AgentSession {
   updatedAt: string;
 }
 
-const ROOT_OPTIONS = ['Set my OKRs'];
+const ROOT_OPTIONS = ['Set my OKRs', 'Browse Objective Tree'];
 const DURATION_TYPES = [
   { label: 'Quarterly', type: 'quarter' },
   { label: 'Monthly', type: 'month' },
@@ -48,6 +52,12 @@ const DURATION_TYPES = [
 ] as const;
 const RESULT_ACTIONS = ['Update VP on every item', 'Select an item'];
 const ITEM_ACTIONS = ['Set value points', 'Show children', 'Show parent & siblings', 'Change duration'];
+const TREE_OPTIONS = [
+  'Show top level initiatives that are open',
+  'Show top level initiatives and their children that are open',
+  'Show my objectives whose duration has passed and is still open',
+  'Show top level initiatives and their children that are open by duration',
+];
 const WORKFLOW_STATUS_LABELS: Record<string, string> = {
   todo: 'To Do', backlog: 'In Backlog', planning: 'In Planning', in_progress: 'In Progress',
   acceptance: 'In Acceptance', done: 'Done', archived: 'Archived',
@@ -58,6 +68,8 @@ const RESTART_LABEL = 'Start over';
 
 const PREV: Record<Step, Step> = {
   root: 'root',
+  treeBrowse: 'root',
+  durationGroupPick: 'treeBrowse',
   user: 'root',
   durationType: 'user',
   duration: 'durationType',
@@ -79,9 +91,17 @@ const planMsg = (planName: string, who: string, period: string, items: { id: str
 const childrenMsg = (parent: string, items: { id: string; title: string; vp: number; duration: string; status: string }[]): Msg => ({ role: 'agent', kind: 'children', parent, items });
 const plansMsg = (who: string, items: { name: string; type: string; period: string }[]): Msg => ({ role: 'agent', kind: 'plans', who, items });
 const familyMsg = (subject: string, rows: { name: string; rel: string; duration: string; vp: number; owner: string; assignee: string; self?: boolean }[]): Msg => ({ role: 'agent', kind: 'family', subject, rows });
+const objlistMsg = (title: string, ids: string[]): Msg => ({ role: 'agent', kind: 'objlist', title, ids });
+
+// Renders an already-filtered set of objectives using the Objectives-page tree
+// component (no filter panel). Memoizes the id set so it's stable across renders.
+function AgentObjectiveTree({ ids }: { ids: string[] }) {
+  const restrict = useMemo(() => new Set(ids), [ids]);
+  return <ObjectiveTree restrictIds={restrict} hideFilters />;
+}
 
 const rootPromptMsg = (): Msg => menuMsg("Hi — I'm your OKR agent. Type the number of an option:", ROOT_OPTIONS);
-const initialState = (): SessionState => ({ step: 'root', selectedUserId: '', durationType: '', resultPeriodId: '', resultObjectiveIds: [], vpTargetId: '', vpEachIndex: 0, resultPlanId: '', planChoiceIds: [] });
+const initialState = (): SessionState => ({ step: 'root', selectedUserId: '', durationType: '', resultPeriodId: '', resultObjectiveIds: [], vpTargetId: '', vpEachIndex: 0, resultPlanId: '', planChoiceIds: [], durationGroupBaseIds: [], durationGroups: [] });
 
 function fmtDate(d?: string): string {
   if (!d) return '';
@@ -218,6 +238,16 @@ function renderMsg(m: Msg): React.ReactNode {
           </table>
         </div>
       );
+    case 'objlist':
+      return (
+        <div>
+          <p className="mb-1">{m.title} ({(m.ids || ((m as { items?: { id: string }[] }).items || []).map(it => it.id)).length}):</p>
+          {(() => {
+            const ids = m.ids || ((m as { items?: { id: string }[] }).items || []).map(it => it.id);
+            return ids.length > 0 ? <AgentObjectiveTree ids={ids} /> : <p className="text-gray-500">None.</p>;
+          })()}
+        </div>
+      );
     default:
       return null;
   }
@@ -313,6 +343,18 @@ function ObjTable({ columns, rows }: { columns: ObjColumn[]; rows: (Record<strin
   );
 }
 
+// Guards a single chat message: a malformed/old persisted message renders a
+// small fallback instead of blanking the whole transcript.
+class MsgBoundary extends Component<{ children: React.ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  render() {
+    return this.state.failed
+      ? <span className="text-gray-400 text-xs">[unable to display this message]</span>
+      : this.props.children;
+  }
+}
+
 export function AgentPage() {
   const { user } = useAuth();
   const userEmail = user?.email || '';
@@ -327,6 +369,7 @@ export function AgentPage() {
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [activeId, setActiveId] = useState('');
   const [showArchived, setShowArchived] = useState(false);
+  const [showSessions, setShowSessions] = useState(true);
   const [sessionTitle, setSessionTitle] = useState('New chat');
 
   const [step, setStep] = useState<Step>('root');
@@ -338,6 +381,8 @@ export function AgentPage() {
   const [vpEachIndex, setVpEachIndex] = useState(0);
   const [resultPlanId, setResultPlanId] = useState('');
   const [planChoiceIds, setPlanChoiceIds] = useState<string[]>([]);
+  const [durationGroupBaseIds, setDurationGroupBaseIds] = useState<string[]>([]);
+  const [durationGroups, setDurationGroups] = useState<{ periodId: string; label: string; count: number }[]>([]);
   const [input, setInput] = useState('');
   // Seed with the opening prompt so the chat is never blank, even before a
   // session loads or if the sessions API is unreachable.
@@ -399,6 +444,8 @@ export function AgentPage() {
   const baseOptions = (s: Step): string[] => {
     switch (s) {
       case 'root': return ROOT_OPTIONS;
+      case 'treeBrowse': return TREE_OPTIONS;
+      case 'durationGroupPick': return durationGroups.map(durationGroupLabel);
       case 'user': return userOptions();
       case 'durationType': return durationTypeOptions();
       case 'duration': return durationOptions(durationType);
@@ -429,6 +476,8 @@ export function AgentPage() {
     setVpEachIndex(st.vpEachIndex || 0);
     setResultPlanId(st.resultPlanId || '');
     setPlanChoiceIds(st.planChoiceIds || []);
+    setDurationGroupBaseIds(st.durationGroupBaseIds || []);
+    setDurationGroups(st.durationGroups || []);
     setInput('');
   };
 
@@ -508,7 +557,7 @@ export function AgentPage() {
           body: JSON.stringify({
             title: sessionTitle,
             transcript,
-            state: { step, selectedUserId, durationType, resultPeriodId, resultObjectiveIds, vpTargetId, vpEachIndex, resultPlanId, planChoiceIds },
+            state: { step, selectedUserId, durationType, resultPeriodId, resultObjectiveIds, vpTargetId, vpEachIndex, resultPlanId, planChoiceIds, durationGroupBaseIds, durationGroups },
           }),
         });
         if (res.ok) {
@@ -518,7 +567,7 @@ export function AgentPage() {
       } catch { /* ignore */ }
     }, 500);
     return () => clearTimeout(t);
-  }, [transcript, step, selectedUserId, durationType, resultPeriodId, resultObjectiveIds, vpTargetId, vpEachIndex, resultPlanId, planChoiceIds, sessionTitle, activeId]);
+  }, [transcript, step, selectedUserId, durationType, resultPeriodId, resultObjectiveIds, vpTargetId, vpEachIndex, resultPlanId, planChoiceIds, durationGroupBaseIds, durationGroups, sessionTitle, activeId]);
 
   const planLabel = (id: string) => {
     const p = allPlans.find(x => x.id === id);
@@ -584,6 +633,8 @@ export function AgentPage() {
     setStep(s);
     switch (s) {
       case 'root': appendAgent(rootPromptMsg()); break;
+      case 'treeBrowse': appendAgent(treeBrowsePrompt()); break;
+      case 'durationGroupPick': appendAgent(durationGroupPrompt(durationGroups)); break;
       case 'user': appendAgent(userPrompt()); break;
       case 'durationType': appendAgent(durationTypePrompt()); break;
       case 'duration': appendAgent(durationPrompt(durationType)); break;
@@ -645,6 +696,74 @@ export function AgentPage() {
       appendAgent(textMsg(`Done — updated value points on all ${resultObjectiveIds.length} ${resultObjectiveIds.length === 1 ? 'item' : 'items'}.`));
       reshowResult();
     }
+  };
+
+  const treeBrowsePrompt = () => menuMsg('Browse the objective tree. Type the number:', TREE_OPTIONS);
+  const durationGroupLabel = (g: { label: string; count: number }) => `${g.label} — ${g.count} ${g.count === 1 ? 'item' : 'items'}`;
+  const durationGroupPrompt = (groups: { periodId: string; label: string; count: number }[]) => menuMsg('Durations in the result set — pick one to filter by. Type the number:', groups.map(durationGroupLabel));
+
+  // Open top-level initiatives + open children, grouped by duration (period).
+  const showDurationGroups = () => {
+    const objs = useOKRStore.getState().objectives;
+    const isOpen = (ws: string) => !HIDDEN_CHILD_STATUSES.has(ws);
+    const roots = objs.filter(o => !o.parentId && o.type === 'initiative' && isOpen(o.workflowStatus));
+    const baseIds: string[] = [];
+    const add = (o: typeof objs[number]) => {
+      baseIds.push(o.id);
+      objs.filter(c => c.parentId === o.id && isOpen(c.workflowStatus)).forEach(add);
+    };
+    roots.forEach(add);
+    const counts = new Map<string, number>();
+    for (const id of baseIds) {
+      const pid = objs.find(o => o.id === id)?.periodId || '';
+      counts.set(pid, (counts.get(pid) || 0) + 1);
+    }
+    const groups = Array.from(counts.entries())
+      .map(([periodId, count]) => {
+        const p = periods.find(x => x.id === periodId);
+        return { periodId, label: p ? periodLabel(p) : 'No duration', count };
+      })
+      .sort((a, b) => {
+        const pa = periods.find(x => x.id === a.periodId)?.startDate || '';
+        const pb = periods.find(x => x.id === b.periodId)?.startDate || '';
+        return pa.localeCompare(pb) || a.label.localeCompare(b.label);
+      });
+    if (groups.length === 0) { appendAgent(textMsg('No open top-level initiatives found.')); appendAgent(treeBrowsePrompt()); setStep('treeBrowse'); return; }
+    setDurationGroupBaseIds(baseIds);
+    setDurationGroups(groups);
+    setStep('durationGroupPick');
+    appendAgent(durationGroupPrompt(groups));
+  };
+
+  // "Open" = not done/archived. Show open top-level initiatives, optionally with
+  // their open descendants (indented).
+  const showTopInitiatives = (withChildren: boolean) => {
+    const objs = useOKRStore.getState().objectives;
+    const isOpen = (ws: string) => !HIDDEN_CHILD_STATUSES.has(ws);
+    const roots = objs.filter(o => !o.parentId && o.type === 'initiative' && isOpen(o.workflowStatus));
+    const ids: string[] = [];
+    const add = (o: typeof objs[number]) => {
+      ids.push(o.id);
+      if (withChildren) objs.filter(c => c.parentId === o.id && isOpen(c.workflowStatus)).forEach(add);
+    };
+    roots.forEach(add);
+    const title = withChildren ? 'Open top-level initiatives and their children' : 'Open top-level initiatives';
+    if (ids.length === 0) appendAgent(textMsg('No open top-level initiatives found.'));
+    else appendAgent(objlistMsg(title, ids));
+  };
+
+  // Objectives I own whose period has already ended (endDate before today).
+  const showMyPassedObjectives = () => {
+    const myId = orgUsers.find(u => u.email?.toLowerCase() === userEmail.toLowerCase())?.id;
+    if (!myId) { appendAgent(textMsg('Could not determine your user yet — try again in a moment.')); return; }
+    const today = new Date().toLocaleDateString('en-CA');
+    const periodPassed = (pid?: string) => { const p = periods.find(x => x.id === pid); return !!(p?.endDate && p.endDate < today); };
+    const objs = useOKRStore.getState().objectives;
+    const ids = objs
+      .filter(o => o.ownerId === myId && periodPassed(o.periodId) && !HIDDEN_CHILD_STATUSES.has(o.workflowStatus))
+      .map(o => o.id);
+    if (ids.length === 0) appendAgent(textMsg('You have no open objectives whose duration has passed.'));
+    else appendAgent(objlistMsg('My open objectives whose duration has passed', ids));
   };
 
   const showChildren = (id: string) => {
@@ -758,8 +877,25 @@ export function AgentPage() {
 
     switch (step) {
       case 'root':
-        showPromptFor('user');
+        if (n === 1) showPromptFor('user');
+        else { setStep('treeBrowse'); appendAgent(treeBrowsePrompt()); }
         break;
+      case 'treeBrowse':
+        if (n === 1) { showTopInitiatives(false); appendAgent(treeBrowsePrompt()); }
+        else if (n === 2) { showTopInitiatives(true); appendAgent(treeBrowsePrompt()); }
+        else if (n === 3) { showMyPassedObjectives(); appendAgent(treeBrowsePrompt()); }
+        else if (n === 4) { showDurationGroups(); }
+        break;
+      case 'durationGroupPick': {
+        const g = durationGroups[n - 1];
+        const objs = useOKRStore.getState().objectives;
+        const ids = durationGroupBaseIds.filter(id => (objs.find(o => o.id === id)?.periodId || '') === g.periodId);
+        if (ids.length === 0) appendAgent(textMsg('No items for that duration.'));
+        else appendAgent(objlistMsg(`Open top-level initiatives & children · ${g.label}`, ids));
+        // Stay in the duration loop — re-show the duration menu. "Go back" goes up a level.
+        appendAgent(durationGroupPrompt(durationGroups));
+        break;
+      }
       case 'user': {
         const uid = usersSorted[n - 1].id;
         setSelectedUserId(uid);
@@ -827,9 +963,18 @@ export function AgentPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-bold text-gray-900 mb-4">Agent</h1>
+      <div className="flex items-center gap-3 mb-4">
+        <h1 className="text-xl font-bold text-gray-900">Agent</h1>
+        <button
+          onClick={() => setShowSessions(v => !v)}
+          className="text-xs font-medium text-gray-600 hover:text-gray-900 border border-gray-300 rounded px-2 py-1"
+        >
+          {showSessions ? 'Hide Sessions' : 'Show sessions'}
+        </button>
+      </div>
       <div className="flex gap-4" style={{ height: '72vh' }}>
         {/* Sessions */}
+        {showSessions && (
         <div className="w-64 flex-shrink-0 bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col">
           <div className="p-3 border-b border-gray-200 flex items-center justify-between">
             <span className="text-sm font-semibold text-gray-700">Sessions</span>
@@ -865,17 +1010,22 @@ export function AgentPage() {
             Show archived
           </label>
         </div>
+        )}
 
         {/* Chat */}
         <div className="flex-1 min-w-0 bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col">
           <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
-            {transcript.map((m, i) => (
-              <div key={i} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
-                <div className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-800'}`}>
-                  {renderMsg(m)}
+            {transcript.map((m, i) => {
+              // The embedded objective tree needs full width, not the narrow bubble.
+              const wide = m.role === 'agent' && m.kind === 'objlist';
+              return (
+                <div key={i} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
+                  <div className={wide ? 'w-full text-sm text-gray-800' : `max-w-[85%] rounded-lg px-3 py-2 text-sm ${m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-800'}`}>
+                    <MsgBoundary>{renderMsg(m)}</MsgBoundary>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
           <form
             onSubmit={(e) => { e.preventDefault(); handleSubmit(); }}

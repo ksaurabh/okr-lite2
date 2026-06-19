@@ -70,10 +70,15 @@ interface ObjectiveTreeProps {
   highlightObjectiveId?: string | null;
   onHighlightClear?: () => void;
   onViewChange?: (view: string) => void;
+  // When provided, show exactly these objectives (already filtered by the
+  // caller) instead of applying the store filters.
+  restrictIds?: Set<string>;
+  // Hide the filter panel (e.g. when embedded with a pre-filtered set).
+  hideFilters?: boolean;
 }
 
 
-export function ObjectiveTree({ highlightObjectiveId, onHighlightClear, onViewChange }: ObjectiveTreeProps = {}) {
+export function ObjectiveTree({ highlightObjectiveId, onHighlightClear, onViewChange, restrictIds, hideFilters }: ObjectiveTreeProps = {}) {
   const [includeAncestorPeriods, setIncludeAncestorPeriods] = useState(false);
   const [includeChildPeriods, setIncludeChildPeriods] = useState(true);
   const [includeChildTeams, setIncludeChildTeams] = useState(true);
@@ -320,7 +325,9 @@ export function ObjectiveTree({ highlightObjectiveId, onHighlightClear, onViewCh
   const descendantObjectiveLookup = useMemo(() => buildObjectiveDescendantLookup(orgObjectives), [orgObjectives]);
 
   const { filtered: filteredObjectives, directlyMatchingIds: directlyMatchingObjectiveIds } = useMemo(
-    () => filterObjectives({
+    () => restrictIds
+      ? { filtered: orgObjectives.filter((o: Objective) => restrictIds.has(o.id)), directlyMatchingIds: restrictIds }
+      : filterObjectives({
       orgObjectives,
       lists,
       filterPeriodIds,
@@ -353,7 +360,7 @@ export function ObjectiveTree({ highlightObjectiveId, onHighlightClear, onViewCh
       descendantTeamLookup,
       descendantObjectiveLookup,
     }),
-    [orgObjectives, lists, filterPeriodIds, filterTagIds, filterTeamIds, filterTypes, filterTypeNotSet, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterAssigneeNotSet, filterNextStepDate, filterLevels, filterWorkflowStatuses, filterKeyResultsOnly, filterObjectiveId, filterRootObjectiveId, filterListIds, filterLastUpdated, searchQuery, includeAncestorPeriods, includeChildPeriods, includeChildTeams, showChildren, directChildrenOnly, openChildrenOnly, ancestorPeriodLookup, descendantPeriodLookup, descendantTeamLookup, descendantObjectiveLookup]
+    [restrictIds, orgObjectives, lists, filterPeriodIds, filterTagIds, filterTeamIds, filterTypes, filterTypeNotSet, filterOwnerIds, filterOwnerOperator, filterAssigneeIds, filterAssigneeOperator, filterAssigneeNotSet, filterNextStepDate, filterLevels, filterWorkflowStatuses, filterKeyResultsOnly, filterObjectiveId, filterRootObjectiveId, filterListIds, filterLastUpdated, searchQuery, includeAncestorPeriods, includeChildPeriods, includeChildTeams, showChildren, directChildrenOnly, openChildrenOnly, ancestorPeriodLookup, descendantPeriodLookup, descendantTeamLookup, descendantObjectiveLookup]
   );
 
   // Get IDs of all filtered objectives for quick lookup
@@ -786,6 +793,7 @@ export function ObjectiveTree({ highlightObjectiveId, onHighlightClear, onViewCh
         </div>
       )}
 
+      {!hideFilters && (
       <ObjectiveFilterPanel
         orgObjectives={orgObjectives}
         orgPeriods={orgPeriods}
@@ -808,6 +816,7 @@ export function ObjectiveTree({ highlightObjectiveId, onHighlightClear, onViewCh
         setFilterLastUpdated={setFilterLastUpdated}
         showListMembershipOption
       />
+      )}
 
       {hasActiveFilters && (
         <div className="flex items-center justify-end mb-2">
