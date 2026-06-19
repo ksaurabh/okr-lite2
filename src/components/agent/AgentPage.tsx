@@ -13,7 +13,7 @@ type Step = 'root' | 'treeBrowse' | 'durationGroupPick' | 'planMembershipPick' |
 type Msg =
   | { role: 'user'; kind: 'text'; text: string }
   | { role: 'agent'; kind: 'text'; text: string; tone?: 'error' }
-  | { role: 'agent'; kind: 'menu'; title: string; options: string[]; baseCount: number }
+  | { role: 'agent'; kind: 'menu'; title: string; code?: string; options: string[]; baseCount: number }
   | { role: 'agent'; kind: 'plan'; planName: string; who: string; period: string; items: { id: string; title: string; vp: number; missing?: boolean; kr?: boolean }[]; total: number }
   | { role: 'agent'; kind: 'children'; parent: string; items: { id: string; title: string; vp: number; duration: string; status: string }[] }
   | { role: 'agent'; kind: 'plans'; who: string; filter?: string; items: { id: string; name: string; type: string; period: string; status: string }[] }
@@ -89,7 +89,14 @@ const PREV: Record<Step, Step> = {
 
 const VALUE_STEPS: Step[] = ['vpEach', 'vpItem'];
 
-const menuMsg = (title: string, baseOpts: string[]): Msg => ({ role: 'agent', kind: 'menu', title, options: [...baseOpts, BACK_LABEL, RESTART_LABEL], baseCount: baseOpts.length });
+// Stable short code identifying a question by its prompt text, e.g. "Q-1A2B".
+// Deterministic so the same question always carries the same code across sessions.
+function questionCode(title: string): string {
+  let h = 0;
+  for (let i = 0; i < title.length; i++) h = (Math.imul(h, 31) + title.charCodeAt(i)) | 0;
+  return `Q-${(h >>> 0).toString(36).toUpperCase().padStart(4, '0').slice(-4)}`;
+}
+const menuMsg = (title: string, baseOpts: string[]): Msg => ({ role: 'agent', kind: 'menu', title, code: questionCode(title), options: [...baseOpts, BACK_LABEL, RESTART_LABEL], baseCount: baseOpts.length });
 const textMsg = (text: string, tone?: 'error'): Msg => ({ role: 'agent', kind: 'text', text, ...(tone ? { tone } : {}) });
 const userMsg = (text: string): Msg => ({ role: 'user', kind: 'text', text });
 const planMsg = (planName: string, who: string, period: string, items: { id: string; title: string; vp: number; missing?: boolean; kr?: boolean }[], total: number): Msg => ({ role: 'agent', kind: 'plan', planName, who, period, items, total });
@@ -133,7 +140,9 @@ function renderMsg(m: Msg): React.ReactNode {
     case 'menu':
       return (
         <div>
-          <p className="mb-1">{m.title}</p>
+          <p className="mb-1">
+            {m.title} <span className="text-xs text-gray-400 font-mono">[{m.code || questionCode(m.title)}]</span>
+          </p>
           <ol className="space-y-0.5">
             {m.options.map((o, i) => (
               <li key={i} className={i >= m.baseCount ? 'text-gray-500' : undefined}>
