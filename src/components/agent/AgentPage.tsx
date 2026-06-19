@@ -1,5 +1,5 @@
 import { Component, useEffect, useMemo, useRef, useState } from 'react';
-import { useOKRStore, type OKRStore } from '../../store/okrStore';
+import { useOKRStore, type OKRStore, type ColumnKey } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
 import { ObjectiveTree } from '../objectives/ObjectiveTree';
 import type { List, User, WorkflowStatus } from '../../types';
@@ -14,11 +14,11 @@ type Msg =
   | { role: 'user'; kind: 'text'; text: string }
   | { role: 'agent'; kind: 'text'; text: string; tone?: 'error' }
   | { role: 'agent'; kind: 'menu'; title: string; code?: string; options: string[]; baseCount: number }
-  | { role: 'agent'; kind: 'plan'; planName: string; who: string; period: string; items: { id: string; title: string; vp: number; missing?: boolean; kr?: boolean }[]; total: number }
+  | { role: 'agent'; kind: 'plan'; planName: string; who: string; period: string; items: { id: string; title: string; vp: number; missing?: boolean; kr?: boolean }[]; total: number; code?: string }
   | { role: 'agent'; kind: 'children'; parent: string; items: { id: string; title: string; vp: number; duration: string; status: string }[] }
   | { role: 'agent'; kind: 'plans'; who: string; filter?: string; items: { id: string; name: string; type: string; period: string; status: string }[] }
   | { role: 'agent'; kind: 'family'; subject: string; rows: { name: string; rel: string; duration: string; vp: number; owner: string; assignee: string; self?: boolean }[] }
-  | { role: 'agent'; kind: 'objlist'; title: string; ids: string[] };
+  | { role: 'agent'; kind: 'objlist'; title: string; ids: string[]; code?: string };
 
 interface SessionState {
   step: Step;
@@ -99,17 +99,38 @@ function questionCode(title: string): string {
 const menuMsg = (title: string, baseOpts: string[]): Msg => ({ role: 'agent', kind: 'menu', title, code: questionCode(title), options: [...baseOpts, BACK_LABEL, RESTART_LABEL], baseCount: baseOpts.length });
 const textMsg = (text: string, tone?: 'error'): Msg => ({ role: 'agent', kind: 'text', text, ...(tone ? { tone } : {}) });
 const userMsg = (text: string): Msg => ({ role: 'user', kind: 'text', text });
-const planMsg = (planName: string, who: string, period: string, items: { id: string; title: string; vp: number; missing?: boolean; kr?: boolean }[], total: number): Msg => ({ role: 'agent', kind: 'plan', planName, who, period, items, total });
+const planMsg = (planName: string, who: string, period: string, items: { id: string; title: string; vp: number; missing?: boolean; kr?: boolean }[], total: number, code?: string): Msg => ({ role: 'agent', kind: 'plan', planName, who, period, items, total, code });
 const childrenMsg = (parent: string, items: { id: string; title: string; vp: number; duration: string; status: string }[]): Msg => ({ role: 'agent', kind: 'children', parent, items });
 const plansMsg = (who: string, items: { id: string; name: string; type: string; period: string; status: string }[], filter?: string): Msg => ({ role: 'agent', kind: 'plans', who, filter, items });
 const familyMsg = (subject: string, rows: { name: string; rel: string; duration: string; vp: number; owner: string; assignee: string; self?: boolean }[]): Msg => ({ role: 'agent', kind: 'family', subject, rows });
-const objlistMsg = (title: string, ids: string[]): Msg => ({ role: 'agent', kind: 'objlist', title, ids });
+const objlistMsg = (title: string, ids: string[], code?: string): Msg => ({ role: 'agent', kind: 'objlist', title, ids, code });
 
 // Renders an already-filtered set of objectives using the Objectives-page tree
 // component (no filter panel). Memoizes the id set so it's stable across renders.
-function AgentObjectiveTree({ ids }: { ids: string[] }) {
+// Per-question column memory: when `code` is set, the visible-column selection
+// is remembered in localStorage under that question's code and reused for every
+// objective tree rendered in response to that question. Without a code, the tree
+// uses the global column selection.
+function AgentObjectiveTree({ ids, code }: { ids: string[]; code?: string }) {
   const restrict = useMemo(() => new Set(ids), [ids]);
-  return <ObjectiveTree restrictIds={restrict} hideFilters />;
+  const globalCols = useOKRStore((s: OKRStore) => s.visibleColumns);
+  const storeKey = code ? `okr-agent-cols-${code}` : '';
+  const [cols, setCols] = useState<ColumnKey[] | null>(() => {
+    if (!storeKey) return null;
+    try { const v = localStorage.getItem(storeKey); return v ? JSON.parse(v) as ColumnKey[] : null; } catch { return null; }
+  });
+  if (!code) return <ObjectiveTree restrictIds={restrict} hideFilters />;
+  const effCols = cols ?? globalCols;
+  const toggle = (col: ColumnKey) => {
+    if (col === 'title') return;
+    setCols(prev => {
+      const base = prev ?? globalCols;
+      const next = base.includes(col) ? base.filter(c => c !== col) : [...base, col];
+      try { localStorage.setItem(storeKey, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
+  return <ObjectiveTree restrictIds={restrict} hideFilters columnsOverride={effCols} onToggleColumn={toggle} />;
 }
 
 const rootPromptMsg = (): Msg => menuMsg("Hi — I'm your OKR agent. Type the number of an option:", ROOT_OPTIONS);
@@ -161,7 +182,7 @@ function renderMsg(m: Msg): React.ReactNode {
           </p>
           {m.items.length > 0 ? (
             <>
-              <div className="mt-1"><AgentObjectiveTree ids={m.items.map(it => it.id)} /></div>
+              <div className="mt-1"><AgentObjectiveTree ids={m.items.map(it => it.id)} code={m.code} /></div>
               <p className="mt-1 text-sm font-medium">Total {m.total} VP</p>
             </>
           ) : (
@@ -253,7 +274,7 @@ function renderMsg(m: Msg): React.ReactNode {
           <p className="mb-1">{m.title} ({(m.ids || ((m as { items?: { id: string }[] }).items || []).map(it => it.id)).length}):</p>
           {(() => {
             const ids = m.ids || ((m as { items?: { id: string }[] }).items || []).map(it => it.id);
-            return ids.length > 0 ? <AgentObjectiveTree ids={ids} /> : <p className="text-gray-500">None.</p>;
+            return ids.length > 0 ? <AgentObjectiveTree ids={ids} code={m.code} /> : <p className="text-gray-500">None.</p>;
           })()}
         </div>
       );
@@ -433,6 +454,9 @@ export function AgentPage() {
   // session loads or if the sessions API is unreachable.
   const [transcript, setTranscript] = useState<Msg[]>(() => [rootPromptMsg()]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Code of the question the user is currently answering — tagged onto any
+  // objective tree rendered as a result, so columns can be remembered per question.
+  const answeredCodeRef = useRef('');
 
   const usersSorted = useMemo(
     () => [...orgUsers].sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email)),
@@ -644,7 +668,7 @@ export function AgentPage() {
   };
   const planPickPrompt = () => menuMsg('Multiple plans match this duration. Which one? Type the number:', planChoiceIds.map(planLabel));
 
-  const showPlanItems = (plan: List) => {
+  const showPlanItems = (plan: List, code: string = answeredCodeRef.current) => {
     const u = usersSorted.find(x => x.id === selectedUserId);
     const userName = u?.name || u?.email || 'that user';
     const period = periodsSorted.find(p => p.id === plan.periodId);
@@ -662,7 +686,7 @@ export function AgentPage() {
       .sort((a, b) => b.vp - a.vp);
     setResultObjectiveIds(items.map(it => it.id));
     const total = items.reduce((sum, i) => sum + i.vp, 0);
-    appendAgent(planMsg(plan.name, userName, periodName, items, total));
+    appendAgent(planMsg(plan.name, userName, periodName, items, total, code));
     appendAgent(menuMsg('What would you like to do next?', items.length > 0 ? RESULT_ACTIONS : []));
     setStep('result');
   };
@@ -695,8 +719,12 @@ export function AgentPage() {
 
   const reshowResult = () => {
     const plan = allPlans.find(p => p.id === resultPlanId);
-    if (plan) showPlanItems(plan);
-    else showNoPlan(resultPeriodId);
+    if (!plan) { showNoPlan(resultPeriodId); return; }
+    // Reuse the column-memory code from the plan message that's already shown so a
+    // reload keeps the same per-question columns instead of the reload menu's code.
+    const lastPlan = [...transcript].reverse().find(mm => mm.role === 'agent' && mm.kind === 'plan');
+    const code = lastPlan && lastPlan.kind === 'plan' ? lastPlan.code : undefined;
+    showPlanItems(plan, code ?? answeredCodeRef.current);
   };
 
   const showPromptFor = (s: Step) => {
@@ -825,7 +853,7 @@ export function AgentPage() {
     roots.forEach(add);
     const title = withChildren ? 'Open top-level initiatives and their children' : 'Open top-level initiatives';
     if (ids.length === 0) appendAgent(textMsg('No open top-level initiatives found.'));
-    else appendAgent(objlistMsg(title, ids));
+    else appendAgent(objlistMsg(title, ids, answeredCodeRef.current));
   };
 
   // Objectives I own whose period has already ended (endDate before today).
@@ -839,7 +867,7 @@ export function AgentPage() {
       .filter(o => o.ownerId === myId && periodPassed(o.periodId) && !HIDDEN_CHILD_STATUSES.has(o.workflowStatus))
       .map(o => o.id);
     if (ids.length === 0) appendAgent(textMsg('You have no open objectives whose duration has passed.'));
-    else appendAgent(objlistMsg('My open objectives whose duration has passed', ids));
+    else appendAgent(objlistMsg('My open objectives whose duration has passed', ids, answeredCodeRef.current));
   };
 
   const showChildren = (id: string) => {
@@ -954,6 +982,11 @@ export function AgentPage() {
     if (n === base.length + 1) { goBack(); return; }
     if (n === base.length + 2) { restart(); return; }
 
+    // Remember which question is being answered so trees rendered in response
+    // can key their column selection off it.
+    const lastMenu = [...transcript].reverse().find(mm => mm.role === 'agent' && mm.kind === 'menu');
+    answeredCodeRef.current = lastMenu && lastMenu.kind === 'menu' ? (lastMenu.code ?? questionCode(lastMenu.title)) : '';
+
     switch (step) {
       case 'root':
         if (n === 1) showPromptFor('user');
@@ -987,7 +1020,7 @@ export function AgentPage() {
         const objs = useOKRStore.getState().objectives;
         const ids = durationGroupBaseIds.filter(id => (objs.find(o => o.id === id)?.periodId || '') === g.periodId);
         if (ids.length === 0) appendAgent(textMsg('No items for that duration.'));
-        else appendAgent(objlistMsg(`Open top-level initiatives & children · ${g.label}`, ids));
+        else appendAgent(objlistMsg(`Open top-level initiatives & children · ${g.label}`, ids, answeredCodeRef.current));
         // Stay in the duration loop — re-show the duration menu. "Go back" goes up a level.
         appendAgent(durationGroupPrompt(durationGroups));
         break;

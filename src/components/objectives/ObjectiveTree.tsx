@@ -75,10 +75,14 @@ interface ObjectiveTreeProps {
   restrictIds?: Set<string>;
   // Hide the filter panel (e.g. when embedded with a pre-filtered set).
   hideFilters?: boolean;
+  // When provided, use these visible columns + toggle handler instead of the
+  // global store (lets an embedder persist column selection per-context).
+  columnsOverride?: ColumnKey[];
+  onToggleColumn?: (col: ColumnKey) => void;
 }
 
 
-export function ObjectiveTree({ highlightObjectiveId, onHighlightClear, onViewChange, restrictIds, hideFilters }: ObjectiveTreeProps = {}) {
+export function ObjectiveTree({ highlightObjectiveId, onHighlightClear, onViewChange, restrictIds, hideFilters, columnsOverride, onToggleColumn }: ObjectiveTreeProps = {}) {
   const [includeAncestorPeriods, setIncludeAncestorPeriods] = useState(false);
   const [includeChildPeriods, setIncludeChildPeriods] = useState(true);
   const [includeChildTeams, setIncludeChildTeams] = useState(true);
@@ -141,8 +145,8 @@ export function ObjectiveTree({ highlightObjectiveId, onHighlightClear, onViewCh
   const toggleColumnVisibility = useOKRStore((state: OKRStore) => state.toggleColumnVisibility);
   const planTreeColumns = useOKRStore((state: OKRStore) => state.planTreeColumns);
   const togglePlanTreeColumn = useOKRStore((state: OKRStore) => state.togglePlanTreeColumn);
-  const visibleColumns = visibleColumnsExplore;
-  const toggleColumn = toggleColumnVisibility;
+  const visibleColumns = columnsOverride ?? visibleColumnsExplore;
+  const toggleColumn = onToggleColumn ?? toggleColumnVisibility;
 
   // Plan-mode splitter
   const [planLeftWidth, setPlanLeftWidth] = useState<number>(() => {
