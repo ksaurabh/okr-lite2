@@ -50,7 +50,7 @@ const DURATION_TYPES = [
   { label: 'Monthly', type: 'month' },
   { label: 'Weekly', type: 'week' },
 ] as const;
-const RESULT_ACTIONS = ['Update VP on every item', 'Select an item'];
+const RESULT_ACTIONS = ['Update VP on every item', 'Select an item', 'Reload the plan'];
 const ITEM_ACTIONS = ['Set value points', 'Show children', 'Show parent & siblings', 'Change duration'];
 const TREE_OPTIONS = [
   'Show top level initiatives that are open',
@@ -151,25 +151,10 @@ function renderMsg(m: Msg): React.ReactNode {
             {' '}— {m.items.length} {m.items.length === 1 ? 'item' : 'items'}:
           </p>
           {m.items.length > 0 ? (
-            <ObjTable
-              columns={[
-                { key: 'idx', label: '#', width: 36 },
-                { key: 'title', label: 'Objective', width: 240 },
-                { key: 'kr', label: 'KR', width: 70 },
-                { key: 'duration', label: 'Duration', width: 150, edit: 'duration' },
-                { key: 'status', label: 'Status', width: 140, edit: 'status' },
-                { key: 'vp', label: 'VP', width: 90, align: 'right', edit: 'vp' },
-              ]}
-              rows={[
-                ...m.items.map((it, i) => ({
-                  _id: it.id,
-                  idx: `${i + 1}.`,
-                  title: <>{it.title}{it.missing && <span className="text-gray-400"> (not visible)</span>}</>,
-                  kr: `KR=${it.kr ? 'Yes' : 'No'}`,
-                })),
-                { idx: '', title: <span className="font-medium">Total</span>, kr: '', vp: <span className="font-medium">{m.total} VP</span> },
-              ]}
-            />
+            <>
+              <div className="mt-1"><AgentObjectiveTree ids={m.items.map(it => it.id)} /></div>
+              <p className="mt-1 text-sm font-medium">Total {m.total} VP</p>
+            </>
           ) : (
             <p className="text-gray-500 mt-1">This plan has no items yet.</p>
           )}
@@ -659,12 +644,14 @@ export function AgentPage() {
     setResultPlanId(plan.id);
     setResultPeriodId(plan.periodId || '');
     setSessionTitle(`${userName} · ${plan.name}`);
-    const sorted = [...plan.items].sort((a, b) => a.order - b.order);
-    setResultObjectiveIds(sorted.map(it => it.objectiveId));
-    const items = sorted.map(it => {
-      const obj = objs.find(o => o.id === it.objectiveId);
-      return { id: it.objectiveId, title: obj?.title || it.objectiveId, vp: obj?.valuePoints ?? 0, missing: !obj, kr: !!obj?.isKeyResult };
-    });
+    // Order items by VP assigned, highest first.
+    const items = plan.items
+      .map(it => {
+        const obj = objs.find(o => o.id === it.objectiveId);
+        return { id: it.objectiveId, title: obj?.title || it.objectiveId, vp: obj?.valuePoints ?? 0, missing: !obj, kr: !!obj?.isKeyResult };
+      })
+      .sort((a, b) => b.vp - a.vp);
+    setResultObjectiveIds(items.map(it => it.id));
     const total = items.reduce((sum, i) => sum + i.vp, 0);
     appendAgent(planMsg(plan.name, userName, periodName, items, total));
     appendAgent(menuMsg('What would you like to do next?', items.length > 0 ? RESULT_ACTIONS : []));
@@ -1062,6 +1049,7 @@ export function AgentPage() {
       case 'result':
         if (n === 1) { setVpEachIndex(0); setStep('vpEach'); appendAgent(vpEachPrompt(0)); }
         else if (n === 2) { setStep('vpPick'); appendAgent(vpPickPrompt()); }
+        else if (n === 3) { reshowResult(); }
         break;
       case 'vpPick': {
         const id = resultObjectiveIds[n - 1];
