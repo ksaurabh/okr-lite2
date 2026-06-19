@@ -899,7 +899,7 @@ export function ObjectiveFilterPanel({
                       onChange={(e) => setShowListMembership(e.target.checked)}
                       className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                     />
-                    Show list membership
+                    Show plan membership
                   </label>
                 )}
                 {showListMembershipOption && showListMembership && lists.length > 0 && (
@@ -908,7 +908,7 @@ export function ObjectiveFilterPanel({
                     onChange={(e) => setListMembershipListId(e.target.value || null)}
                     className="px-2 py-1 text-xs border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
-                    <option value="">All lists</option>
+                    <option value="">All plans</option>
                     {lists.map(list => (
                       <option key={list.id} value={list.id}>{list.name}</option>
                     ))}

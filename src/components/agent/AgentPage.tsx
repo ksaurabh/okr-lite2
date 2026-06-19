@@ -7,7 +7,7 @@ import type { List, User, WorkflowStatus } from '../../types';
 const API_URL = import.meta.env.VITE_API_URL || '';
 const SESSIONS_URL = `${API_URL}/api/users/me/agent-sessions`;
 
-type Step = 'root' | 'treeBrowse' | 'durationGroupPick' | 'user' | 'durationType' | 'duration' | 'planPick' | 'result' | 'vpEach' | 'vpPick' | 'itemAction' | 'changeDuration' | 'vpItem';
+type Step = 'root' | 'treeBrowse' | 'durationGroupPick' | 'planMembershipPick' | 'user' | 'durationType' | 'duration' | 'planPick' | 'result' | 'vpEach' | 'vpPick' | 'itemAction' | 'changeDuration' | 'vpItem';
 
 // Serializable chat messages (so sessions can be persisted and resumed).
 type Msg =
@@ -57,6 +57,7 @@ const TREE_OPTIONS = [
   'Show top level initiatives and their children that are open',
   'Show my objectives whose duration has passed and is still open',
   'Show top level initiatives and their children that are open by duration',
+  'Plan membership — mark items against a plan',
 ];
 const WORKFLOW_STATUS_LABELS: Record<string, string> = {
   todo: 'To Do', backlog: 'In Backlog', planning: 'In Planning', in_progress: 'In Progress',
@@ -70,6 +71,7 @@ const PREV: Record<Step, Step> = {
   root: 'root',
   treeBrowse: 'root',
   durationGroupPick: 'treeBrowse',
+  planMembershipPick: 'treeBrowse',
   user: 'root',
   durationType: 'user',
   duration: 'durationType',
@@ -364,6 +366,8 @@ export function AgentPage() {
   const periods = useOKRStore((s: OKRStore) => s.periods);
   const fetchSharedPlans = useOKRStore((s: OKRStore) => s.fetchSharedPlans);
   const updateObjective = useOKRStore((s: OKRStore) => s.updateObjective);
+  const setShowListMembership = useOKRStore((s: OKRStore) => s.setShowListMembership);
+  const setListMembershipListId = useOKRStore((s: OKRStore) => s.setListMembershipListId);
 
   const [orgUsers, setOrgUsers] = useState<User[]>([]);
   const [sessions, setSessions] = useState<AgentSession[]>([]);
@@ -446,6 +450,7 @@ export function AgentPage() {
       case 'root': return ROOT_OPTIONS;
       case 'treeBrowse': return TREE_OPTIONS;
       case 'durationGroupPick': return durationGroups.map(durationGroupLabel);
+      case 'planMembershipPick': return [...myPlans().map(p => p.name), 'Turn off plan membership'];
       case 'user': return userOptions();
       case 'durationType': return durationTypeOptions();
       case 'duration': return durationOptions(durationType);
@@ -465,7 +470,12 @@ export function AgentPage() {
   const loadSession = (s: AgentSession) => {
     setActiveId(s.id);
     setSessionTitle(s.title || 'New chat');
-    setTranscript(s.transcript && s.transcript.length > 0 ? s.transcript : [rootPromptMsg()]);
+    const tr = s.transcript && s.transcript.length > 0 ? s.transcript : [rootPromptMsg()];
+    // Refresh a stale opening prompt so newly added top-level options appear.
+    const refreshed = tr.map((m, i) =>
+      (i === 0 && m.role === 'agent' && m.kind === 'menu' && m.title.startsWith("Hi — I'm your OKR agent"))
+        ? rootPromptMsg() : m);
+    setTranscript(refreshed);
     const st = s.state || initialState();
     setStep(st.step || 'root');
     setSelectedUserId(st.selectedUserId || '');
@@ -635,6 +645,7 @@ export function AgentPage() {
       case 'root': appendAgent(rootPromptMsg()); break;
       case 'treeBrowse': appendAgent(treeBrowsePrompt()); break;
       case 'durationGroupPick': appendAgent(durationGroupPrompt(durationGroups)); break;
+      case 'planMembershipPick': appendAgent(planMembershipPrompt()); break;
       case 'user': appendAgent(userPrompt()); break;
       case 'durationType': appendAgent(durationTypePrompt()); break;
       case 'duration': appendAgent(durationPrompt(durationType)); break;
@@ -699,6 +710,8 @@ export function AgentPage() {
   };
 
   const treeBrowsePrompt = () => menuMsg('Browse the objective tree. Type the number:', TREE_OPTIONS);
+  const myPlans = () => lists.filter(l => l.ownerId && l.periodId);
+  const planMembershipPrompt = () => menuMsg('Pick a plan to mark membership against (solid bookmark = in the plan, outline = not; click to add/remove). Type the number:', [...myPlans().map(p => p.name), 'Turn off plan membership']);
   const durationGroupLabel = (g: { label: string; count: number }) => `${g.label} — ${g.count} ${g.count === 1 ? 'item' : 'items'}`;
   const durationGroupPrompt = (groups: { periodId: string; label: string; count: number }[]) => menuMsg('Durations in the result set — pick one to filter by. Type the number:', groups.map(durationGroupLabel));
 
@@ -885,7 +898,24 @@ export function AgentPage() {
         else if (n === 2) { showTopInitiatives(true); appendAgent(treeBrowsePrompt()); }
         else if (n === 3) { showMyPassedObjectives(); appendAgent(treeBrowsePrompt()); }
         else if (n === 4) { showDurationGroups(); }
+        else if (n === 5) { setStep('planMembershipPick'); appendAgent(planMembershipPrompt()); }
         break;
+      case 'planMembershipPick': {
+        const plans = myPlans();
+        if (n <= plans.length) {
+          const plan = plans[n - 1];
+          setShowListMembership(true);
+          setListMembershipListId(plan.id);
+          appendAgent(textMsg(`Marking plan membership for "${plan.name}". In the objective tree above, a solid bookmark means the item is in the plan and an outline means it is not — click a bookmark to add/remove (you'll be asked to confirm).`));
+        } else {
+          setShowListMembership(false);
+          setListMembershipListId(null);
+          appendAgent(textMsg('Plan membership view turned off.'));
+        }
+        setStep('treeBrowse');
+        appendAgent(treeBrowsePrompt());
+        break;
+      }
       case 'durationGroupPick': {
         const g = durationGroups[n - 1];
         const objs = useOKRStore.getState().objectives;

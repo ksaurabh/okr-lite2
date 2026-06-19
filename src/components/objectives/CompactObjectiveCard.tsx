@@ -1093,8 +1093,36 @@ export function CompactObjectiveCard({ objective: objectiveProp, depth = 0, filt
             </span>
           )}
 
-          {/* Colored bookmark icons for lists */}
-          {!minimalActions && objectiveLists.length > 0 && (
+          {/* Plan membership bookmark — for a specific selected plan: solid if the
+              objective is in the plan, outline if not. Click toggles membership. */}
+          {!minimalActions && showListMembership && listMembershipListId && (() => {
+            const plan = lists.find((l: List) => l.id === listMembershipListId);
+            if (!plan) return null;
+            const isMember = plan.items.some(item => item.objectiveId === objective.id);
+            return (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const verb = isMember ? 'Remove' : 'Add';
+                  const prep = isMember ? 'from' : 'to';
+                  if (window.confirm(`${verb} "${objective.title}" ${prep} plan "${plan.name}"?`)) {
+                    if (isMember) removeItemFromList(plan.id, objective.id);
+                    else addItemToList(plan.id, objective.id);
+                  }
+                }}
+                className="relative group/bookmark flex-shrink-0"
+                title={isMember ? `In plan "${plan.name}" — click to remove` : `Not in plan "${plan.name}" — click to add`}
+              >
+                <svg className="w-3.5 h-3.5" fill={isMember ? plan.color : 'none'} stroke={isMember ? plan.color : '#9ca3af'} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                </svg>
+              </button>
+            );
+          })()}
+
+          {/* Colored bookmark icons for all member lists (when no specific plan selected) */}
+          {!minimalActions && !listMembershipListId && objectiveLists.length > 0 && (
             <div className="flex items-center gap-0.5 flex-shrink-0">
               {objectiveLists.map((list: List) => (
                 <span key={list.id} className="relative group/bookmark">
