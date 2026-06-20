@@ -952,6 +952,74 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
           />
         );
       }
+      case 'type':
+        return (
+          <select value={valueOf('type') || ''} onChange={(e) => save({ type: (e.target.value || undefined) as Objective['type'] })} className={cls}>
+            <option value="">—</option>
+            <option value="initiative">Initiative</option>
+            <option value="saga">Saga</option>
+            <option value="epic">Epic</option>
+            <option value="story">Story</option>
+            <option value="subtask">Subtask</option>
+          </select>
+        );
+      case 'resolved':
+        return (
+          <input type="date" value={valueOf('resolvedAt') || ''} onChange={(e) => save({ resolvedAt: e.target.value || undefined })} className={cls} />
+        );
+      case 'progress': {
+        const pv = valueOf('progress') as number | undefined;
+        return (
+          <input
+            type="text"
+            inputMode="numeric"
+            defaultValue={pv == null ? '' : String(Math.round(pv))}
+            onBlur={(e) => {
+              const raw = e.target.value.trim();
+              if (raw === '') return;
+              const n = Number(raw);
+              if (!Number.isFinite(n)) return;
+              const clamped = Math.max(0, Math.min(100, n));
+              if (clamped !== (pv ?? null)) save({ progress: clamped });
+            }}
+            onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+            className={cls}
+          />
+        );
+      }
+      case 'parent': {
+        // Exclude self and descendants to avoid creating a cycle.
+        const blocked = new Set<string>([obj.id]);
+        let added = true;
+        while (added) {
+          added = false;
+          for (const o of objectives) {
+            if (o.parentId && blocked.has(o.parentId) && !blocked.has(o.id)) { blocked.add(o.id); added = true; }
+          }
+        }
+        return (
+          <select value={valueOf('parentId') || ''} onChange={(e) => save({ parentId: e.target.value || undefined })} className={cls}>
+            <option value="">—</option>
+            {[...objectives].filter(o => !blocked.has(o.id)).sort((a, b) => a.title.localeCompare(b.title)).map(o => (
+              <option key={o.id} value={o.id}>{o.title}</option>
+            ))}
+          </select>
+        );
+      }
+      case 'tags': {
+        const selected = (valueOf('tagIds') as string[] | undefined) || [];
+        return (
+          <select
+            multiple
+            value={selected}
+            onChange={(e) => save({ tagIds: Array.from(e.target.selectedOptions).map(o => o.value) })}
+            className={`${cls} h-auto`}
+            size={Math.min(4, Math.max(2, orgTags.length || 2))}
+          >
+            {orgTags.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        );
+      }
       default:
         return <span className="text-gray-700">{cellValueForCard(obj, col)}</span>;
     }
