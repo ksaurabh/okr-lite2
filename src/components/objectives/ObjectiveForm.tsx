@@ -278,6 +278,20 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Title *
+        </label>
+        <input
+          type="text"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Enter objective title"
+          className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          required
+        />
+      </div>
+
       <div className="flex gap-4 border-b border-gray-200">
         <button
           type="button"
@@ -296,20 +310,6 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
       </div>
 
       <div className={activeTab === 'fields' ? 'space-y-4' : 'hidden'}>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Title *
-        </label>
-        <input
-          type="text"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Enter objective title"
-          className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          required
-        />
-      </div>
-
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
           Description
