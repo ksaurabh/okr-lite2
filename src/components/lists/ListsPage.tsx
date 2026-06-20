@@ -260,20 +260,6 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
       return next;
     });
   };
-  const [showListPlanColumnMenu, setShowListPlanColumnMenu] = useState(false);
-  const listPlanColumnMenuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!showListPlanColumnMenu) return;
-    const onClick = (e: MouseEvent) => {
-      if (listPlanColumnMenuRef.current && !listPlanColumnMenuRef.current.contains(e.target as Node)) {
-        setShowListPlanColumnMenu(false);
-      }
-    };
-    document.addEventListener('mousedown', onClick);
-    return () => document.removeEventListener('mousedown', onClick);
-  }, [showListPlanColumnMenu]);
-
   // Plan Action Menu (top-right kebab) + history pane
   const [showPlanActionMenu, setShowPlanActionMenu] = useState(false);
   const [showPlanHistory, setShowPlanHistory] = useState(false);
@@ -1061,6 +1047,155 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
     ? (lists.find(l => l.id === forcedListId) || sharedPlans.find(l => l.id === forcedListId) || null)
     : (planFocus && planFocus.id === selectedListId ? planFocus : null);
 
+  // Kebab "Plan actions" menu — collects the plan-split controls (child-list
+  // picker, create child list/plan, columns, add-existing, Top Level / Objective
+  // Tree toggles) plus History. Rendered in the plan header row.
+  const renderPlanActionMenu = () => {
+    const plan = selectedList;
+    if (!plan || !isListPlanMode) return null;
+    const descendantIds = new Set<string>();
+    const collect = (id: string) => {
+      lists.forEach(l => { if (l.parentId === id && !descendantIds.has(l.id)) { descendantIds.add(l.id); collect(l.id); } });
+    };
+    collect(plan.id);
+    const childList = planSelectedChildListId ? lists.find(l => l.id === planSelectedChildListId) : null;
+    return (
+      <div ref={planActionMenuRef} className="relative">
+        <button
+          onClick={() => setShowPlanActionMenu(o => !o)}
+          className="p-1.5 text-gray-500 hover:text-gray-700 border border-gray-300 rounded hover:bg-gray-50"
+          title="Plan actions"
+        >
+          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+            <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
+          </svg>
+        </button>
+        {showPlanActionMenu && (
+          <div className="absolute right-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-md shadow-lg py-1 min-w-[240px] max-h-[75vh] overflow-y-auto">
+            {!planTopLevel && !isReadOnlyList && (
+              <>
+                <div className="px-3 py-2 border-b border-gray-100">
+                  <label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Child list</label>
+                  <div className="flex items-center gap-1">
+                    <select
+                      value={planSelectedChildListId || ''}
+                      onChange={(e) => setPlanSelectedChildListId(e.target.value || null)}
+                      className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">— None —</option>
+                      {lists.filter(l => l.parentId === plan.id).map(child => (
+                        <option key={child.id} value={child.id}>{child.name} ({child.items.length})</option>
+                      ))}
+                    </select>
+                    {childList && (
+                      <button
+                        onClick={async () => {
+                          if (window.confirm(`Delete child list "${childList.name}"? This removes the list and its items.`)) {
+                            await deleteList(childList.id);
+                            setPlanSelectedChildListId(null);
+                          }
+                        }}
+                        className="p-1 text-gray-400 hover:text-red-600 rounded flex-shrink-0"
+                        title={`Delete child list "${childList.name}"`}
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={async () => {
+                    setShowPlanActionMenu(false);
+                    const name = window.prompt('Child list name:');
+                    if (name && name.trim()) {
+                      const created = await createList(name.trim(), undefined, plan.id);
+                      if (created) setPlanSelectedChildListId(created.id);
+                    }
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 text-left"
+                >
+                  <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                  Create child list
+                </button>
+                <button
+                  onClick={() => {
+                    setShowPlanActionMenu(false);
+                    setNewChildPlanName('');
+                    setNewChildPlanOwnerId(plan.ownerId || '');
+                    setNewChildPlanPeriodId(plan.periodId || '');
+                    setNewChildPlanLevel(plan.level || '');
+                    setNewChildPlanError(null);
+                    setShowCreateChildPlan(true);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 text-left"
+                >
+                  <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                  Create child plan
+                </button>
+                <div className="px-3 py-2 border-b border-t border-gray-100">
+                  <select
+                    value=""
+                    onChange={async (e) => {
+                      const id = e.target.value;
+                      if (!id) return;
+                      await updateListParent(id, plan.id);
+                      setPlanSelectedChildListId(id);
+                    }}
+                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    title="Attach an existing list as a child of this list"
+                  >
+                    <option value="">Add existing as child…</option>
+                    {lists
+                      .filter(l => l.id !== plan.id && l.parentId !== plan.id && !descendantIds.has(l.id))
+                      .sort((a, b) => a.name.localeCompare(b.name))
+                      .map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                  </select>
+                </div>
+              </>
+            )}
+            <div className="px-3 py-2 border-b border-gray-100">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Columns</div>
+              <div className="max-h-40 overflow-y-auto -mx-1">
+                {(Object.keys(COLUMN_LABELS) as ColumnKey[])
+                  .filter(c => c !== 'title')
+                  .map(col => (
+                    <label key={col} className="flex items-center gap-2 px-1 py-1 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer rounded">
+                      <input
+                        type="checkbox"
+                        checked={listPlanColumns.includes(col)}
+                        onChange={() => toggleListPlanColumn(col)}
+                        className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      {COLUMN_LABELS[col]}
+                    </label>
+                  ))}
+              </div>
+            </div>
+            <label className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer select-none">
+              <input type="checkbox" checked={planTopLevel} onChange={(e) => setPlanTopLevel(e.target.checked)} className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+              Top Level
+            </label>
+            <label className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer select-none border-b border-gray-100">
+              <input type="checkbox" checked={showObjectiveTree} onChange={(e) => setShowObjectiveTreePersist(e.target.checked)} className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+              Objective Tree
+            </label>
+            <button
+              onClick={() => { setShowPlanActionMenu(false); setShowPlanHistory(true); }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 text-left"
+            >
+              <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              History
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className={embedded ? 'flex w-full' : 'flex h-full -ml-5'}>
       {/* Lists sidebar (hidden in plan focus mode) */}
@@ -1407,6 +1542,7 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
                   </span>
                 );
               })()}
+              <div className="ml-auto">{renderPlanActionMenu()}</div>
             </div>
           </div>
         )}
@@ -1424,189 +1560,10 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
                 </div>
               ) : <span />}
               <div className="flex items-center gap-2">
-                {isListPlanMode && !planTopLevel && !isReadOnlyList && (
-                  <>
-                    <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">Child list</label>
-                    <select
-                      value={planSelectedChildListId || ''}
-                      onChange={(e) => setPlanSelectedChildListId(e.target.value || null)}
-                      className="px-2 py-1 text-sm border border-gray-300 rounded bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">— None —</option>
-                      {lists.filter(l => l.parentId === selectedList.id).map(child => (
-                        <option key={child.id} value={child.id}>{child.name} ({child.items.length})</option>
-                      ))}
-                    </select>
-                    {planSelectedChildListId && (() => {
-                      const childList = lists.find(l => l.id === planSelectedChildListId);
-                      if (!childList) return null;
-                      return (
-                        <button
-                          onClick={async () => {
-                            if (window.confirm(`Delete child list "${childList.name}"? This removes the list and its items.`)) {
-                              await deleteList(childList.id);
-                              setPlanSelectedChildListId(null);
-                            }
-                          }}
-                          className="p-1 text-gray-400 hover:text-red-600 rounded"
-                          title={`Delete child list "${childList.name}"`}
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      );
-                    })()}
-                    <button
-                      onClick={async () => {
-                        const name = window.prompt('Child list name:');
-                        if (name && name.trim()) {
-                          const created = await createList(name.trim(), undefined, selectedList.id);
-                          if (created) setPlanSelectedChildListId(created.id);
-                        }
-                      }}
-                      className="flex items-center gap-1 px-3 py-1 text-sm text-blue-600 border border-blue-200 rounded hover:bg-blue-50"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                      </svg>
-                      Create child list
-                    </button>
-                    <button
-                      onClick={() => {
-                        setNewChildPlanName('');
-                        setNewChildPlanOwnerId(selectedList.ownerId || '');
-                        setNewChildPlanPeriodId(selectedList.periodId || '');
-                        setNewChildPlanLevel(selectedList.level || '');
-                        setNewChildPlanError(null);
-                        setShowCreateChildPlan(true);
-                      }}
-                      className="flex items-center gap-1 px-3 py-1 text-sm text-blue-700 border border-blue-300 rounded bg-blue-50 hover:bg-blue-100"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                      </svg>
-                      Create child plan
-                    </button>
-                  </>
-                )}
-                {isListPlanMode && (
-                  <>
-                    <div ref={listPlanColumnMenuRef} className="relative">
-                      <button
-                        onClick={() => setShowListPlanColumnMenu(!showListPlanColumnMenu)}
-                        className="flex items-center gap-1 px-3 py-1 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
-                        title="Choose columns"
-                      >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                        </svg>
-                        Columns
-                      </button>
-                      {showListPlanColumnMenu && (
-                        <div className="absolute right-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-md shadow-lg py-1 min-w-[180px]">
-                          {(Object.keys(COLUMN_LABELS) as ColumnKey[])
-                            .filter(c => c !== 'title')
-                            .map(col => (
-                              <label key={col} className="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={listPlanColumns.includes(col)}
-                                  onChange={() => toggleListPlanColumn(col)}
-                                  className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                />
-                                {COLUMN_LABELS[col]}
-                              </label>
-                            ))}
-                        </div>
-                      )}
-                    </div>
-                  </>
-                )}
-                {isListPlanMode && !planTopLevel && !isReadOnlyList && (
-                  <>
-                    <select
-                      value=""
-                      onChange={async (e) => {
-                        const id = e.target.value;
-                        if (!id) return;
-                        await updateListParent(id, selectedList.id);
-                        setPlanSelectedChildListId(id);
-                      }}
-                      className="px-2 py-1 text-sm border border-gray-300 rounded bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      title="Attach an existing list as a child of this list"
-                    >
-                      <option value="">Add existing as child…</option>
-                      {(() => {
-                        const descendantIds = new Set<string>();
-                        const collect = (id: string) => {
-                          lists.forEach(l => {
-                            if (l.parentId === id && !descendantIds.has(l.id)) {
-                              descendantIds.add(l.id);
-                              collect(l.id);
-                            }
-                          });
-                        };
-                        collect(selectedList.id);
-                        return lists
-                          .filter(l => l.id !== selectedList.id && l.parentId !== selectedList.id && !descendantIds.has(l.id))
-                          .sort((a, b) => a.name.localeCompare(b.name))
-                          .map(l => <option key={l.id} value={l.id}>{l.name}</option>);
-                      })()}
-                    </select>
-                  </>
-                )}
-                {isListPlanMode && (
-                  <label className="inline-flex items-center gap-1 text-xs text-gray-600 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={planTopLevel}
-                      onChange={(e) => setPlanTopLevel(e.target.checked)}
-                      className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    Top Level
-                  </label>
-                )}
-                {isListPlanMode && (
-                  <label className="inline-flex items-center gap-1 text-xs text-gray-600 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={showObjectiveTree}
-                      onChange={(e) => setShowObjectiveTreePersist(e.target.checked)}
-                      className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    Objective Tree
-                  </label>
-                )}
                 {isReadOnlyList && (
                   <span className="px-2 py-0.5 text-xs rounded bg-amber-50 border border-amber-300 text-amber-700">Read-only · shared by {((selectedList as List & { createdByEmail?: string }).createdByEmail) || 'another user'}</span>
                 )}
-                {isListPlanMode && (
-                  <div ref={planActionMenuRef} className="relative">
-                    <button
-                      onClick={() => setShowPlanActionMenu(o => !o)}
-                      className="p-1.5 text-gray-500 hover:text-gray-700 border border-gray-300 rounded hover:bg-gray-50"
-                      title="Plan actions"
-                    >
-                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                        <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
-                      </svg>
-                    </button>
-                    {showPlanActionMenu && (
-                      <div className="absolute right-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-md shadow-lg py-1 min-w-[180px]">
-                        <button
-                          onClick={() => { setShowPlanActionMenu(false); setShowPlanHistory(true); }}
-                          className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 text-left"
-                        >
-                          <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          History
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
+                {isListPlanMode && !planFocusEffective && renderPlanActionMenu()}
               </div>
             </div>
 
