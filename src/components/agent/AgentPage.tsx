@@ -461,7 +461,12 @@ export function AgentPage() {
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [activeId, setActiveId] = useState('');
   const [showArchived, setShowArchived] = useState(false);
-  const [showSessions, setShowSessions] = useState(true);
+  const [showSessions, setShowSessions] = useState<boolean>(() => {
+    try { return localStorage.getItem('okr-agent-show-sessions') !== 'false'; } catch { return true; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('okr-agent-show-sessions', String(showSessions)); } catch { /* ignore */ }
+  }, [showSessions]);
   const [sessionTitle, setSessionTitle] = useState('New chat');
 
   const [step, setStep] = useState<Step>('root');
