@@ -9,7 +9,7 @@ const LEVEL_LABEL: Record<ObjectiveLevel, string> = { company: 'Company', team: 
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
-type View = 'dashboard' | 'objectives' | 'plans' | 'planbuilder' | 'views' | 'checklist' | 'progress' | 'updates' | 'lists' | 'logwork' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin' | 'logs';
+type View = 'dashboard' | 'objectives' | 'plans' | 'plans-overview' | 'planbuilder' | 'views' | 'checklist' | 'progress' | 'updates' | 'logwork' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin' | 'logs';
 
 interface PlanBuilderPageProps {
   onViewChange: (view: View) => void;
@@ -189,7 +189,7 @@ export function PlanBuilderPage({ onViewChange }: PlanBuilderPageProps) {
     return (
       <div className="p-8 text-center text-sm text-gray-500">
         No plan selected.{' '}
-        <button onClick={() => onViewChange('plans')} className="text-blue-600 hover:underline">Back to Plans</button>
+        <button onClick={() => onViewChange('plans-overview')} className="text-blue-600 hover:underline">Back to Plans</button>
       </div>
     );
   }
@@ -225,7 +225,7 @@ export function PlanBuilderPage({ onViewChange }: PlanBuilderPageProps) {
       <div className="px-4 pt-4 pb-3 border-b border-gray-200 bg-white">
         <div>
           <button
-            onClick={() => { setPlanFocusListId(null); onViewChange('plans'); }}
+            onClick={() => { setPlanFocusListId(null); onViewChange('plans-overview'); }}
             className="text-xs text-blue-600 hover:text-blue-700 mb-2"
           >
             ← Back to Plans

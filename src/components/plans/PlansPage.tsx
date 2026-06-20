@@ -18,7 +18,7 @@ const API_URL = import.meta.env.VITE_API_URL || '';
 // Special status-filter token: match every plan except those in the "Archived" stage.
 const ALL_BUT_ARCHIVED = '__all_but_archived__';
 
-type View = 'dashboard' | 'objectives' | 'plans' | 'views' | 'checklist' | 'progress' | 'updates' | 'lists' | 'logwork' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin' | 'logs';
+type View = 'dashboard' | 'objectives' | 'plans' | 'plans-overview' | 'planbuilder' | 'views' | 'checklist' | 'progress' | 'updates' | 'logwork' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin' | 'logs';
 
 interface PlansPageProps {
   onViewChange: (view: View) => void;
@@ -289,7 +289,7 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
     setListViewMode(list.id, 'plan');
     setPlanFocusListId(list.id);
     try { window.localStorage.setItem('okr-lists-pending-selection', list.id); } catch { /* ignore */ }
-    onViewChange('lists');
+    onViewChange('plans');
   };
 
   const handleCreate = async () => {
@@ -910,7 +910,7 @@ export function PlansPage({ onViewChange }: PlansPageProps) {
                 <tr key={list.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 text-sm">
                     <button
-                      onClick={() => { setPlanFocusListId(list.id); window.localStorage.setItem('okr-lists-pending-selection', list.id); onViewChange('lists'); }}
+                      onClick={() => { setPlanFocusListId(list.id); window.localStorage.setItem('okr-lists-pending-selection', list.id); onViewChange('plans'); }}
                       className="text-blue-600 hover:text-blue-800 hover:underline font-medium text-left flex items-center gap-2"
                     >
                       <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: list.color || '#6b7280' }} />

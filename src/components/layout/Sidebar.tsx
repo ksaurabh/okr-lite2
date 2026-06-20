@@ -5,7 +5,7 @@ import { Button } from '../common/Button';
 import { Modal } from '../common/Modal';
 import type { Period, PeriodType, Team, Tag } from '../../types';
 
-type View = 'dashboard' | 'objectives' | 'plans' | 'planbuilder' | 'weeklyupdates' | 'agent' | 'views' | 'checklist' | 'progress' | 'updates' | 'lists' | 'logwork' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin' | 'logs';
+type View = 'dashboard' | 'objectives' | 'plans' | 'plans-overview' | 'planbuilder' | 'weeklyupdates' | 'agent' | 'views' | 'checklist' | 'progress' | 'updates' | 'logwork' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin' | 'logs';
 
 interface SidebarProps {
   currentView: View;

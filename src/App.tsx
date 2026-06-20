@@ -22,9 +22,9 @@ import { LoginPage, UnauthorizedPage, AuthCallback, AdminInviteAccept } from './
 import { Modal } from './components/common';
 import { useOKRStore } from './store/okrStore';
 
-type View = 'dashboard' | 'objectives' | 'plans' | 'planbuilder' | 'weeklyupdates' | 'agent' | 'views' | 'checklist' | 'progress' | 'updates' | 'lists' | 'logwork' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin' | 'logs';
+type View = 'dashboard' | 'objectives' | 'plans' | 'plans-overview' | 'planbuilder' | 'weeklyupdates' | 'agent' | 'views' | 'checklist' | 'progress' | 'updates' | 'logwork' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin' | 'logs';
 
-const ALL_VIEWS: View[] = ['dashboard', 'objectives', 'plans', 'planbuilder', 'weeklyupdates', 'agent', 'views', 'checklist', 'progress', 'updates', 'lists', 'logwork', 'teams', 'periods', 'tags', 'settings', 'admin', 'logs'];
+const ALL_VIEWS: View[] = ['dashboard', 'objectives', 'plans', 'plans-overview', 'planbuilder', 'weeklyupdates', 'agent', 'views', 'checklist', 'progress', 'updates', 'logwork', 'teams', 'periods', 'tags', 'settings', 'admin', 'logs'];
 const RESERVED_PATHS = new Set(['/auth/callback', '/invite/accept']);
 
 function viewFromPath(pathname: string): View {
@@ -125,7 +125,7 @@ function AppContent() {
     >
       {currentView === 'dashboard' && <DashboardPage onViewChange={setCurrentView} />}
       {currentView === 'objectives' && <ObjectiveTree highlightObjectiveId={highlightObjectiveId} onHighlightClear={() => setHighlightObjectiveId(null)} onViewChange={setCurrentView} />}
-      {currentView === 'plans' && <PlansPage onViewChange={setCurrentView} />}
+      {currentView === 'plans-overview' && <PlansPage onViewChange={setCurrentView} />}
       {currentView === 'planbuilder' && <PlanBuilderPage onViewChange={setCurrentView} />}
       {currentView === 'weeklyupdates' && <WeeklyUpdatesPage />}
       {currentView === 'agent' && <AgentPage />}
@@ -133,7 +133,7 @@ function AppContent() {
       {currentView === 'checklist' && <ChecklistPage />}
       {currentView === 'progress' && <ProgressPage />}
       {currentView === 'updates' && <UpdatesPage />}
-      {currentView === 'lists' && <ListsPage onViewChange={setCurrentView} />}
+      {currentView === 'plans' && <ListsPage onViewChange={setCurrentView} />}
       {currentView === 'logwork' && <LogWorkPage />}
       {currentView === 'teams' && <TeamsPage />}
       {currentView === 'periods' && <PeriodsPage />}

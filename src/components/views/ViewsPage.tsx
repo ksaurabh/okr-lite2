@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import type { SavedView } from '../../types';
 
-type View = 'dashboard' | 'objectives' | 'views' | 'checklist' | 'progress' | 'updates' | 'lists' | 'logwork' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin' | 'logs';
+type View = 'dashboard' | 'objectives' | 'views' | 'checklist' | 'progress' | 'updates' | 'plans' | 'plans-overview' | 'logwork' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin' | 'logs';
 
 interface ViewsPageProps {
   onViewChange: (view: View) => void;
