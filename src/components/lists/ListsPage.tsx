@@ -1542,6 +1542,23 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
                       const total = sortedItems.reduce((sum, it) => { const o = getObjective(it.objectiveId); return sum + (o?.valuePoints ?? 0); }, 0);
                       return <span className="text-[10px] text-gray-500 flex-shrink-0" title="Total VP across items in this plan">Total VP: <span className="font-semibold text-gray-700">{total}</span></span>;
                     })()}
+                    {planSelectedObjective && (() => {
+                      const childPlan = lists.find(l => l.id === planSelectedChildListId);
+                      if (!childPlan) return null;
+                      // Subtree of the selected parent objective — the same set the child plan is filtered to.
+                      const ids = new Set<string>([planSelectedObjective.id]);
+                      let added = true;
+                      while (added) {
+                        added = false;
+                        for (const o of orgObjectives) {
+                          if (o.parentId && ids.has(o.parentId) && !ids.has(o.id)) { ids.add(o.id); added = true; }
+                        }
+                      }
+                      const sum = (childPlan.items || [])
+                        .filter(it => ids.has(it.objectiveId))
+                        .reduce((s, it) => s + (getObjective(it.objectiveId)?.valuePoints ?? 0), 0);
+                      return <span className="text-[10px] text-blue-600 flex-shrink-0" title={`Sum of VP of the children of "${planSelectedObjective.title}" shown in the child plan`}>Children VP: <span className="font-semibold">{sum}</span></span>;
+                    })()}
                     <div ref={firstColFilterRef} className="relative">
                       <button
                         onClick={() => setShowFirstColFilter(!showFirstColFilter)}
