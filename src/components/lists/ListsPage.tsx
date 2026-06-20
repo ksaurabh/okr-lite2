@@ -816,14 +816,14 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
     };
   };
   const childrenVpSumFor = (objId: string): number => childPlanChildStats(objId).sum;
-  // VP roll-up status for an item that has VP and children in the child plan:
-  // 'green' = children VP sum matches the item's VP, 'orange' = it doesn't.
-  const childrenVpStatus = (obj: Objective): { status: 'green' | 'orange' | null; objVp: number; sum: number } => {
+  // VP roll-up status for an item that has VP, evaluated against the active child
+  // plan: 'green' = child-plan VP sum matches the item's VP, 'orange' = it doesn't
+  // (including when the item has no items in the child plan at all).
+  const childrenVpStatus = (obj: Objective): { status: 'green' | 'orange' | null; objVp: number; sum: number; count: number } => {
     const objVp = obj.valuePoints ?? 0;
-    if (objVp <= 0 || !planSelectedChildListId) return { status: null, objVp, sum: 0 };
+    if (objVp <= 0 || !planSelectedChildListId) return { status: null, objVp, sum: 0, count: 0 };
     const { sum, count } = childPlanChildStats(obj.id);
-    if (count === 0) return { status: null, objVp, sum };
-    return { status: sum === objVp ? 'green' : 'orange', objVp, sum };
+    return { status: sum === objVp ? 'green' : 'orange', objVp, sum, count };
   };
 
   const buildAssigneeCounts = (objs: Objective[]) => {
@@ -1775,13 +1775,15 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
                           >
                             <div className="flex items-start gap-1">
                               {(() => {
-                                const { status, objVp, sum } = childrenVpStatus(obj);
+                                const { status, objVp, sum, count } = childrenVpStatus(obj);
                                 if (!status) return null;
                                 return <span
                                   className={`w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1 ${status === 'green' ? 'bg-green-500' : 'bg-orange-500'}`}
                                   title={status === 'green'
                                     ? `Green dot: this item's ${objVp} VP matches its children's VP in the child plan (${sum})`
-                                    : `Orange dot: this item has ${objVp} VP but its children in the child plan add up to ${sum} VP`}
+                                    : count === 0
+                                      ? `Orange dot: this item has ${objVp} VP but has no items in the child plan`
+                                      : `Orange dot: this item has ${objVp} VP but its children in the child plan add up to ${sum} VP`}
                                 />;
                               })()}
                               <div className="text-sm font-medium text-gray-900 break-words flex-1 min-w-0" title={obj.title}>{obj.title}</div>
