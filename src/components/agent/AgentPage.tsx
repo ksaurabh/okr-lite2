@@ -623,6 +623,17 @@ export function AgentPage() {
     }
   };
 
+  // Question codes used by objective trees in a session's transcript. The current
+  // in-memory transcript is freshest for the active session.
+  const treeCodesIn = (s: AgentSession) => {
+    const tr = s.id === activeId ? transcript : s.transcript;
+    const codes = new Set<string>();
+    for (const m of tr || []) {
+      if (m.role === 'agent' && (m.kind === 'plan' || m.kind === 'objlist') && m.code) codes.add(m.code);
+    }
+    return codes;
+  };
+
   const deleteSession = async (id: string) => {
     const s = sessions.find(x => x.id === id);
     if (!window.confirm(`Delete chat "${s?.title || 'New chat'}"? This cannot be undone.`)) return;
@@ -631,6 +642,15 @@ export function AgentPage() {
       if (!res.ok) return;
     } catch { return; }
     const remaining = sessions.filter(x => x.id !== id);
+    // Drop column memory for this session's question codes, but only those no
+    // remaining session still uses (codes are deterministic and can be shared).
+    if (s) {
+      const stillUsed = new Set<string>();
+      remaining.forEach(r => treeCodesIn(r).forEach(c => stillUsed.add(c)));
+      treeCodesIn(s).forEach(code => {
+        if (!stillUsed.has(code)) { try { localStorage.removeItem(`okr-agent-cols-${code}`); } catch { /* ignore */ } }
+      });
+    }
     setSessions(remaining);
     if (id === activeId) {
       const next = remaining
