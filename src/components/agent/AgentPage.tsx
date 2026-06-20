@@ -614,7 +614,7 @@ export function AgentPage() {
       case 'duration': return durationOptions(durationType);
       case 'result': return resultObjectiveIds.length > 0 ? RESULT_ACTIONS : [];
       case 'childPlanPick': return childPlansOf(resultPlanId).map(p => planLabel(p.id));
-      case 'splitMenu': return ['Show breakdown by assignee', 'Go up to the plan'];
+      case 'splitMenu': return ['Show breakdown by assignee', 'Show unassigned items in the child plan', 'Go up to the plan'];
       case 'planPick': return planChoiceIds.map(planLabel);
       case 'vpPick': return resultObjectiveIds.map(itemLabel);
       case 'itemAction': return ITEM_ACTIONS;
@@ -788,7 +788,7 @@ export function AgentPage() {
   const childPlanPickPrompt = () => menuMsg('Which child plan to show side by side? Type the number:', childPlansOf(resultPlanId).map(p => planLabel(p.id)));
   // VP-ordered item ids + total for one side of the side-by-side view.
   // One level deeper, after a child plan is shown side by side.
-  const splitMenuPrompt = () => menuMsg('Now showing them side by side. What next? Type the number:', ['Show breakdown by assignee', 'Go up to the plan']);
+  const splitMenuPrompt = () => menuMsg('Now showing them side by side. What next? Type the number:', ['Show breakdown by assignee', 'Show unassigned items in the child plan', 'Go up to the plan']);
   const lastSplitChildId = (): string => {
     const m = [...transcript].reverse().find(mm => mm.role === 'agent' && mm.kind === 'split');
     return m && m.kind === 'split' ? m.childListId : '';
@@ -812,6 +812,17 @@ export function AgentPage() {
     const totalCount = rows.reduce((s, r) => s + r.count, 0);
     const totalVp = rows.reduce((s, r) => s + r.vp, 0);
     appendAgent(breakdownMsg(`${child.name} — breakdown by assignee`, rows, totalCount, totalVp));
+  };
+  const showUnassignedChildItems = () => {
+    const child = allPlans.find(p => p.id === lastSplitChildId());
+    if (!child) { appendAgent(textMsg('No child plan is being shown.')); return; }
+    const objs = useOKRStore.getState().objectives;
+    const ids = child.items
+      .filter(it => !objs.find(x => x.id === it.objectiveId)?.assigneeId)
+      .map(it => it.objectiveId)
+      .filter(id => objs.some(o => o.id === id));
+    if (ids.length === 0) appendAgent(textMsg(`No unassigned items in "${child.name}".`));
+    else appendAgent(objlistMsg(`Unassigned items in ${child.name}`, ids, answeredCodeRef.current));
   };
 
   const showSplit = (parent: List, child: List) => {
@@ -1268,7 +1279,8 @@ export function AgentPage() {
       }
       case 'splitMenu': {
         if (n === 1) { showAssigneeBreakdown(); appendAgent(splitMenuPrompt()); }
-        else if (n === 2) { showPromptFor('result'); }
+        else if (n === 2) { showUnassignedChildItems(); appendAgent(splitMenuPrompt()); }
+        else if (n === 3) { showPromptFor('result'); }
         break;
       }
       case 'vpPick': {
