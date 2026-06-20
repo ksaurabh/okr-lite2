@@ -795,6 +795,24 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
     ? [...selectedList.items].sort((a, b) => a.order - b.order)
     : [];
 
+  // Sum of VP of the selected child plan's items that fall in `objId`'s subtree —
+  // i.e. the children of that parent objective shown in the (filtered) child plan.
+  const childrenVpSumFor = (objId: string): number => {
+    const childPlan = lists.find(l => l.id === planSelectedChildListId);
+    if (!childPlan) return 0;
+    const ids = new Set<string>([objId]);
+    let added = true;
+    while (added) {
+      added = false;
+      for (const o of objectives) {
+        if (o.parentId && ids.has(o.parentId) && !ids.has(o.id)) { ids.add(o.id); added = true; }
+      }
+    }
+    return (childPlan.items || [])
+      .filter(it => ids.has(it.objectiveId))
+      .reduce((s, it) => s + (getObjective(it.objectiveId)?.valuePoints ?? 0), 0);
+  };
+
   const buildAssigneeCounts = (objs: Objective[]) => {
     const m = new Map<string, number>();
     for (const o of objs) if (o.assigneeId) m.set(o.assigneeId, (m.get(o.assigneeId) || 0) + 1);
@@ -1542,23 +1560,6 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
                       const total = sortedItems.reduce((sum, it) => { const o = getObjective(it.objectiveId); return sum + (o?.valuePoints ?? 0); }, 0);
                       return <span className="text-[10px] text-gray-500 flex-shrink-0" title="Total VP across items in this plan">Total VP: <span className="font-semibold text-gray-700">{total}</span></span>;
                     })()}
-                    {planSelectedObjective && (() => {
-                      const childPlan = lists.find(l => l.id === planSelectedChildListId);
-                      if (!childPlan) return null;
-                      // Subtree of the selected parent objective — the same set the child plan is filtered to.
-                      const ids = new Set<string>([planSelectedObjective.id]);
-                      let added = true;
-                      while (added) {
-                        added = false;
-                        for (const o of orgObjectives) {
-                          if (o.parentId && ids.has(o.parentId) && !ids.has(o.id)) { ids.add(o.id); added = true; }
-                        }
-                      }
-                      const sum = (childPlan.items || [])
-                        .filter(it => ids.has(it.objectiveId))
-                        .reduce((s, it) => s + (getObjective(it.objectiveId)?.valuePoints ?? 0), 0);
-                      return <span className="text-[10px] text-blue-600 flex-shrink-0" title={`Sum of VP of the children of "${planSelectedObjective.title}" shown in the child plan`}>Children VP: <span className="font-semibold">{sum}</span></span>;
-                    })()}
                     <div ref={firstColFilterRef} className="relative">
                       <button
                         onClick={() => setShowFirstColFilter(!showFirstColFilter)}
@@ -1786,6 +1787,11 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
                                 </button>
                               </div>
                             </div>
+                            {selected && planSelectedChildListId && (
+                              <div className="mt-1 text-[11px] text-blue-600" title="Sum of VP of this item's children shown in the child plan">
+                                Children VP: <span className="font-semibold">{childrenVpSumFor(obj.id)}</span>
+                              </div>
+                            )}
                             {listPlanColumns.length > 0 && (
                               <div className="mt-1 grid gap-x-3 gap-y-0.5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }} onClick={(e) => { if (panel1EditMode || cardEditingId === obj.id) e.stopPropagation(); }}>
                                 {listPlanColumns.map(col => (
