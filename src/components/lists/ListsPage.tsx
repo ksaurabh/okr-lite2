@@ -795,11 +795,12 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
     ? [...selectedList.items].sort((a, b) => a.order - b.order)
     : [];
 
-  // Sum of VP of the selected child plan's items that fall in `objId`'s subtree —
-  // i.e. the children of that parent objective shown in the (filtered) child plan.
-  const childrenVpSumFor = (objId: string): number => {
+  // VP sum + count of the selected child plan's items in `objId`'s subtree
+  // (excluding the item itself) — i.e. the children of that parent objective
+  // shown in the (filtered) child plan.
+  const childPlanChildStats = (objId: string): { sum: number; count: number } => {
     const childPlan = lists.find(l => l.id === planSelectedChildListId);
-    if (!childPlan) return 0;
+    if (!childPlan) return { sum: 0, count: 0 };
     const ids = new Set<string>([objId]);
     let added = true;
     while (added) {
@@ -808,9 +809,19 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
         if (o.parentId && ids.has(o.parentId) && !ids.has(o.id)) { ids.add(o.id); added = true; }
       }
     }
-    return (childPlan.items || [])
-      .filter(it => ids.has(it.objectiveId))
-      .reduce((s, it) => s + (getObjective(it.objectiveId)?.valuePoints ?? 0), 0);
+    const items = (childPlan.items || []).filter(it => it.objectiveId !== objId && ids.has(it.objectiveId));
+    return {
+      sum: items.reduce((s, it) => s + (getObjective(it.objectiveId)?.valuePoints ?? 0), 0),
+      count: items.length,
+    };
+  };
+  const childrenVpSumFor = (objId: string): number => childPlanChildStats(objId).sum;
+  // Orange flag: item has VP, has children in the child plan, but their VP doesn't sum to its own.
+  const childrenVpMismatch = (obj: Objective): { mismatch: boolean; objVp: number; sum: number } => {
+    const objVp = obj.valuePoints ?? 0;
+    if (objVp <= 0 || !planSelectedChildListId) return { mismatch: false, objVp, sum: 0 };
+    const { sum, count } = childPlanChildStats(obj.id);
+    return { mismatch: count > 0 && sum !== objVp, objVp, sum };
   };
 
   const buildAssigneeCounts = (objs: Objective[]) => {
@@ -1761,6 +1772,11 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
                             className={`group w-full text-left border rounded p-2 cursor-grab active:cursor-grabbing ${selected ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
                           >
                             <div className="flex items-start gap-1">
+                              {(() => {
+                                const { mismatch, objVp, sum } = childrenVpMismatch(obj);
+                                if (!mismatch) return null;
+                                return <span className="w-2.5 h-2.5 rounded-full bg-orange-500 flex-shrink-0 mt-1" title={`Orange dot: this item has ${objVp} VP but its children in the child plan add up to ${sum} VP`} />;
+                              })()}
                               <div className="text-sm font-medium text-gray-900 break-words flex-1 min-w-0" title={obj.title}>{obj.title}</div>
                               <ChildPlanBadges objectiveId={obj.id} />
                               <div className={`flex items-center gap-1 flex-shrink-0 transition-opacity ${cardEditingId === obj.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'}`}>
