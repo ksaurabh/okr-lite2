@@ -1770,7 +1770,7 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
                               </div>
                             </div>
                             {listPlanColumns.length > 0 && (
-                              <div className="mt-1 grid gap-x-3 gap-y-0.5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }} onClick={(e) => e.stopPropagation()}>
+                              <div className="mt-1 grid gap-x-3 gap-y-0.5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }} onClick={(e) => { if (panel1EditMode || cardEditingId === obj.id) e.stopPropagation(); }}>
                                 {listPlanColumns.map(col => (
                                   <div key={col} className="text-xs text-gray-600">
                                     <span className="text-gray-400">{COLUMN_LABELS[col]}=</span>
