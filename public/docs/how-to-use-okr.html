@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>How to Use OKR — A Practical Guide</title>
+<style>
+  :root {
+    --blue: #2563eb;
+    --blue-50: #eff6ff;
+    --ink: #1f2937;
+    --muted: #6b7280;
+    --line: #e5e7eb;
+    --bg: #f9fafb;
+    --orange: #f97316;
+    --green: #22c55e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ink);
+    line-height: 1.6;
+    background: var(--bg);
+  }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 0 24px 80px; }
+  header.hero {
+    background: linear-gradient(135deg, #1e3a8a, #2563eb);
+    color: #fff;
+    padding: 48px 24px;
+    margin-bottom: 32px;
+  }
+  header.hero .wrap { padding-bottom: 0; }
+  header.hero h1 { font-size: 34px; margin: 0 0 8px; }
+  header.hero p { font-size: 17px; opacity: 0.9; margin: 0; max-width: 640px; }
+  h2 {
+    font-size: 24px;
+    margin: 40px 0 12px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--line);
+  }
+  h3 { font-size: 18px; margin: 24px 0 8px; }
+  p, li { font-size: 15.5px; }
+  code {
+    background: #f3f4f6;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 13px;
+  }
+  .toc {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 18px 24px;
+    margin-bottom: 8px;
+  }
+  .toc h2 { border: 0; margin: 0 0 8px; font-size: 16px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .toc ol { margin: 0; padding-left: 20px; columns: 2; }
+  .toc a { color: var(--blue); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .card {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 4px 24px 16px;
+    margin: 16px 0;
+  }
+  .pill {
+    display: inline-block;
+    background: var(--blue-50);
+    color: var(--blue);
+    border-radius: 999px;
+    padding: 2px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-right: 6px;
+  }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; background: #fff; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 14px; vertical-align: top; }
+  th { background: #f3f4f6; font-weight: 600; }
+  .tip {
+    border-left: 4px solid var(--blue);
+    background: var(--blue-50);
+    padding: 10px 16px;
+    border-radius: 0 8px 8px 0;
+    margin: 14px 0;
+    font-size: 14.5px;
+  }
+  .dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; vertical-align: middle; }
+  .dot.green { background: var(--green); }
+  .dot.orange { background: var(--orange); }
+  .step { display: flex; gap: 12px; margin: 12px 0; }
+  .step .n {
+    flex: 0 0 28px; height: 28px; border-radius: 50%;
+    background: var(--blue); color: #fff; font-weight: 700;
+    display: flex; align-items: center; justify-content: center; font-size: 14px;
+  }
+  footer { color: var(--muted); font-size: 13px; text-align: center; padding-top: 32px; border-top: 1px solid var(--line); margin-top: 48px; }
+  @media (max-width: 640px) { .toc ol { columns: 1; } }
+</style>
+</head>
+<body>
+<header class="hero">
+  <div class="wrap">
+    <h1>How to Use OKR</h1>
+    <p>A practical guide to planning and tracking objectives — from setting goals to running them with plans, value points, and the built-in agent.</p>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <nav class="toc">
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#what">What is an OKR?</a></li>
+      <li><a href="#concepts">Core concepts</a></li>
+      <li><a href="#objectives">Creating objectives</a></li>
+      <li><a href="#hierarchy">Building a hierarchy</a></li>
+      <li><a href="#periods">Periods &amp; tags</a></li>
+      <li><a href="#plans">Plans</a></li>
+      <li><a href="#splitview">The split plan view</a></li>
+      <li><a href="#vp">Value points &amp; roll-ups</a></li>
+      <li><a href="#agent">The OKR Agent</a></li>
+      <li><a href="#tracking">Tracking progress</a></li>
+      <li><a href="#teams">Teams &amp; capacity</a></li>
+      <li><a href="#settings">Settings &amp; admin</a></li>
+      <li><a href="#workflow">A suggested workflow</a></li>
+    </ol>
+  </nav>
+
+  <section id="what">
+    <h2>1. What is an OKR?</h2>
+    <p>An <strong>OKR</strong> (Objective and Key Result) pairs a qualitative goal — the <em>Objective</em> ("what we want to achieve") — with measurable signals of success — the <em>Key Results</em> ("how we'll know we got there"). In this app both live as <strong>Objectives</strong> in a single tree: any objective can be flagged as a Key Result, and objectives nest under one another to form company → team → individual goals.</p>
+    <div class="tip">The golden rule: objectives are <em>ambitious and directional</em>; key results are <em>specific and measurable</em>. If you can't tell whether you hit it, it isn't a key result yet.</div>
+  </section>
+
+  <section id="concepts">
+    <h2>2. Core concepts</h2>
+    <table>
+      <tr><th>Term</th><th>What it means here</th></tr>
+      <tr><td><strong>Objective</strong></td><td>Any goal in the tree. Has a level, type, owner, assignee, period, points, status, and can be a Key Result.</td></tr>
+      <tr><td><strong>Level</strong></td><td><code>Company</code>, <code>Team</code>, or <code>Individual</code> — who the objective belongs to.</td></tr>
+      <tr><td><strong>Type</strong></td><td>The size/shape of the work: <code>Initiative</code> → <code>Saga</code> → <code>Epic</code> → <code>Story</code> → <code>Subtask</code>.</td></tr>
+      <tr><td><strong>Key Result (KR)</strong></td><td>A flag on an objective marking it as a measurable result rather than a goal.</td></tr>
+      <tr><td><strong>Period</strong></td><td>The time box: a quarter, month, week, or a one-off date range.</td></tr>
+      <tr><td><strong>Value Points (VP)</strong></td><td>The business value an item carries — used to prioritize and to check that a parent's value adds up across its children.</td></tr>
+      <tr><td><strong>Story Points (SP)</strong></td><td>The effort/size estimate, used for capacity planning.</td></tr>
+      <tr><td><strong>Plan</strong></td><td>A curated, ordered list of objectives for one owner and one period. (See section 6.)</td></tr>
+    </table>
+  </section>
+
+  <section id="objectives">
+    <h2>3. Creating objectives</h2>
+    <p>Go to the <span class="pill">Objectives</span> page and add an objective. The editor has two tabs:</p>
+    <h3>Fields tab</h3>
+    <ul>
+      <li><strong>Title</strong> (always visible) &amp; <strong>Description</strong></li>
+      <li><strong>Level</strong> and <strong>Period</strong> (both required)</li>
+      <li><strong>Parent objective</strong> — nest this under a bigger goal</li>
+      <li><strong>Team</strong>, <strong>Owner</strong>, and <strong>Assignee</strong></li>
+      <li><strong>Story Points</strong> and <strong>Value Points</strong></li>
+      <li><strong>Resolved date</strong>, a <strong>Link</strong>, and <strong>Tags</strong></li>
+      <li><strong>Private</strong> (only you) and <strong>Read-only</strong> (only owner/assignee can add children) toggles</li>
+      <li><strong>Progress Updates</strong> and full <strong>History</strong> of changes</li>
+    </ul>
+    <h3>Comments tab</h3>
+    <p>Anyone on your team can leave a comment. Comments are listed newest-first and show who wrote them and when — handy for discussion that isn't a formal progress update.</p>
+    <div class="tip">Mark an objective as a <strong>Key Result</strong> (the <code>KR</code> field) to distinguish your measurable outcomes from the broader objectives they support.</div>
+  </section>
+
+  <section id="hierarchy">
+    <h2>4. Building a hierarchy</h2>
+    <p>OKRs are most powerful when they ladder up. Set a <strong>parent objective</strong> so individual work rolls into team goals, and team goals into company goals:</p>
+    <div class="step"><div class="n">1</div><div>Create a <strong>Company</strong>-level Initiative (e.g. "Become the category leader").</div></div>
+    <div class="step"><div class="n">2</div><div>Add <strong>Team</strong>-level objectives beneath it (Epics/Sagas) owned by each team.</div></div>
+    <div class="step"><div class="n">3</div><div>Break those into <strong>Individual</strong> Stories and Subtasks with owners and assignees.</div></div>
+    <p>On the Objectives page you can <strong>filter</strong> by period, team, owner, assignee, level, type, status, and tags, choose which <strong>columns</strong> to show, resize them, and save the result as a <strong>View</strong> for one-click reuse later.</p>
+  </section>
+
+  <section id="periods">
+    <h2>5. Periods &amp; tags</h2>
+    <p>Use the <span class="pill">Periods</span> page to define your time boxes — <strong>quarters, months, weeks</strong>, or one-off ranges — and nest them (e.g. weeks inside a quarter). Every objective and plan is anchored to a period, which is what makes "this quarter's OKRs" a meaningful filter.</p>
+    <p>Use the <span class="pill">Tags</span> page to create colored labels (themes, workstreams, initiatives) and apply several to any objective for cross-cutting filtering.</p>
+  </section>
+
+  <section id="plans">
+    <h2>6. Plans</h2>
+    <p>A <strong>Plan</strong> is a focused, hand-ordered selection of objectives for <em>one owner</em> in <em>one period</em>. While the Objectives tree is the full picture, a plan is "what this person is actually committing to this quarter."</p>
+    <h3>What a plan holds</h3>
+    <table>
+      <tr><th>Field</th><th>Purpose</th></tr>
+      <tr><td>Name &amp; color</td><td>Identify the plan</td></tr>
+      <tr><td>Owner &amp; Period</td><td>Required — these are what turn a list into a plan</td></tr>
+      <tr><td>Level</td><td>Company / Team / Individual</td></tr>
+      <tr><td>Status</td><td>The plan's stage (configurable; defaults: New → In Review → In Execution → In Retrospective → Closed → Archived)</td></tr>
+      <tr><td>Parent plan</td><td>Plans can have child plans, which power the split view</td></tr>
+      <tr><td>Items</td><td>The objectives in the plan, kept in your chosen order</td></tr>
+      <tr><td>History</td><td>Every add/remove/move, with who and when</td></tr>
+    </table>
+    <p>The Plans overview lists every plan with its owner, period, level and status, and lets you <strong>filter by status</strong> (multi-select, defaulting to "All but archived"). Add objectives to a plan from the Objectives page using the bookmark icon, then drag items to reorder them.</p>
+  </section>
+
+  <section id="splitview">
+    <h2>7. The split plan view</h2>
+    <p>Open a plan to see it side by side: the <strong>parent/current plan</strong> on the left, and a selected <strong>child plan plus its objective tree</strong> on the right. This is where roll-up planning happens — the parent commits the value, the children deliver it.</p>
+    <ul>
+      <li>Click any item in the parent plan to <strong>filter the child plan</strong> to that item's children.</li>
+      <li>When an item is selected, its card shows <strong>Children VP</strong> — the value its children add up to.</li>
+      <li>Use the <strong>three-dots menu</strong> (in the plan header) to select a child plan, create or attach child plans, edit which columns show, toggle the objective tree, and view history.</li>
+      <li>Every column shown on a card is <strong>editable inline</strong> via quick-edit.</li>
+    </ul>
+    <div class="tip"><span class="dot green"></span> <strong>Green dot</strong>: the item's VP matches the sum of its children's VP. &nbsp; <span class="dot orange"></span> <strong>Orange dot</strong>: it doesn't add up (or the item has VP but no children in the child plan) — a signal to revisit your breakdown.</div>
+  </section>
+
+  <section id="vp">
+    <h2>8. Value points &amp; roll-ups</h2>
+    <p>Value Points let you sanity-check a plan: a parent objective's VP should equal the total VP of the children that deliver it. The split view surfaces mismatches with the green/orange dots above, and shows <strong>Total VP</strong> per plan so you can see where value concentrates. Story Points play the same role for <em>effort</em>, feeding capacity planning on the Teams page.</p>
+  </section>
+
+  <section id="agent">
+    <h2>9. The OKR Agent</h2>
+    <p>The <span class="pill">Agent</span> page is a guided, number-driven assistant. Just type the number of the option you want; every prompt offers <strong>Go back</strong> and <strong>Start over</strong>, and each question carries a short code (e.g. <code>[Q-7DD0]</code>) so you can reference it.</p>
+    <h3>Set my OKRs</h3>
+    <p>Pick a user, a duration <em>type</em> (quarterly/monthly/weekly), then a specific duration — the agent shows how many plans match at each step (with an open/closed breakdown) and then lists the plan's items, ordered by value points. From there you can update VP item-by-item, drill into an item's parent/siblings/children, change an item's duration, and <strong>view a child plan side by side</strong>.</p>
+    <h3>Side-by-side &amp; breakdowns</h3>
+    <p>After choosing a child plan to view side by side, a deeper menu lets you <strong>show a breakdown by assignee</strong> (item count and VP sum per person) or <strong>list the unassigned items</strong> in the child plan.</p>
+    <h3>Browse Objective Tree</h3>
+    <p>Explore top-level initiatives (optionally with open children), your overdue-but-open objectives, or group results by duration — all rendered with the same objective tree as the main page, with per-question column memory. Chat sessions are saved and can be resumed, archived, or deleted.</p>
+  </section>
+
+  <section id="tracking">
+    <h2>10. Tracking progress</h2>
+    <ul>
+      <li><strong>Workflow status</strong> on each objective moves work along: To Do → In Backlog → In Planning → In Progress → In Acceptance → Done (and Archived).</li>
+      <li><strong>Progress updates</strong> and <strong>comments</strong> capture the narrative; <strong>history</strong> captures every field change automatically.</li>
+      <li>The <span class="pill">Dashboard</span>, <span class="pill">Progress</span>, <span class="pill">Weekly Updates</span> and <span class="pill">Updates</span> pages roll this up so you can review status at a glance.</li>
+      <li><span class="pill">Log Work</span> records time spent against your work.</li>
+    </ul>
+  </section>
+
+  <section id="teams">
+    <h2>11. Teams &amp; capacity</h2>
+    <p>On the <span class="pill">Teams</span> page, define teams (including a special <em>Self / individual contributor</em> type) and record <strong>Team Assignments</strong> — who is on a team, at what capacity (story points per week), and for what date range. The <strong>Capacity Assigned by Individual</strong> section then shows, as of any date, how loaded each person is against a 40-point week, so you can plan realistically.</p>
+  </section>
+
+  <section id="settings">
+    <h2>12. Settings &amp; admin</h2>
+    <ul>
+      <li><strong>Plan stages</strong> — admins define the list of statuses a plan can move through (the New → … → Archived progression).</li>
+      <li><strong>Jira integration</strong> — connect objectives to Jira epics; export/import the integration settings as JSON.</li>
+      <li>Admins can also manage the organization, and super-admins can <em>impersonate</em> a user to see exactly what they see.</li>
+    </ul>
+  </section>
+
+  <section id="workflow">
+    <h2>13. A suggested workflow</h2>
+    <div class="step"><div class="n">1</div><div><strong>Define the period</strong> (e.g. this quarter) on the Periods page.</div></div>
+    <div class="step"><div class="n">2</div><div><strong>Set company objectives</strong> and key results at the top level.</div></div>
+    <div class="step"><div class="n">3</div><div><strong>Cascade</strong> team and individual objectives beneath them, assigning owners, value points, and effort.</div></div>
+    <div class="step"><div class="n">4</div><div><strong>Build plans</strong> per owner for the period; use child plans + the split view to verify value rolls up (watch for orange dots).</div></div>
+    <div class="step"><div class="n">5</div><div><strong>Execute &amp; track</strong>: advance workflow status, post progress updates and comments, and review on the Dashboard.</div></div>
+    <div class="step"><div class="n">6</div><div><strong>Close out</strong>: move plans to In Retrospective → Closed, reflect, and roll learnings into the next period.</div></div>
+  </section>
+
+  <footer>
+    Generated guide for the OKR app · Adapt the steps to your team's cadence.
+  </footer>
+
+</div>
+</body>
+</html>
