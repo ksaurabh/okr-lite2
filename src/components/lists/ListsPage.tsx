@@ -21,10 +21,15 @@ const API_URL = import.meta.env.VITE_API_URL || '';
 
 const NO_CHILDREN_PLAN_LIST: Set<string> = new Set();
 
-type View = 'dashboard' | 'objectives' | 'checklist' | 'progress' | 'updates' | 'lists' | 'logwork' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin';
+type View = 'dashboard' | 'objectives' | 'plans' | 'plans-overview' | 'checklist' | 'progress' | 'updates' | 'logwork' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin';
 
 interface ListsPageProps {
   onViewChange: (view: View) => void;
+  // Embedded mode: render only the plan split view for `forcedListId` (no lists
+  // sidebar / page chrome). Used to reuse this exact view inside the agent.
+  embedded?: boolean;
+  forcedListId?: string;
+  forcedChildListId?: string;
 }
 
 const WORKFLOW_STATUS_LABELS: Record<WorkflowStatus, string> = {
@@ -97,8 +102,8 @@ function saveListColumnWidths(widths: ListColumnWidths): void {
   }
 }
 
-export function ListsPage({ onViewChange }: ListsPageProps) {
-  const [selectedListId, setSelectedListId] = useState<string | null>(null);
+export function ListsPage({ onViewChange, embedded = false, forcedListId, forcedChildListId }: ListsPageProps) {
+  const [selectedListId, setSelectedListId] = useState<string | null>(forcedListId ?? null);
   const [newListName, setNewListName] = useState('');
   const [newListColor, setNewListColor] = useState(LIST_COLORS[0]);
   const [isCreating, setIsCreating] = useState(false);
@@ -302,6 +307,11 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
 
   useEffect(() => {
     if (!selectedListId) { setPlanSelectedChildListId(null); return; }
+    // Embedded callers can pin a specific child plan to show on the right.
+    if (forcedChildListId && listsEarly.some(l => l.id === forcedChildListId && l.parentId === selectedListId)) {
+      setPlanSelectedChildListId(forcedChildListId);
+      return;
+    }
     const currentChildIsValid = planSelectedChildListId && listsEarly.some(l => l.id === planSelectedChildListId && l.parentId === selectedListId);
     if (currentChildIsValid) return;
     const candidates = listsEarly.filter(l => l.parentId === selectedListId && l.ownerId && l.periodId);
@@ -311,7 +321,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
       : null;
     setPlanSelectedChildListId(mostRecent ? mostRecent.id : null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedListId, listsEarly]);
+  }, [selectedListId, listsEarly, forcedChildListId]);
 
   const [listPlanLeftWidth, setListPlanLeftWidth] = useState<number>(() => {
     try {
@@ -592,10 +602,17 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
   }, [lists]);
 
   useEffect(() => {
+    // Embedded mode is driven by forcedListId, not the global plan-focus state.
+    if (embedded) return;
     if (planFocusListId && (lists.some(l => l.id === planFocusListId) || sharedPlansEarly.some(l => l.id === planFocusListId))) {
       setSelectedListId(planFocusListId);
     }
-  }, [planFocusListId, lists, sharedPlansEarly]);
+  }, [planFocusListId, lists, sharedPlansEarly, embedded]);
+
+  // Keep the embedded view pinned to the forced plan.
+  useEffect(() => {
+    if (forcedListId) setSelectedListId(forcedListId);
+  }, [forcedListId]);
 
   // Fetch users for owner/assignee display
   useEffect(() => {
@@ -1040,10 +1057,12 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
       </div>
     );
   };
-  const planFocusEffective = planFocus && planFocus.id === selectedListId ? planFocus : null;
+  const planFocusEffective = forcedListId
+    ? (lists.find(l => l.id === forcedListId) || sharedPlans.find(l => l.id === forcedListId) || null)
+    : (planFocus && planFocus.id === selectedListId ? planFocus : null);
 
   return (
-    <div className="flex h-full -ml-5">
+    <div className={embedded ? 'flex w-full' : 'flex h-full -ml-5'}>
       {/* Lists sidebar (hidden in plan focus mode) */}
       {!planFocusEffective && (
       <div className={`border-r border-gray-200 bg-gray-50 flex flex-col h-full max-h-full transition-all duration-200 ${isListsCollapsed ? 'w-6' : 'w-64'}`}>
@@ -1243,12 +1262,14 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
       <div className="flex-1 overflow-auto">
         {planFocusEffective && (
           <div className="px-4 pt-3 pb-2 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-white">
+            {!embedded && (
             <button
-              onClick={() => { setPlanFocusListId(null); onViewChange('plans'); }}
+              onClick={() => { setPlanFocusListId(null); onViewChange('plans-overview'); }}
               className="text-xs text-blue-600 hover:text-blue-700 mb-1"
             >
               ← Back to Plans
             </button>
+            )}
             <div className="flex items-center gap-3 flex-wrap">
               {editingPlanName && !isReadOnlyList ? (
                 <input
@@ -1287,7 +1308,7 @@ export function ListsPage({ onViewChange }: ListsPageProps) {
                     if (window.confirm(`Delete plan "${planFocusEffective.name}"? This removes the list and its items.`)) {
                       await deleteList(planFocusEffective.id);
                       setPlanFocusListId(null);
-                      onViewChange('plans');
+                      onViewChange('plans-overview');
                     }
                   }}
                   className="p-1 text-gray-400 hover:text-red-600 rounded"
