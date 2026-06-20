@@ -2,12 +2,13 @@ import { Component, useEffect, useMemo, useRef, useState } from 'react';
 import { useOKRStore, type OKRStore, type ColumnKey } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
 import { ObjectiveTree } from '../objectives/ObjectiveTree';
+import { ListsPage } from '../lists';
 import type { List, User, WorkflowStatus } from '../../types';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 const SESSIONS_URL = `${API_URL}/api/users/me/agent-sessions`;
 
-type Step = 'root' | 'treeBrowse' | 'durationGroupPick' | 'planMembershipPick' | 'user' | 'durationType' | 'planFilter' | 'planResults' | 'planSelect' | 'duration' | 'planPick' | 'result' | 'vpEach' | 'vpPick' | 'itemAction' | 'changeDuration' | 'vpItem';
+type Step = 'root' | 'treeBrowse' | 'durationGroupPick' | 'planMembershipPick' | 'user' | 'durationType' | 'planFilter' | 'planResults' | 'planSelect' | 'duration' | 'planPick' | 'result' | 'childPlanPick' | 'vpEach' | 'vpPick' | 'itemAction' | 'changeDuration' | 'vpItem';
 
 // Serializable chat messages (so sessions can be persisted and resumed).
 type Msg =
@@ -18,7 +19,8 @@ type Msg =
   | { role: 'agent'; kind: 'children'; parent: string; items: { id: string; title: string; vp: number; duration: string; status: string }[] }
   | { role: 'agent'; kind: 'plans'; who: string; filter?: string; items: { id: string; name: string; type: string; period: string; status: string }[] }
   | { role: 'agent'; kind: 'family'; subject: string; rows: { name: string; rel: string; duration: string; vp: number; owner: string; assignee: string; self?: boolean }[] }
-  | { role: 'agent'; kind: 'objlist'; title: string; ids: string[]; code?: string };
+  | { role: 'agent'; kind: 'objlist'; title: string; ids: string[]; code?: string }
+  | { role: 'agent'; kind: 'split'; who: string; parentListId: string; childListId: string; parentName: string; childName: string };
 
 interface SessionState {
   step: Step;
@@ -50,7 +52,7 @@ const DURATION_TYPES = [
   { label: 'Monthly', type: 'month' },
   { label: 'Weekly', type: 'week' },
 ] as const;
-const RESULT_ACTIONS = ['Update VP on every item', 'Select an item', 'Reload the plan'];
+const RESULT_ACTIONS = ['Update VP on every item', 'Select an item', 'Reload the plan', 'View child plan side by side'];
 const ITEM_ACTIONS = ['Set value points', 'Show children', 'Show parent & siblings', 'Change duration'];
 const TREE_OPTIONS = [
   'Show top level initiatives that are open',
@@ -80,6 +82,7 @@ const PREV: Record<Step, Step> = {
   duration: 'durationType',
   planPick: 'duration',
   result: 'duration',
+  childPlanPick: 'result',
   vpEach: 'result',
   vpPick: 'result',
   itemAction: 'vpPick',
@@ -104,6 +107,27 @@ const childrenMsg = (parent: string, items: { id: string; title: string; vp: num
 const plansMsg = (who: string, items: { id: string; name: string; type: string; period: string; status: string }[], filter?: string): Msg => ({ role: 'agent', kind: 'plans', who, filter, items });
 const familyMsg = (subject: string, rows: { name: string; rel: string; duration: string; vp: number; owner: string; assignee: string; self?: boolean }[]): Msg => ({ role: 'agent', kind: 'family', subject, rows });
 const objlistMsg = (title: string, ids: string[], code?: string): Msg => ({ role: 'agent', kind: 'objlist', title, ids, code });
+const splitMsg = (who: string, parentListId: string, childListId: string, parentName: string, childName: string): Msg =>
+  ({ role: 'agent', kind: 'split', who, parentListId, childListId, parentName, childName });
+
+// Side-by-side parent/child plan view. Reuses the exact /plans split (ListsPage in
+// embedded mode) so the agent view is identical to the Plans page.
+function AgentSplitView({ who, parentListId, childListId, parentName, childName }: { who: string; parentListId: string; childListId: string; parentName: string; childName: string }) {
+  const lists = useOKRStore((s: OKRStore) => s.lists);
+  const exists = lists.some(l => l.id === parentListId);
+  return (
+    <div>
+      <p className="mb-1">Side-by-side for {who}: <span className="font-medium">{parentName}</span> (parent) and <span className="font-medium">{childName}</span> (child)</p>
+      {exists ? (
+        <div className="border border-gray-200 rounded-lg overflow-hidden">
+          <ListsPage embedded forcedListId={parentListId} forcedChildListId={childListId} onViewChange={() => {}} />
+        </div>
+      ) : (
+        <p className="text-gray-500">This plan is no longer available.</p>
+      )}
+    </div>
+  );
+}
 
 // Renders an already-filtered set of objectives using the Objectives-page tree
 // component (no filter panel). Memoizes the id set so it's stable across renders.
@@ -278,6 +302,8 @@ function renderMsg(m: Msg): React.ReactNode {
           })()}
         </div>
       );
+    case 'split':
+      return <AgentSplitView who={m.who} parentListId={m.parentListId} childListId={m.childListId} parentName={m.parentName} childName={m.childName} />;
     default:
       return null;
   }
@@ -549,6 +575,7 @@ export function AgentPage() {
       case 'planSelect': return planChoiceIds.map(planLabel);
       case 'duration': return durationOptions(durationType);
       case 'result': return resultObjectiveIds.length > 0 ? RESULT_ACTIONS : [];
+      case 'childPlanPick': return childPlansOf(resultPlanId).map(p => planLabel(p.id));
       case 'planPick': return planChoiceIds.map(planLabel);
       case 'vpPick': return resultObjectiveIds.map(itemLabel);
       case 'itemAction': return ITEM_ACTIONS;
@@ -717,6 +744,18 @@ export function AgentPage() {
     return `${p.name} (${p.items.length} ${p.items.length === 1 ? 'item' : 'items'})`;
   };
   const planPickPrompt = () => menuMsg('Multiple plans match this duration. Which one? Type the number:', planChoiceIds.map(planLabel));
+  // Child plans are plans (owner+period) whose parentId points at the given plan.
+  const childPlansOf = (parentId?: string) => parentId ? allPlans.filter(p => p.parentId === parentId) : [];
+  const childPlanPickPrompt = () => menuMsg('Which child plan to show side by side? Type the number:', childPlansOf(resultPlanId).map(p => planLabel(p.id)));
+  // VP-ordered item ids + total for one side of the side-by-side view.
+  const showSplit = (parent: List, child: List) => {
+    const u = usersSorted.find(x => x.id === selectedUserId);
+    const userName = u?.name || u?.email || 'that user';
+    appendAgent(splitMsg(userName, parent.id, child.id, parent.name, child.name));
+    // Stay on the child picker so another child can be shown; "Go back" returns to the plan.
+    setStep('childPlanPick');
+    appendAgent(childPlanPickPrompt());
+  };
 
   const showPlanItems = (plan: List, code: string = answeredCodeRef.current) => {
     const u = usersSorted.find(x => x.id === selectedUserId);
@@ -792,6 +831,7 @@ export function AgentPage() {
       case 'duration': appendAgent(durationPrompt(durationType)); break;
       case 'planPick': appendAgent(planPickPrompt()); break;
       case 'result': reshowResult(); break;
+      case 'childPlanPick': appendAgent(childPlanPickPrompt()); break;
       case 'vpPick': appendAgent(vpPickPrompt()); break;
       case 'itemAction': appendAgent(itemActionPrompt()); break;
       case 'changeDuration': appendAgent(changeDurationPrompt()); break;
@@ -1142,7 +1182,23 @@ export function AgentPage() {
         if (n === 1) { setVpEachIndex(0); setStep('vpEach'); appendAgent(vpEachPrompt(0)); }
         else if (n === 2) { setStep('vpPick'); appendAgent(vpPickPrompt()); }
         else if (n === 3) { reshowResult(); }
+        else if (n === 4) {
+          const kids = childPlansOf(resultPlanId);
+          if (kids.length === 0) {
+            appendAgent(textMsg('This plan has no child plans.'));
+            appendAgent(menuMsg('What would you like to do next?', resultObjectiveIds.length > 0 ? RESULT_ACTIONS : []));
+          } else {
+            setStep('childPlanPick');
+            appendAgent(childPlanPickPrompt());
+          }
+        }
         break;
+      case 'childPlanPick': {
+        const child = childPlansOf(resultPlanId)[n - 1];
+        const parent = allPlans.find(p => p.id === resultPlanId);
+        if (child && parent) showSplit(parent, child);
+        break;
+      }
       case 'vpPick': {
         const id = resultObjectiveIds[n - 1];
         setVpTargetId(id);
@@ -1235,7 +1291,7 @@ export function AgentPage() {
           <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
             {transcript.map((m, i) => {
               // The embedded objective tree needs full width, not the narrow bubble.
-              const wide = m.role === 'agent' && m.kind === 'objlist';
+              const wide = m.role === 'agent' && (m.kind === 'objlist' || m.kind === 'split');
               return (
                 <div key={i} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
                   <div className={wide ? 'w-full text-sm text-gray-800' : `max-w-[85%] rounded-lg px-3 py-2 text-sm ${m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-800'}`}>
