@@ -1058,7 +1058,6 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
   const renderPlanActionMenu = () => {
     const plan = selectedList;
     if (!plan || !isListPlanMode) return null;
-    const childList = planSelectedChildListId ? lists.find(l => l.id === planSelectedChildListId) : null;
     return (
       <div ref={planActionMenuRef} className="relative">
         <button
@@ -1079,22 +1078,7 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
                   className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 text-left"
                 >
                   <svg className="w-4 h-4 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
-                  <span className="flex-1">Select child list</span>
-                  {childList && <span className="text-xs text-gray-400 truncate max-w-[90px]">{childList.name}</span>}
-                </button>
-                <button
-                  onClick={async () => {
-                    setShowPlanActionMenu(false);
-                    const name = window.prompt('Child list name:');
-                    if (name && name.trim()) {
-                      const created = await createList(name.trim(), undefined, plan.id);
-                      if (created) setPlanSelectedChildListId(created.id);
-                    }
-                  }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 text-left"
-                >
-                  <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                  Create child list
+                  <span className="flex-1">Select child plan</span>
                 </button>
                 <button
                   onClick={() => {
@@ -3327,7 +3311,7 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
       {showSelectChildModal && selectedList && (
         <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center p-4" onClick={() => setShowSelectChildModal(false)}>
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-4" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-gray-900 mb-3">Select child list</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-3">Select child plan</h3>
             <p className="text-xs text-gray-500 mb-2">Choose which child plan to show on the right of the split view.</p>
             <div className="max-h-80 overflow-y-auto border border-gray-200 rounded-md divide-y divide-gray-100">
               <button
