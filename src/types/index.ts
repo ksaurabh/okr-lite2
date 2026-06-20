@@ -32,6 +32,13 @@ export interface ProgressUpdate {
   createdBy: string;
 }
 
+export interface ObjectiveComment {
+  id: string;
+  text: string;
+  createdAt: string;
+  createdBy: string;
+}
+
 export interface Objective {
   id: string;
   orgId: string;
@@ -54,6 +61,7 @@ export interface Objective {
   link?: ObjectiveLink;
   sortOrder?: number;
   progressUpdates?: ProgressUpdate[];
+  comments?: ObjectiveComment[];
   isKeyResult?: boolean;
   progress: number;
   status: ObjectiveStatus;

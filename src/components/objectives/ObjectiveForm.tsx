@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import type { Objective, ObjectiveLevel, ObjectiveLink, ProgressUpdate, Period, Team, Tag, User, ObjectiveHistoryEntry } from '../../types';
+import type { Objective, ObjectiveLevel, ObjectiveLink, ProgressUpdate, ObjectiveComment, Period, Team, Tag, User, ObjectiveHistoryEntry } from '../../types';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../common/Button';
@@ -53,6 +53,8 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
   const [showHistory, setShowHistory] = useState(false);
   const [showProgressUpdates, setShowProgressUpdates] = useState(true);
   const [newProgressUpdate, setNewProgressUpdate] = useState('');
+  const [activeTab, setActiveTab] = useState<'fields' | 'comments'>('fields');
+  const [newComment, setNewComment] = useState('');
 
   const { organization, user, isSuperAdmin, isOrgAdmin } = useAuth();
   const allObjectives = useOKRStore((state: OKRStore) => state.objectives);
@@ -188,6 +190,23 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
     setNewProgressUpdate('');
   };
 
+  // Live objective from the store so newly added comments show immediately.
+  const liveObjective = objective ? (allObjectives.find((o: Objective) => o.id === objective.id) || objective) : objective;
+  const comments = liveObjective?.comments || [];
+
+  const handleAddComment = async () => {
+    if (!newComment.trim() || !objective) return;
+    const c: ObjectiveComment = {
+      id: crypto.randomUUID(),
+      text: newComment.trim(),
+      createdAt: new Date().toISOString(),
+      createdBy: userEmail,
+    };
+    const existing = liveObjective?.comments || [];
+    await updateObjective(objective.id, { comments: [c, ...existing] }, userEmail);
+    setNewComment('');
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -259,6 +278,24 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="flex gap-4 border-b border-gray-200">
+        <button
+          type="button"
+          onClick={() => setActiveTab('fields')}
+          className={`-mb-px px-1 pb-2 text-sm font-medium border-b-2 ${activeTab === 'fields' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+        >
+          Fields
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('comments')}
+          className={`-mb-px px-1 pb-2 text-sm font-medium border-b-2 ${activeTab === 'comments' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+        >
+          Comments{comments.length > 0 ? ` (${comments.length})` : ''}
+        </button>
+      </div>
+
+      <div className={activeTab === 'fields' ? 'space-y-4' : 'hidden'}>
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
           Title *
@@ -700,6 +737,48 @@ export function ObjectiveForm({ objective, parentId, parentObjective, defaultLev
           )}
         </div>
       )}
+
+      </div>
+
+      <div className={activeTab === 'comments' ? 'space-y-3' : 'hidden'}>
+        {objective ? (
+          <>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newComment}
+                onChange={(e) => setNewComment(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddComment(); } }}
+                placeholder="Add a comment..."
+                className="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <Button type="button" onClick={handleAddComment} disabled={!newComment.trim()}>
+                Add
+              </Button>
+            </div>
+            {comments.length > 0 ? (
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {[...comments]
+                  .sort((a: ObjectiveComment, b: ObjectiveComment) => b.createdAt.localeCompare(a.createdAt))
+                  .map((c: ObjectiveComment) => (
+                    <div key={c.id} className="bg-gray-50 rounded-md p-3 text-sm">
+                      <div className="text-gray-900 whitespace-pre-wrap break-words">{c.text}</div>
+                      <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
+                        <span>{c.createdBy}</span>
+                        <span>•</span>
+                        <span>{formatDate(c.createdAt)}</span>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400">No comments yet. Be the first to comment.</p>
+            )}
+          </>
+        ) : (
+          <p className="text-sm text-gray-400">Comments are available after the objective is created.</p>
+        )}
+      </div>
 
       <div className="flex items-center justify-between gap-2 pt-4">
         <div>
