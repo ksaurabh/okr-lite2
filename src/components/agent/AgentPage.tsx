@@ -478,12 +478,24 @@ export function AgentPage() {
   };
 
   // Per-option plan counts matching the selection funnel so far.
-  const periodTypeOf = (periodId?: string) => periods.find(p => p.id === periodId)?.type;
   const planCount = (predicate: (p: List) => boolean) => allPlans.filter(predicate).length;
   const withCount = (label: string, c: number) => `${label} (${c} ${c === 1 ? 'plan' : 'plans'})`;
   const userOptions = () => usersSorted.map(u => withCount(u.name || u.email, planCount(p => p.ownerId === u.id)));
+  // "Open" plans are those whose period is still offered in the duration step
+  // (active or upcoming); "closed" plans are in periods that have already ended.
+  // Showing both makes clear why the next step lists only the open ones.
+  const periodTypeOf = (periodId?: string) => periods.find(p => p.id === periodId)?.type;
+  const offeredPeriodIdsOfType = (type: string) => new Set(periodsOfType(type).map(p => p.id));
   const durationTypeOptions = (userId = selectedUserId) => [
-    ...DURATION_TYPES.map(d => withCount(d.label, planCount(p => p.ownerId === userId && periodTypeOf(p.periodId) === d.type))),
+    ...DURATION_TYPES.map(d => {
+      const ids = offeredPeriodIdsOfType(d.type);
+      const ofType = allPlans.filter(p => p.ownerId === userId && periodTypeOf(p.periodId) === d.type);
+      const open = ofType.filter(p => p.periodId !== undefined && ids.has(p.periodId)).length;
+      const closed = ofType.length - open;
+      const parts = [`${open} open`];
+      if (closed) parts.push(`${closed} closed`);
+      return `${d.label} (${parts.join(', ')})`;
+    }),
     withCount('Show all plans and their duration type', planCount(p => p.ownerId === userId)),
   ];
   const durationOptions = (type: string) => periodsOfType(type).map(p => withCount(periodLabel(p), planCount(pl => pl.ownerId === selectedUserId && pl.periodId === p.id)));
@@ -607,6 +619,24 @@ export function AgentPage() {
         .filter(s => s.id !== id && !s.archived)
         .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
       if (others.length) loadSession(others[0]);
+      else await startNew();
+    }
+  };
+
+  const deleteSession = async (id: string) => {
+    const s = sessions.find(x => x.id === id);
+    if (!window.confirm(`Delete chat "${s?.title || 'New chat'}"? This cannot be undone.`)) return;
+    try {
+      const res = await fetch(`${SESSIONS_URL}/${id}`, { method: 'DELETE', credentials: 'include' });
+      if (!res.ok) return;
+    } catch { return; }
+    const remaining = sessions.filter(x => x.id !== id);
+    setSessions(remaining);
+    if (id === activeId) {
+      const next = remaining
+        .filter(x => !x.archived)
+        .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+      if (next.length) loadSession(next[0]);
       else await startNew();
     }
   };
@@ -1151,13 +1181,22 @@ export function AgentPage() {
                 >
                   <div className="flex items-center justify-between gap-1">
                     <span className="text-sm text-gray-800 truncate" title={s.title}>{s.title || 'New chat'}</span>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setArchived(s.id, !s.archived); }}
-                      className="text-[11px] text-gray-400 hover:text-gray-700 opacity-0 group-hover:opacity-100 flex-shrink-0"
-                      title={s.archived ? 'Restore' : 'Archive'}
-                    >
-                      {s.archived ? 'Restore' : 'Archive'}
-                    </button>
+                    <div className="flex items-center gap-2 flex-shrink-0 opacity-0 group-hover:opacity-100">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setArchived(s.id, !s.archived); }}
+                        className="text-[11px] text-gray-400 hover:text-gray-700"
+                        title={s.archived ? 'Restore' : 'Archive'}
+                      >
+                        {s.archived ? 'Restore' : 'Archive'}
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); deleteSession(s.id); }}
+                        className="text-[11px] text-gray-400 hover:text-red-600"
+                        title="Delete"
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
                   <div className="text-[11px] text-gray-400">{fmtDateTime(s.updatedAt)}{s.archived ? ' · archived' : ''}</div>
                 </div>

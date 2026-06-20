@@ -1948,6 +1948,15 @@ app.put('/api/users/me/agent-sessions/:id', requireAuth, (req, res) => {
   res.json({ session: sessions[idx] });
 });
 
+app.delete('/api/users/me/agent-sessions/:id', requireAuth, (req, res) => {
+  const sessions = getUserAgentSessions(req.user.email);
+  const idx = sessions.findIndex(s => s.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Session not found' });
+  sessions.splice(idx, 1);
+  saveUserAgentSessions(req.user.email, sessions);
+  res.json({ ok: true });
+});
+
 // ============ Work Logs API Routes ============
 
 // Get all work logs for the current user
