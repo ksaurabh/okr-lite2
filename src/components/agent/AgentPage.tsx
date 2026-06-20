@@ -8,7 +8,7 @@ import type { List, User, WorkflowStatus } from '../../types';
 const API_URL = import.meta.env.VITE_API_URL || '';
 const SESSIONS_URL = `${API_URL}/api/users/me/agent-sessions`;
 
-type Step = 'root' | 'treeBrowse' | 'durationGroupPick' | 'planMembershipPick' | 'user' | 'durationType' | 'planFilter' | 'planResults' | 'planSelect' | 'duration' | 'planPick' | 'result' | 'childPlanPick' | 'vpEach' | 'vpPick' | 'itemAction' | 'changeDuration' | 'vpItem';
+type Step = 'root' | 'treeBrowse' | 'durationGroupPick' | 'planMembershipPick' | 'user' | 'durationType' | 'planFilter' | 'planResults' | 'planSelect' | 'duration' | 'planPick' | 'result' | 'childPlanPick' | 'splitMenu' | 'vpEach' | 'vpPick' | 'itemAction' | 'changeDuration' | 'vpItem';
 
 // Serializable chat messages (so sessions can be persisted and resumed).
 type Msg =
@@ -20,7 +20,8 @@ type Msg =
   | { role: 'agent'; kind: 'plans'; who: string; filter?: string; items: { id: string; name: string; type: string; period: string; status: string }[] }
   | { role: 'agent'; kind: 'family'; subject: string; rows: { name: string; rel: string; duration: string; vp: number; owner: string; assignee: string; self?: boolean }[] }
   | { role: 'agent'; kind: 'objlist'; title: string; ids: string[]; code?: string }
-  | { role: 'agent'; kind: 'split'; who: string; parentListId: string; childListId: string; parentName: string; childName: string };
+  | { role: 'agent'; kind: 'split'; who: string; parentListId: string; childListId: string; parentName: string; childName: string }
+  | { role: 'agent'; kind: 'breakdown'; title: string; rows: { name: string; count: number; vp: number }[]; totalCount: number; totalVp: number };
 
 interface SessionState {
   step: Step;
@@ -83,6 +84,7 @@ const PREV: Record<Step, Step> = {
   planPick: 'duration',
   result: 'duration',
   childPlanPick: 'result',
+  splitMenu: 'childPlanPick',
   vpEach: 'result',
   vpPick: 'result',
   itemAction: 'vpPick',
@@ -109,6 +111,8 @@ const familyMsg = (subject: string, rows: { name: string; rel: string; duration:
 const objlistMsg = (title: string, ids: string[], code?: string): Msg => ({ role: 'agent', kind: 'objlist', title, ids, code });
 const splitMsg = (who: string, parentListId: string, childListId: string, parentName: string, childName: string): Msg =>
   ({ role: 'agent', kind: 'split', who, parentListId, childListId, parentName, childName });
+const breakdownMsg = (title: string, rows: { name: string; count: number; vp: number }[], totalCount: number, totalVp: number): Msg =>
+  ({ role: 'agent', kind: 'breakdown', title, rows, totalCount, totalVp });
 
 // Side-by-side parent/child plan view. Reuses the exact /plans split (ListsPage in
 // embedded mode) so the agent view is identical to the Plans page.
@@ -304,6 +308,35 @@ function renderMsg(m: Msg): React.ReactNode {
       );
     case 'split':
       return <AgentSplitView who={m.who} parentListId={m.parentListId} childListId={m.childListId} parentName={m.parentName} childName={m.childName} />;
+    case 'breakdown':
+      return (
+        <div>
+          <p className="mb-1">{m.title}:</p>
+          <table className="mt-1 text-sm">
+            <thead>
+              <tr className="text-xs text-gray-400 text-left">
+                <th className="py-1 pr-6 font-medium">Assignee</th>
+                <th className="py-1 pr-6 font-medium text-right">Items</th>
+                <th className="py-1 font-medium text-right">VP</th>
+              </tr>
+            </thead>
+            <tbody>
+              {m.rows.map((r, i) => (
+                <tr key={i} className="border-b border-gray-100 last:border-0">
+                  <td className="py-1 pr-6 text-gray-800">{r.name}</td>
+                  <td className="py-1 pr-6 text-gray-600 text-right tabular-nums">{r.count}</td>
+                  <td className="py-1 text-gray-600 text-right tabular-nums">{r.vp}</td>
+                </tr>
+              ))}
+              <tr className="font-medium">
+                <td className="py-1 pr-6">Total</td>
+                <td className="py-1 pr-6 text-right tabular-nums">{m.totalCount}</td>
+                <td className="py-1 text-right tabular-nums">{m.totalVp}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      );
     default:
       return null;
   }
@@ -581,6 +614,7 @@ export function AgentPage() {
       case 'duration': return durationOptions(durationType);
       case 'result': return resultObjectiveIds.length > 0 ? RESULT_ACTIONS : [];
       case 'childPlanPick': return childPlansOf(resultPlanId).map(p => planLabel(p.id));
+      case 'splitMenu': return ['Show breakdown by assignee', 'Go up to the plan'];
       case 'planPick': return planChoiceIds.map(planLabel);
       case 'vpPick': return resultObjectiveIds.map(itemLabel);
       case 'itemAction': return ITEM_ACTIONS;
@@ -753,13 +787,40 @@ export function AgentPage() {
   const childPlansOf = (parentId?: string) => parentId ? allPlans.filter(p => p.parentId === parentId) : [];
   const childPlanPickPrompt = () => menuMsg('Which child plan to show side by side? Type the number:', childPlansOf(resultPlanId).map(p => planLabel(p.id)));
   // VP-ordered item ids + total for one side of the side-by-side view.
+  // One level deeper, after a child plan is shown side by side.
+  const splitMenuPrompt = () => menuMsg('Now showing them side by side. What next? Type the number:', ['Show breakdown by assignee', 'Go up to the plan']);
+  const lastSplitChildId = (): string => {
+    const m = [...transcript].reverse().find(mm => mm.role === 'agent' && mm.kind === 'split');
+    return m && m.kind === 'split' ? m.childListId : '';
+  };
+  const showAssigneeBreakdown = () => {
+    const child = allPlans.find(p => p.id === lastSplitChildId());
+    if (!child) { appendAgent(textMsg('No child plan is being shown to break down.')); return; }
+    const objs = useOKRStore.getState().objectives;
+    const uName = (uid?: string) => { if (!uid) return 'Unassigned'; const u = orgUsers.find(x => x.id === uid); return u?.name || u?.email || uid; };
+    const groups = new Map<string, { count: number; vp: number }>();
+    for (const it of child.items) {
+      const o = objs.find(x => x.id === it.objectiveId);
+      const key = o?.assigneeId || '';
+      const g = groups.get(key) || { count: 0, vp: 0 };
+      g.count += 1; g.vp += o?.valuePoints ?? 0;
+      groups.set(key, g);
+    }
+    const rows = [...groups.entries()]
+      .map(([uid, g]) => ({ name: uName(uid), count: g.count, vp: g.vp }))
+      .sort((a, b) => b.vp - a.vp || b.count - a.count);
+    const totalCount = rows.reduce((s, r) => s + r.count, 0);
+    const totalVp = rows.reduce((s, r) => s + r.vp, 0);
+    appendAgent(breakdownMsg(`${child.name} — breakdown by assignee`, rows, totalCount, totalVp));
+  };
+
   const showSplit = (parent: List, child: List) => {
     const u = usersSorted.find(x => x.id === selectedUserId);
     const userName = u?.name || u?.email || 'that user';
     appendAgent(splitMsg(userName, parent.id, child.id, parent.name, child.name));
-    // Stay on the child picker so another child can be shown; "Go back" returns to the plan.
-    setStep('childPlanPick');
-    appendAgent(childPlanPickPrompt());
+    // Go one level deeper into the split menu.
+    setStep('splitMenu');
+    appendAgent(splitMenuPrompt());
   };
 
   const showPlanItems = (plan: List, code: string = answeredCodeRef.current) => {
@@ -837,6 +898,7 @@ export function AgentPage() {
       case 'planPick': appendAgent(planPickPrompt()); break;
       case 'result': reshowResult(); break;
       case 'childPlanPick': appendAgent(childPlanPickPrompt()); break;
+      case 'splitMenu': appendAgent(splitMenuPrompt()); break;
       case 'vpPick': appendAgent(vpPickPrompt()); break;
       case 'itemAction': appendAgent(itemActionPrompt()); break;
       case 'changeDuration': appendAgent(changeDurationPrompt()); break;
@@ -1202,6 +1264,11 @@ export function AgentPage() {
         const child = childPlansOf(resultPlanId)[n - 1];
         const parent = allPlans.find(p => p.id === resultPlanId);
         if (child && parent) showSplit(parent, child);
+        break;
+      }
+      case 'splitMenu': {
+        if (n === 1) { showAssigneeBreakdown(); appendAgent(splitMenuPrompt()); }
+        else if (n === 2) { showPromptFor('result'); }
         break;
       }
       case 'vpPick': {
