@@ -293,6 +293,14 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
     setShowObjectiveTree(v);
     try { localStorage.setItem('okr-list-plan-show-tree', String(v)); } catch { /* ignore */ }
   };
+  // VP roll-up status dots (green/orange) on parent cards — toggleable.
+  const [showVpDots, setShowVpDots] = useState<boolean>(() => {
+    try { const v = localStorage.getItem('okr-list-plan-show-vp-dots'); return v == null ? true : v === 'true'; } catch { return true; }
+  });
+  const setShowVpDotsPersist = (v: boolean) => {
+    setShowVpDots(v);
+    try { localStorage.setItem('okr-list-plan-show-vp-dots', String(v)); } catch { /* ignore */ }
+  };
   const [topLevelFilterOn, setTopLevelFilterOn] = useState(false);
   const [planSelectedChildListId, setPlanSelectedChildListId] = useState<string | null>(null);
 
@@ -1214,9 +1222,13 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
               <input type="checkbox" checked={planTopLevel} onChange={(e) => setPlanTopLevel(e.target.checked)} className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
               Top Level
             </label>
-            <label className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer select-none border-b border-gray-100">
+            <label className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer select-none">
               <input type="checkbox" checked={showObjectiveTree} onChange={(e) => setShowObjectiveTreePersist(e.target.checked)} className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
               Objective Tree
+            </label>
+            <label className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer select-none border-b border-gray-100" title="Green/orange dots flagging whether an item's VP matches its children's VP">
+              <input type="checkbox" checked={showVpDots} onChange={(e) => setShowVpDotsPersist(e.target.checked)} className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+              VP roll-up dots
             </label>
             <button
               onClick={() => { setShowPlanActionMenu(false); setShowPlanHistory(true); }}
@@ -1843,7 +1855,7 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
                             className={`group w-full text-left border rounded p-2 cursor-grab active:cursor-grabbing ${selected ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
                           >
                             <div className="flex items-start gap-1">
-                              {(() => {
+                              {showVpDots && (() => {
                                 const { status, objVp, sum, count } = childrenVpStatus(obj);
                                 if (!status) return null;
                                 return <span
