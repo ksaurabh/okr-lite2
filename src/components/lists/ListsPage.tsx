@@ -1950,7 +1950,6 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
                                 visibleColumnsOverride={listPlanColumns}
                                 defaultCollapsed
                                 kebabActions
-                                addToPlanBookmark
                                 removeFromListId={selectedList.id}
                                 reorderInList={{ listId: selectedList.id, onReorder: (d, t) => reorderItemsInList(selectedList.id, d, t) }}
                                 filteredObjectiveIds={NO_CHILDREN_PLAN_LIST}
@@ -2242,7 +2241,6 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
                                     visibleColumnsOverride={listPlanColumns}
                                     quickAddToListId={isReadOnlyList ? undefined : ((planTopLevel ? selectedList.id : planSelectedChildListId) || undefined)}
                                     kebabActions
-                                addToPlanBookmark
                                   />
                                 ))}
                               </div>
@@ -2683,7 +2681,6 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
                               quickAddToListId={isReadOnlyList ? undefined : ((planTopLevel ? selectedList.id : planSelectedChildListId) || undefined)}
                               filteredObjectiveIds={treeFilteredIds || undefined}
                               kebabActions
-                                addToPlanBookmark
                             />
                           </div>
                         </div>
@@ -3074,7 +3071,6 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
                                     visibleColumnsOverride={listPlanColumns}
                                     defaultCollapsed
                                     kebabActions
-                                    addToPlanBookmark
                                     removeFromListId={child.id}
                                     reorderInList={{ listId: child.id, onReorder: (d, t) => reorderItemsInList(child.id, d, t) }}
                                     filteredObjectiveIds={NO_CHILDREN_PLAN_LIST}
