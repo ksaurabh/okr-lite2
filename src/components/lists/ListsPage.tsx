@@ -1641,6 +1641,7 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
                       const total = sortedItems.reduce((sum, it) => { const o = getObjective(it.objectiveId); return sum + (o?.valuePoints ?? 0); }, 0);
                       return <span className="text-[10px] text-gray-500 flex-shrink-0" title="Total VP across items in this plan">Total VP: <span className="font-semibold text-gray-700">{total}</span></span>;
                     })()}
+                    <span className="text-[10px] text-gray-500 flex-shrink-0" title="Number of items in this plan">Items: <span className="font-semibold text-gray-700">{sortedItems.length}</span></span>
                     <div ref={firstColFilterRef} className="relative">
                       <button
                         onClick={() => setShowFirstColFilter(!showFirstColFilter)}
@@ -2737,6 +2738,7 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
                             const total = (child.items || []).reduce((sum, it) => { const o = getObjective(it.objectiveId); return sum + (o?.valuePoints ?? 0); }, 0);
                             return <span className="text-[10px] text-gray-500 flex-shrink-0" title="Total VP across items in this child plan">Total VP: <span className="font-semibold text-gray-700">{total}</span></span>;
                           })()}
+                          <span className="text-[10px] text-gray-500 flex-shrink-0" title="Number of items in this child plan">Items: <span className="font-semibold text-gray-700">{(child.items || []).length}</span></span>
                           <div ref={thirdColFilterRef} className="relative">
                             <button
                               onClick={() => setShowThirdColFilter(!showThirdColFilter)}

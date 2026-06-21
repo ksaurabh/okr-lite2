@@ -211,7 +211,7 @@ function renderMsg(m: Msg): React.ReactNode {
           {m.items.length > 0 ? (
             <>
               <div className="mt-1"><AgentObjectiveTree ids={m.items.map(it => it.id)} code={m.code} /></div>
-              <p className="mt-1 text-sm font-medium">Total {m.total} VP</p>
+              <p className="mt-1 text-sm font-medium">Total {m.total} VP <span className="text-gray-500 font-normal ml-2">Items: {m.items.length}</span></p>
             </>
           ) : (
             <p className="text-gray-500 mt-1">This plan has no items yet.</p>
