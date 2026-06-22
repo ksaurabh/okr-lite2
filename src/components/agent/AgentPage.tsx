@@ -3,12 +3,12 @@ import { useOKRStore, type OKRStore, type ColumnKey } from '../../store/okrStore
 import { useAuth } from '../../context/AuthContext';
 import { ObjectiveTree } from '../objectives/ObjectiveTree';
 import { ListsPage } from '../lists';
-import type { List, User, WorkflowStatus } from '../../types';
+import type { List, Objective, User, WorkflowStatus } from '../../types';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 const SESSIONS_URL = `${API_URL}/api/users/me/agent-sessions`;
 
-type Step = 'root' | 'treeBrowse' | 'durationGroupPick' | 'planMembershipPick' | 'user' | 'durationType' | 'planFilter' | 'planResults' | 'planSelect' | 'duration' | 'planPick' | 'result' | 'childPlanPick' | 'splitMenu' | 'vpEach' | 'vpPick' | 'itemAction' | 'changeDuration' | 'vpItem';
+type Step = 'root' | 'treeBrowse' | 'durationGroupPick' | 'planMembershipPick' | 'user' | 'durationType' | 'planFilter' | 'planResults' | 'planSelect' | 'duration' | 'planPick' | 'result' | 'childPlanPick' | 'splitMenu' | 'vpEach' | 'vpPick' | 'itemAction' | 'changeDuration' | 'vpItem' | 'delivSummary' | 'delivDate' | 'delivAssignee' | 'delivParent';
 
 // Serializable chat messages (so sessions can be persisted and resumed).
 type Msg =
@@ -21,7 +21,8 @@ type Msg =
   | { role: 'agent'; kind: 'family'; subject: string; rows: { name: string; rel: string; duration: string; vp: number; owner: string; assignee: string; self?: boolean }[] }
   | { role: 'agent'; kind: 'objlist'; title: string; ids: string[]; code?: string }
   | { role: 'agent'; kind: 'split'; who: string; parentListId: string; childListId: string; parentName: string; childName: string }
-  | { role: 'agent'; kind: 'breakdown'; title: string; rows: { name: string; count: number; vp: number }[]; totalCount: number; totalVp: number };
+  | { role: 'agent'; kind: 'breakdown'; title: string; rows: { name: string; count: number; vp: number }[]; totalCount: number; totalVp: number }
+  | { role: 'agent'; kind: 'deliverable'; summary: string; neededBy: string; assigneeId: string; assigneeName: string; ownerId: string };
 
 interface SessionState {
   step: Step;
@@ -47,7 +48,7 @@ interface AgentSession {
   updatedAt: string;
 }
 
-const ROOT_OPTIONS = ['Set my OKRs', 'Browse Objective Tree'];
+const ROOT_OPTIONS = ['Set my OKRs', 'Browse Objective Tree', 'Add a deliverable'];
 const DURATION_TYPES = [
   { label: 'Quarterly', type: 'quarter' },
   { label: 'Monthly', type: 'month' },
@@ -90,9 +91,15 @@ const PREV: Record<Step, Step> = {
   itemAction: 'vpPick',
   changeDuration: 'itemAction',
   vpItem: 'itemAction',
+  delivSummary: 'root',
+  delivDate: 'delivSummary',
+  delivAssignee: 'delivDate',
+  delivParent: 'delivAssignee',
 };
 
 const VALUE_STEPS: Step[] = ['vpEach', 'vpItem'];
+// Free-text entry steps (summary / need-by date for a new deliverable).
+const TEXT_STEPS: Step[] = ['delivSummary', 'delivDate'];
 
 // Stable short code identifying a question by its prompt text, e.g. "Q-1A2B".
 // Deterministic so the same question always carries the same code across sessions.
@@ -113,6 +120,8 @@ const splitMsg = (who: string, parentListId: string, childListId: string, parent
   ({ role: 'agent', kind: 'split', who, parentListId, childListId, parentName, childName });
 const breakdownMsg = (title: string, rows: { name: string; count: number; vp: number }[], totalCount: number, totalVp: number): Msg =>
   ({ role: 'agent', kind: 'breakdown', title, rows, totalCount, totalVp });
+const deliverableMsg = (summary: string, neededBy: string, assigneeId: string, assigneeName: string, ownerId: string): Msg =>
+  ({ role: 'agent', kind: 'deliverable', summary, neededBy, assigneeId, assigneeName, ownerId });
 
 // Side-by-side parent/child plan view. Reuses the exact /plans split (ListsPage in
 // embedded mode) so the agent view is identical to the Plans page.
@@ -129,6 +138,80 @@ function AgentSplitView({ who, parentListId, childListId, parentName, childName 
       ) : (
         <p className="text-gray-500">This plan is no longer available.</p>
       )}
+    </div>
+  );
+}
+
+// Interactive parent picker for "Add a deliverable": shows the objectives owned by
+// the current user and assigned to the chosen user as a tree. Hovering an item
+// reveals "+ Child" (quick-add a child to build structure) and "Select parent"
+// (place the deliverable under that item). Only interactive while `active`.
+function AgentDeliverablePicker({ draft, active, onSelect, onCancel }: {
+  draft: { summary: string; neededBy: string; assigneeId: string; assigneeName: string; ownerId: string };
+  active: boolean;
+  onSelect: (parent: Objective | null) => void;
+  onCancel: () => void;
+}) {
+  const objectives = useOKRStore((s: OKRStore) => s.objectives);
+  const addObjective = useOKRStore((s: OKRStore) => s.addObjective);
+  const { user, organization } = useAuth();
+  const matching = useMemo(
+    () => objectives.filter((o: Objective) => o.ownerId === draft.ownerId && o.assigneeId === draft.assigneeId),
+    [objectives, draft.ownerId, draft.assigneeId]
+  );
+  const matchingIds = useMemo(() => new Set(matching.map((o: Objective) => o.id)), [matching]);
+  const childrenOf = (parentId: string | null): Objective[] =>
+    matching
+      .filter((o: Objective) => (parentId === null ? (!o.parentId || !matchingIds.has(o.parentId)) : o.parentId === parentId))
+      .sort((a: Objective, b: Objective) => a.title.localeCompare(b.title));
+
+  const addChild = async (parent: Objective) => {
+    const title = window.prompt(`Title for a new child under "${parent.title}":`);
+    if (!title || !title.trim()) return;
+    await addObjective({
+      title: title.trim(),
+      level: parent.level,
+      parentId: parent.id,
+      ownerId: draft.ownerId,
+      assigneeId: draft.assigneeId,
+      periodId: parent.periodId,
+      workflowStatus: 'todo',
+    }, { orgId: organization?.id || '', userEmail: user?.email || '', shared: true });
+  };
+
+  const renderNode = (o: Objective, depth: number): React.ReactNode => (
+    <div key={o.id}>
+      <div className="group flex items-center gap-2 py-1 pr-2 rounded hover:bg-gray-50" style={{ paddingLeft: 8 + depth * 16 }}>
+        <span className="flex-1 truncate text-sm text-gray-800" title={o.title}>{o.title}</span>
+        {active && (
+          <span className="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+            <button onClick={() => addChild(o)} className="text-[11px] px-1.5 py-0.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-100" title="Add a child under this item">+ Child</button>
+            <button onClick={() => onSelect(o)} className="text-[11px] px-1.5 py-0.5 rounded border border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100" title="Use this item as the parent">Select parent</button>
+          </span>
+        )}
+      </div>
+      {childrenOf(o.id).map(k => renderNode(k, depth + 1))}
+    </div>
+  );
+
+  const roots = childrenOf(null);
+  return (
+    <div className="border border-gray-200 rounded-lg p-2 bg-white">
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <p className="text-sm">Select a parent for <span className="font-medium">&ldquo;{draft.summary}&rdquo;</span> <span className="text-gray-400">· assignee: {draft.assigneeName}{draft.neededBy ? ` · by ${draft.neededBy}` : ''}</span></p>
+        {active && <button onClick={onCancel} className="text-xs px-2 py-0.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-100 flex-shrink-0">Cancel</button>}
+      </div>
+      {roots.length === 0 ? (
+        <p className="text-xs text-gray-400 px-2 py-1">No objectives owned by you and assigned to {draft.assigneeName} yet — add one at the top level.</p>
+      ) : (
+        <div>{roots.map(r => renderNode(r, 0))}</div>
+      )}
+      {active && (
+        <div className="mt-1 pt-1 border-t border-gray-100">
+          <button onClick={() => onSelect(null)} className="text-[11px] px-1.5 py-0.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-100" title="Add the deliverable at the top level (no parent)">+ Add at top level (no parent)</button>
+        </div>
+      )}
+      {!active && <p className="text-[11px] text-gray-400 mt-1 italic">Picker closed.</p>}
     </div>
   );
 }
@@ -479,9 +562,11 @@ class MsgBoundary extends Component<{ children: React.ReactNode }, { failed: boo
 }
 
 export function AgentPage() {
-  const { user } = useAuth();
+  const { user, organization } = useAuth();
   const userEmail = user?.email || '';
+  const orgId = organization?.id || '';
 
+  const addObjective = useOKRStore((s: OKRStore) => s.addObjective);
   const lists = useOKRStore((s: OKRStore) => s.lists);
   const sharedPlans = useOKRStore((s: OKRStore) => s.sharedPlans);
   const periods = useOKRStore((s: OKRStore) => s.periods);
@@ -526,6 +611,13 @@ export function AgentPage() {
     () => [...orgUsers].sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email)),
     [orgUsers]
   );
+  const currentUserId = useMemo(
+    () => orgUsers.find(u => u.email?.toLowerCase() === userEmail.toLowerCase())?.id || '',
+    [orgUsers, userEmail]
+  );
+  // Draft for the "Add a deliverable" flow.
+  const [delivSummary, setDelivSummary] = useState('');
+  const [delivNeededBy, setDelivNeededBy] = useState('');
   const periodsSorted = useMemo(
     () => [...periods].sort((a, b) => (a.startDate || '').localeCompare(b.startDate || '') || a.name.localeCompare(b.name)),
     [periods]
@@ -615,6 +707,8 @@ export function AgentPage() {
       case 'result': return resultObjectiveIds.length > 0 ? RESULT_ACTIONS : [];
       case 'childPlanPick': return childPlansOf(resultPlanId).map(p => planLabel(p.id));
       case 'splitMenu': return ['Show breakdown by assignee', 'Show unassigned items in the child plan', 'Go up to the plan'];
+      case 'delivAssignee': return usersSorted.map(u => u.name || u.email);
+      case 'delivParent': return [];
       case 'planPick': return planChoiceIds.map(planLabel);
       case 'vpPick': return resultObjectiveIds.map(itemLabel);
       case 'itemAction': return ITEM_ACTIONS;
@@ -834,6 +928,40 @@ export function AgentPage() {
     appendAgent(splitMenuPrompt());
   };
 
+  // ---- Add a deliverable ----
+  const delivSummaryPrompt = () => textMsg("Add a deliverable. Type a one-line summary of what it is (or 'b' to go back):");
+  const delivDatePrompt = () => textMsg("When do we need it by? Type a date like 2026-09-30 (or '-' for none):");
+  const delivAssigneePrompt = () => menuMsg('Who should it be assigned to? Type the number:', usersSorted.map(u => u.name || u.email));
+  const delivPickerNote = () => menuMsg('Pick a parent in the tree above — hover an item and choose "Select parent" (or "+ Child" to add structure). Or:', []);
+  const startDeliverableParent = (assignee: User) => {
+    appendAgent(deliverableMsg(delivSummary, delivNeededBy, assignee.id, assignee.name || assignee.email, currentUserId));
+    setStep('delivParent');
+    appendAgent(delivPickerNote());
+  };
+  const createDeliverableFrom = async (m: { summary: string; neededBy: string; assigneeId: string; assigneeName: string; ownerId: string }, parent: Objective | null) => {
+    const fallbackPeriod = periodsSorted[periodsSorted.length - 1]?.id || periods[0]?.id || '';
+    const periodId = parent?.periodId || fallbackPeriod;
+    if (!periodId) { appendAgent(textMsg('Could not determine a period for the deliverable. Add a period first.')); return; }
+    await addObjective({
+      title: m.summary,
+      level: parent?.level || 'individual',
+      parentId: parent?.id,
+      ownerId: m.ownerId || currentUserId || undefined,
+      assigneeId: m.assigneeId,
+      periodId,
+      nextStepDate: m.neededBy || undefined,
+      workflowStatus: 'todo',
+    }, { orgId, userEmail, shared: true });
+    appendAgent(textMsg(`Added "${m.summary}"${parent ? ` under "${parent.title}"` : ' at the top level'}, assigned to ${m.assigneeName}${m.neededBy ? `, needed by ${m.neededBy}` : ''}.`));
+    setStep('root');
+    appendAgent(rootPromptMsg());
+  };
+  const cancelDeliverable = () => {
+    appendAgent(textMsg('Cancelled adding the deliverable.'));
+    setStep('root');
+    appendAgent(rootPromptMsg());
+  };
+
   const showPlanItems = (plan: List, code: string = answeredCodeRef.current) => {
     const u = usersSorted.find(x => x.id === selectedUserId);
     const userName = u?.name || u?.email || 'that user';
@@ -910,6 +1038,10 @@ export function AgentPage() {
       case 'result': reshowResult(); break;
       case 'childPlanPick': appendAgent(childPlanPickPrompt()); break;
       case 'splitMenu': appendAgent(splitMenuPrompt()); break;
+      case 'delivSummary': appendAgent(delivSummaryPrompt()); break;
+      case 'delivDate': appendAgent(delivDatePrompt()); break;
+      case 'delivAssignee': appendAgent(delivAssigneePrompt()); break;
+      case 'delivParent': appendAgent(deliverableMsg(delivSummary, delivNeededBy, '', '', currentUserId)); appendAgent(delivPickerNote()); break;
       case 'vpPick': appendAgent(vpPickPrompt()); break;
       case 'itemAction': appendAgent(itemActionPrompt()); break;
       case 'changeDuration': appendAgent(changeDurationPrompt()); break;
@@ -1139,6 +1271,23 @@ export function AgentPage() {
       return;
     }
 
+    // Free-text steps for the deliverable flow.
+    if (TEXT_STEPS.includes(step)) {
+      const lower = raw.toLowerCase();
+      if (lower === 'b' || lower === 'back') { goBack(); return; }
+      if (lower === 's' || lower === 'start' || lower === 'restart') { restart(); return; }
+      if (step === 'delivSummary') {
+        setDelivSummary(raw);
+        setStep('delivDate');
+        appendAgent(delivDatePrompt());
+      } else if (step === 'delivDate') {
+        setDelivNeededBy(raw === '-' || lower === 'none' ? '' : raw);
+        setStep('delivAssignee');
+        appendAgent(delivAssigneePrompt());
+      }
+      return;
+    }
+
     // Menu steps: input is an option number (domain options + back + start over).
     const base = baseOptions(step);
     const totalOpts = base.length + 2;
@@ -1158,7 +1307,8 @@ export function AgentPage() {
     switch (step) {
       case 'root':
         if (n === 1) showPromptFor('user');
-        else { setStep('treeBrowse'); appendAgent(treeBrowsePrompt()); }
+        else if (n === 2) { setStep('treeBrowse'); appendAgent(treeBrowsePrompt()); }
+        else { setDelivSummary(''); setDelivNeededBy(''); setStep('delivSummary'); appendAgent(delivSummaryPrompt()); }
         break;
       case 'treeBrowse':
         if (n === 1) { showTopInitiatives(false); appendAgent(treeBrowsePrompt()); }
@@ -1283,6 +1433,11 @@ export function AgentPage() {
         else if (n === 3) { showPromptFor('result'); }
         break;
       }
+      case 'delivAssignee': {
+        const u = usersSorted[n - 1];
+        if (u) startDeliverableParent(u);
+        break;
+      }
       case 'vpPick': {
         const id = resultObjectiveIds[n - 1];
         setVpTargetId(id);
@@ -1373,17 +1528,37 @@ export function AgentPage() {
         {/* Chat */}
         <div className="flex-1 min-w-0 bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col">
           <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
-            {transcript.map((m, i) => {
-              // The embedded objective tree needs full width, not the narrow bubble.
-              const wide = m.role === 'agent' && (m.kind === 'objlist' || m.kind === 'split');
-              return (
-                <div key={i} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
-                  <div className={wide ? 'w-full text-sm text-gray-800' : `max-w-[85%] rounded-lg px-3 py-2 text-sm ${m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-800'}`}>
-                    <MsgBoundary>{renderMsg(m)}</MsgBoundary>
+            {(() => {
+              const lastDelivIdx = transcript.reduce((acc, mm, idx) => (mm.role === 'agent' && mm.kind === 'deliverable' ? idx : acc), -1);
+              return transcript.map((m, i) => {
+                // The deliverable picker is interactive and rendered with live callbacks.
+                if (m.role === 'agent' && m.kind === 'deliverable') {
+                  return (
+                    <div key={i} className="flex justify-start">
+                      <div className="w-full text-sm text-gray-800">
+                        <MsgBoundary>
+                          <AgentDeliverablePicker
+                            draft={m}
+                            active={step === 'delivParent' && i === lastDelivIdx}
+                            onSelect={(parent) => createDeliverableFrom(m, parent)}
+                            onCancel={cancelDeliverable}
+                          />
+                        </MsgBoundary>
+                      </div>
+                    </div>
+                  );
+                }
+                // The embedded objective tree needs full width, not the narrow bubble.
+                const wide = m.role === 'agent' && (m.kind === 'objlist' || m.kind === 'split');
+                return (
+                  <div key={i} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
+                    <div className={wide ? 'w-full text-sm text-gray-800' : `max-w-[85%] rounded-lg px-3 py-2 text-sm ${m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-800'}`}>
+                      <MsgBoundary>{renderMsg(m)}</MsgBoundary>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              });
+            })()}
           </div>
           <form
             onSubmit={(e) => { e.preventDefault(); handleSubmit(); }}
