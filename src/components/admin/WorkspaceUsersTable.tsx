@@ -59,8 +59,55 @@ export function WorkspaceUsersTable() {
       }
     };
     walk(null, 0);
+    // Safety net: a defined department not reached by the walk (e.g. trapped in a
+    // parent cycle) still shows, as a top-level entry.
+    for (const d of definedDepartments) {
+      const key = d.name.toLowerCase();
+      if (!seen.has(key)) { seen.add(key); out.push({ dept: d, depth: 0 }); }
+    }
     return out;
   }, [definedDepartments]);
+
+  // Departments that employees are in (from the merged list) but that aren't in
+  // the defined hierarchy — surfaced so every real department is visible.
+  const extraDepartments = useMemo(() => {
+    const definedLower = new Set(definedDepartments.map(d => d.name.toLowerCase()));
+    return departments.filter(name => !definedLower.has(name.toLowerCase())).sort((a, b) => a.localeCompare(b));
+  }, [departments, definedDepartments]);
+
+  // Employee counts per department (rollup: the department + all its
+  // sub-departments) and the company total. Excluded emails don't count.
+  const { deptCount, companyTotal } = useMemo(() => {
+    const active = users.filter(u => !isExcluded(u.email));
+    const direct = new Map<string, number>();
+    for (const u of active) {
+      const key = (u.department || '').trim().toLowerCase();
+      if (key) direct.set(key, (direct.get(key) || 0) + 1);
+    }
+    const byLower = new Map(definedDepartments.map(d => [d.name.toLowerCase(), d] as const));
+    const parentKeyOf = (d: Department) => {
+      const p = d.parentName ? d.parentName.toLowerCase() : null;
+      return p && p !== d.name.toLowerCase() && byLower.has(p) ? p : null;
+    };
+    const childrenLower = (parent: string) => definedDepartments.filter(d => parentKeyOf(d) === parent).map(d => d.name.toLowerCase());
+    const memo = new Map<string, number>();
+    const inStack = new Set<string>();
+    const rollup = (nameLower: string): number => {
+      if (memo.has(nameLower)) return memo.get(nameLower)!;
+      if (inStack.has(nameLower)) return direct.get(nameLower) || 0; // cycle guard
+      inStack.add(nameLower);
+      let sum = direct.get(nameLower) || 0;
+      for (const c of childrenLower(nameLower)) sum += rollup(c);
+      inStack.delete(nameLower);
+      memo.set(nameLower, sum);
+      return sum;
+    };
+    const deptCount = new Map<string, number>();
+    for (const d of definedDepartments) deptCount.set(d.name.toLowerCase(), rollup(d.name.toLowerCase()));
+    // In-use departments that aren't defined: direct count (no sub-departments).
+    for (const [key, n] of direct) if (!deptCount.has(key)) deptCount.set(key, n);
+    return { deptCount, companyTotal: active.length };
+  }, [users, isExcluded, definedDepartments]);
 
   const loadDepartments = useCallback(async () => {
     try {
@@ -285,6 +332,7 @@ export function WorkspaceUsersTable() {
           </svg>
           Departments
           {definedDepartments.length > 0 && <span className="text-xs font-normal text-gray-400">({definedDepartments.length})</span>}
+          <span className="ml-auto text-xs font-normal text-gray-500">{companyTotal} {companyTotal === 1 ? 'employee' : 'employees'} company-wide</span>
         </button>
         {deptsOpen && (
           <div className="mt-2">
@@ -297,6 +345,22 @@ export function WorkspaceUsersTable() {
                     {dept.name}
                     <button onClick={() => removeDepartment(dept.name)} title="Remove" className="text-gray-400 hover:text-red-600 rounded-full w-4 h-4 leading-none">×</button>
                   </span>
+                  <span className="ml-2 text-xs text-gray-500 tabular-nums" title="Employees in this department and its sub-departments">
+                    {deptCount.get(dept.name.toLowerCase()) ?? 0}
+                  </span>
+                </div>
+              ))}
+              {extraDepartments.map(name => (
+                <div key={`x-${name}`} className="flex items-center">
+                  <span className="inline-flex items-center gap-1 text-xs bg-white border border-dashed border-gray-300 rounded-full px-2.5 py-0.5 text-gray-500 italic" title="In use (from Workspace), not yet defined">
+                    {name}
+                  </span>
+                  <span className="ml-2 text-xs text-gray-500 tabular-nums">{deptCount.get(name.toLowerCase()) ?? 0}</span>
+                  <button
+                    onClick={() => saveDefinedDepartments([...definedDepartments, { name, parentName: null }])}
+                    title="Add to the defined department list"
+                    className="ml-2 text-[11px] text-blue-600 hover:text-blue-700"
+                  >+ define</button>
                 </div>
               ))}
             </div>

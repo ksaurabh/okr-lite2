@@ -117,6 +117,7 @@ function NodeCard({ node, collapsedIds, onToggle }: {
 
 export function OrgChartPage() {
   const [users, setUsers] = useState<User[]>([]);
+  const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
@@ -125,10 +126,16 @@ export function OrgChartPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_URL}/api/users`, { credentials: 'include' });
-      if (!res.ok) { setError(`Failed to load users (${res.status}).`); return; }
-      const data = await res.json();
+      const [usersRes, exclRes] = await Promise.all([
+        fetch(`${API_URL}/api/users`, { credentials: 'include' }),
+        fetch(`${API_URL}/api/excluded-emails`, { credentials: 'include' }),
+      ]);
+      if (!usersRes.ok) { setError(`Failed to load users (${usersRes.status}).`); return; }
+      const data = await usersRes.json();
       setUsers(Array.isArray(data.users) ? data.users : []);
+      // Emails an admin excluded from the reporting structure are hidden here too.
+      const excl = exclRes.ok ? await exclRes.json().catch(() => ({})) : {};
+      setExcluded(new Set((excl.excludedEmails || []).map((e: string) => String(e).toLowerCase())));
     } catch (e) {
       setError(`Couldn't reach the server: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -138,7 +145,11 @@ export function OrgChartPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const forest = useMemo(() => buildForest(users), [users]);
+  const visibleUsers = useMemo(
+    () => users.filter(u => !excluded.has((u.email || '').toLowerCase())),
+    [users, excluded]
+  );
+  const forest = useMemo(() => buildForest(visibleUsers), [visibleUsers]);
   const parentIds = useMemo(() => collectParentIds(forest), [forest]);
 
   const toggle = useCallback((id: string) => {
@@ -158,7 +169,7 @@ export function OrgChartPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Org Chart</h1>
           <p className="text-sm text-gray-500">
-            Reporting structure from Google Workspace — {users.length} people
+            Reporting structure from Google Workspace — {visibleUsers.length} people
             {forest.length > 1 && `, ${forest.length} at the top`}.
           </p>
         </div>
