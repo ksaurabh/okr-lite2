@@ -446,21 +446,40 @@ passport.use(new GoogleStrategy({
   clientID: process.env.GOOGLE_CLIENT_ID,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
   callbackURL: process.env.GOOGLE_CALLBACK_URL || 'http://localhost:3001/auth/google/callback',
-}, (accessToken, refreshToken, profile, done) => {
+}, (accessToken, refreshToken, params, profile, done) => {
   const email = profile.emails?.[0]?.value;
+  const scope = params?.scope || '';
+  // Log what Google actually granted — the fastest way to tell whether the
+  // spreadsheets scope made it into the token.
+  console.log(`[google-auth] ${email} granted scopes: ${scope || '(none reported)'}`);
   const user = {
     id: profile.id,
     email,
     name: profile.displayName,
     picture: profile.photos?.[0]?.value,
     domain: email?.split('@')[1]?.toLowerCase(),
+    // Google API credentials for reading spreadsheets on the user's behalf
+    // (e.g. the Release Calendar). Persisted in the session via serializeUser.
+    // Never expose these to the client — see /auth/user which strips them.
+    google: {
+      accessToken,
+      refreshToken: refreshToken || null,
+      expiresAt: Date.now() + ((params?.expires_in || 3600) * 1000),
+      scope,
+    },
   };
   return done(null, user);
 }));
 
 // Auth routes
 app.get('/auth/google', passport.authenticate('google', {
-  scope: ['profile', 'email'],
+  scope: ['profile', 'email', 'https://www.googleapis.com/auth/spreadsheets.readonly'],
+  // Request offline access so we receive a refresh token on first consent.
+  // prompt=consent forces the consent screen so a newly-added scope
+  // (spreadsheets.readonly) is actually granted rather than silently skipped
+  // for users who already authorized profile/email.
+  accessType: 'offline',
+  prompt: 'consent',
 }));
 
 app.get('/auth/google/callback',
@@ -512,11 +531,14 @@ app.get('/auth/user', (req, res) => {
     });
   }
 
+  // Strip server-only Google API credentials before returning the user.
+  const { google: _google, ...safeUser } = req.user;
+
   res.json({
     authenticated: true,
     allowed: isAllowed,
     user: {
-      ...req.user,
+      ...safeUser,
       name: storedUser?.name || req.user.name,
       organizationId: org?.id || null,
     },
@@ -1618,6 +1640,134 @@ function savePlanStages(orgId, stages) {
 app.get('/api/plan-stages', requireAuth, (req, res) => {
   const org = getOrganizationByDomain(req.user.domain);
   res.json({ stages: org ? getPlanStages(org.id) : [...DEFAULT_PLAN_STAGES] });
+});
+
+// ============ Review Progress: Release Calendar (Google Sheet) ============
+
+// The "Release Calendar" spreadsheet, read on the signed-in user's behalf via
+// the Google Sheets API. Override with RELEASE_CALENDAR_SHEET_ID in .env.
+const RELEASE_CALENDAR_SHEET_ID =
+  process.env.RELEASE_CALENDAR_SHEET_ID || '1yhX_n--TeRVlrQkCgvvzWDr30BWYkY733vEessSIPw0';
+
+// Exchange a refresh token for a fresh access token. Returns null on failure.
+async function refreshGoogleAccessToken(refreshToken) {
+  try {
+    const body = new URLSearchParams({
+      client_id: process.env.GOOGLE_CLIENT_ID || '',
+      client_secret: process.env.GOOGLE_CLIENT_SECRET || '',
+      refresh_token: refreshToken,
+      grant_type: 'refresh_token',
+    });
+    const r = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+    });
+    if (!r.ok) return null;
+    const d = await r.json();
+    if (!d.access_token) return null;
+    return { accessToken: d.access_token, expiresIn: d.expires_in || 3600 };
+  } catch {
+    return null;
+  }
+}
+
+// Resolve a usable Google access token for the current request, refreshing if
+// needed. The token lives on the real (non-impersonated) authenticated user.
+// Returns null when the user must sign in again to (re)grant access.
+async function getGoogleAccessToken(req) {
+  const g = req.realUser?.google || req.user?.google;
+  if (!g || !g.accessToken) return null;
+  const stillValid = !g.expiresAt || g.expiresAt > Date.now() + 60_000;
+  if (stillValid) return g.accessToken;
+  if (g.refreshToken) {
+    const refreshed = await refreshGoogleAccessToken(g.refreshToken);
+    if (refreshed) {
+      g.accessToken = refreshed.accessToken;
+      g.expiresAt = Date.now() + refreshed.expiresIn * 1000;
+      // Persist the rotated token back into the session.
+      req.session?.save?.(() => {});
+      return g.accessToken;
+    }
+    return null; // refresh failed — force re-auth
+  }
+  return null; // expired and no refresh token — force re-auth
+}
+
+const REAUTH = {
+  error: 'google_reauth_required',
+  message: 'Reconnect your Google account to grant access to the Release Calendar.',
+};
+
+// Pull a short, human-readable message out of a Google API JSON/text error body.
+function googleErrorDetail(body) {
+  try { const j = JSON.parse(body); return j?.error?.message || j?.error_description || j?.error || ''; }
+  catch { return String(body || '').slice(0, 300); }
+}
+
+app.get('/api/release-calendar', requireAuth, async (req, res) => {
+  const g = req.realUser?.google || req.user?.google;
+  const token = await getGoogleAccessToken(req);
+  if (!token) return res.status(403).json({ ...REAUTH, reason: 'no_token' });
+
+  // If the granted scope never included spreadsheets, reconnecting to the same
+  // consent is the fix — say so explicitly instead of looping silently.
+  if (g?.scope && !g.scope.includes('spreadsheets')) {
+    return res.status(403).json({
+      ...REAUTH,
+      reason: 'missing_scope',
+      message: 'Your Google sign-in did not include spreadsheet access. Click Reconnect and be sure to approve the "See all your Google Sheets spreadsheets" permission.',
+    });
+  }
+
+  const sheetId = RELEASE_CALENDAR_SHEET_ID;
+  const authHeader = { Authorization: `Bearer ${token}` };
+  const readError = async (r, where) => {
+    const body = await r.text().catch(() => '');
+    const detail = googleErrorDetail(body);
+    console.error(`[release-calendar] ${where} failed: HTTP ${r.status} — ${detail}`);
+    return detail;
+  };
+  try {
+    // Find the first tab's title so we can read the whole sheet by name.
+    const metaR = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?fields=properties.title,sheets.properties(title,index)`,
+      { headers: authHeader }
+    );
+    if (!metaR.ok) {
+      const detail = await readError(metaR, 'metadata');
+      // 404 from Sheets means "not found OR you don't have access" — Google hides
+      // which. For a valid token that's almost always a sharing problem.
+      if (metaR.status === 404) {
+        return res.status(404).json({ error: 'sheet_not_found', message: 'The Release Calendar was not found, or your Google account does not have access to it. Ask the sheet owner to share it with you (view access).', detail });
+      }
+      if (metaR.status === 401 || metaR.status === 403) {
+        return res.status(403).json({ ...REAUTH, reason: 'sheets_denied', detail });
+      }
+      return res.status(502).json({ error: 'sheet_fetch_failed', status: metaR.status, detail });
+    }
+    const meta = await metaR.json();
+    const props = (meta.sheets || []).map(s => s.properties).sort((a, b) => (a?.index ?? 0) - (b?.index ?? 0));
+    const tab = props[0]?.title || 'Sheet1';
+
+    const valR = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(tab)}?majorDimension=ROWS&valueRenderOption=FORMATTED_VALUE`,
+      { headers: authHeader }
+    );
+    if (!valR.ok) {
+      const detail = await readError(valR, 'values');
+      if (valR.status === 401 || valR.status === 403) return res.status(403).json({ ...REAUTH, reason: 'sheets_denied', detail });
+      return res.status(502).json({ error: 'sheet_fetch_failed', status: valR.status, detail });
+    }
+    const val = await valR.json();
+    const values = Array.isArray(val.values) ? val.values : [];
+    const headers = values[0] || [];
+    const rows = values.slice(1).filter(r => r.some(c => String(c ?? '').trim() !== ''));
+    res.json({ sheetTitle: meta.properties?.title || '', tab, headers, rows });
+  } catch (e) {
+    console.error('[release-calendar] unexpected error:', e);
+    res.status(502).json({ error: 'sheet_fetch_failed', message: String(e?.message || e) });
+  }
 });
 
 app.put('/api/admin/plan-stages', requireOrgAdminOrSuperAdmin, (req, res) => {
