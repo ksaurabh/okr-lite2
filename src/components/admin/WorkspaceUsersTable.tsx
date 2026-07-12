@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { User, Department } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { AutocompleteInput } from './AutocompleteInput';
@@ -26,6 +26,10 @@ export function WorkspaceUsersTable() {
   // Emails excluded from the reporting structure (lowercase).
   const [excludedEmails, setExcludedEmails] = useState<string[]>([]);
   const [deptsOpen, setDeptsOpen] = useState(false);
+  // JSON export/import of the whole "Users & reporting" set.
+  const [porterError, setPorterError] = useState<string | null>(null);
+  const [porterResult, setPorterResult] = useState<{ updated: number; departments: number; excludedEmails: number; unmatched: string[]; unknownManagers: string[] } | null>(null);
+  const porterFileRef = useRef<HTMLInputElement>(null);
 
   const isExcluded = useCallback((email: string) => excludedEmails.includes(email.toLowerCase()), [excludedEmails]);
   // Managers can only be users that are part of the reporting structure.
@@ -91,6 +95,49 @@ export function WorkspaceUsersTable() {
   };
   const excludeEmail = (email: string) => saveExcludedEmails([...excludedEmails, email]);
   const includeEmail = (email: string) => saveExcludedEmails(excludedEmails.filter(e => e !== email.toLowerCase()));
+
+  const exportReporting = async () => {
+    setPorterError(null);
+    try {
+      const res = await fetch(`${API_URL}/api/admin/users-reporting/export`, { credentials: 'include' });
+      if (!res.ok) { setPorterError(`Export failed (${res.status}).`); return; }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'users-reporting.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setPorterError(`Couldn't export: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const importReporting = async (file: File) => {
+    setPorterError(null);
+    setPorterResult(null);
+    try {
+      const text = await file.text();
+      let data: unknown;
+      try { data = JSON.parse(text); } catch { setPorterError('That file is not valid JSON.'); return; }
+      const res = await fetch(`${API_URL}/api/admin/users-reporting/import`, {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) { setPorterError(result?.error || `Import failed (${res.status}).`); return; }
+      setPorterResult(result);
+      await load();
+      await loadDepartments();
+      await loadExcludedEmails();
+    } catch (err) {
+      setPorterError(`Couldn't import: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      if (porterFileRef.current) porterFileRef.current.value = '';
+    }
+  };
 
   const saveDefinedDepartments = async (next: Department[]) => {
     setDefinedDepartments(next);
@@ -203,12 +250,28 @@ export function WorkspaceUsersTable() {
     <div className="mt-6 pt-6 border-t border-gray-100">
       <div className="flex items-center justify-between gap-3 mb-1">
         <h3 className="font-medium text-gray-900">Users &amp; reporting</h3>
-        <button onClick={load} className="text-xs text-blue-600 hover:text-blue-700 font-medium">Refresh</button>
+        <div className="flex items-center gap-3">
+          <button onClick={exportReporting} className="text-xs text-blue-600 hover:text-blue-700 font-medium">Export JSON</button>
+          <button onClick={() => porterFileRef.current?.click()} className="text-xs text-blue-600 hover:text-blue-700 font-medium">Import JSON</button>
+          <input ref={porterFileRef} type="file" accept=".json,application/json" className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) importReporting(f); }} />
+          <button onClick={load} className="text-xs text-blue-600 hover:text-blue-700 font-medium">Refresh</button>
+        </div>
       </div>
       <p className="text-sm text-gray-600 mb-3">
         Edit a user's manager email or department — changes are written back to Google Workspace when you click Save.
-        Start typing to pick from suggestions.
+        Start typing to pick from suggestions. Export/Import JSON captures the whole set: each user's manager and
+        department, the department hierarchy, and the excluded emails (import updates local records only).
       </p>
+
+      {porterResult && (
+        <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
+          Imported reporting for {porterResult.updated} {porterResult.updated === 1 ? 'user' : 'users'}, {porterResult.departments} departments, {porterResult.excludedEmails} excluded emails.
+          {porterResult.unmatched.length > 0 && <div className="text-green-700 mt-1">Emails not found as users: {porterResult.unmatched.join(', ')}</div>}
+          {porterResult.unknownManagers.length > 0 && <div className="text-green-700 mt-1">Manager emails not found as users: {porterResult.unknownManagers.join(', ')}</div>}
+        </div>
+      )}
+      {porterError && <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{porterError}</div>}
 
       <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
         <button

@@ -1924,6 +1924,86 @@ app.put('/api/admin/excluded-emails', requireOrgAdminOrSuperAdmin, (req, res) =>
   res.json({ excludedEmails: saved });
 });
 
+// Export "Users & reporting" as JSON: each user's manager/department, the defined
+// department hierarchy, and the emails excluded from the reporting structure.
+app.get('/api/admin/users-reporting/export', requireOrgAdminOrSuperAdmin, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.status(403).json({ error: 'No organization found' });
+  const users = getUsersByOrganization(org.id).slice().sort((a, b) => (a.email || '').localeCompare(b.email || ''));
+  const byId = new Map(users.map(u => [u.id, u]));
+  const payload = {
+    type: 'okr-users-reporting',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    domain: org.domain,
+    departments: getDepartments(org.id),
+    excludedEmails: getExcludedEmails(org.id),
+    users: users.map(u => ({
+      email: u.email || '',
+      name: u.name || '',
+      managerEmail: u.managerEmail || (u.managerId ? byId.get(u.managerId)?.email : '') || '',
+      department: u.department || '',
+    })),
+  };
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="users-reporting-${org.domain}.json"`);
+  res.send(JSON.stringify(payload, null, 2));
+});
+
+// Import "Users & reporting" from an exported JSON. Applies the department
+// hierarchy and excluded-emails list, then sets each matched user's manager /
+// department by email. Updates local records only (does not write back to Google).
+app.post('/api/admin/users-reporting/import', requireOrgAdminOrSuperAdmin, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.status(403).json({ error: 'No organization found' });
+  const payload = req.body?.data ?? req.body;
+  if (!payload || typeof payload !== 'object') return res.status(400).json({ error: 'Provide the exported JSON in { data }.' });
+  if (!Array.isArray(payload.users) && !Array.isArray(payload.departments) && !Array.isArray(payload.excludedEmails)) {
+    return res.status(400).json({ error: 'This does not look like a Users & reporting export.' });
+  }
+
+  let departmentsCount = 0;
+  if (Array.isArray(payload.departments)) {
+    departmentsCount = saveDepartments(org.id, sanitizeDepartments(payload.departments)).length;
+  }
+  let excludedCount = 0;
+  if (Array.isArray(payload.excludedEmails)) {
+    excludedCount = saveExcludedEmails(org.id, payload.excludedEmails).length;
+  }
+
+  let updated = 0;
+  const unmatched = new Set(), unknownManagers = new Set();
+  const users = getUsers();
+  const byEmail = new Map(users.map(u => [u.email?.toLowerCase(), u]));
+  if (Array.isArray(payload.users)) {
+    for (const row of payload.users) {
+      const email = String(row?.email || '').trim().toLowerCase();
+      if (!email) continue;
+      const u = byEmail.get(email);
+      if (!u || u.organizationId !== org.id) { unmatched.add(email); continue; }
+      if ('managerEmail' in row) {
+        const mgr = String(row.managerEmail || '').trim().toLowerCase();
+        u.managerEmail = mgr || undefined;
+        if (mgr && !byEmail.get(mgr)) unknownManagers.add(mgr);
+      }
+      if ('department' in row) u.department = String(row.department || '').trim() || undefined;
+      updated++;
+    }
+  }
+  // Re-resolve manager links (also reflects the new department/exclusion state).
+  const linked = resolveManagerIds(users, org.id);
+  saveUsers(users);
+  res.json({
+    ok: true, updated, linked,
+    departments: departmentsCount,
+    excludedEmails: excludedCount,
+    unmatched: [...unmatched].slice(0, 50),
+    unknownManagers: [...unknownManagers].slice(0, 50),
+  });
+});
+
+// Export the org's defined departments as CSV (columns: name, parent).
+
 // Export the org's defined departments as CSV (columns: name, parent).
 app.get('/api/admin/departments/export', requireOrgAdminOrSuperAdmin, (req, res) => {
   const org = getOrganizationByDomain(req.user.domain);
