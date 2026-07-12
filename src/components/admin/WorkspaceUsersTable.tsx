@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { User, Department } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { AutocompleteInput } from './AutocompleteInput';
+import { OrgChart } from '../orgchart';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -30,6 +31,7 @@ export function WorkspaceUsersTable() {
   const [porterError, setPorterError] = useState<string | null>(null);
   const [porterResult, setPorterResult] = useState<{ updated: number; departments: number; excludedEmails: number; unmatched: string[]; unknownManagers: string[] } | null>(null);
   const porterFileRef = useRef<HTMLInputElement>(null);
+  const [showChart, setShowChart] = useState(false);
 
   const isExcluded = useCallback((email: string) => excludedEmails.includes(email.toLowerCase()), [excludedEmails]);
   // Managers can only be users that are part of the reporting structure.
@@ -302,6 +304,16 @@ export function WorkspaceUsersTable() {
           <button onClick={() => porterFileRef.current?.click()} className="text-xs text-blue-600 hover:text-blue-700 font-medium">Import JSON</button>
           <input ref={porterFileRef} type="file" accept=".json,application/json" className="hidden"
             onChange={(e) => { const f = e.target.files?.[0]; if (f) importReporting(f); }} />
+          <button
+            onClick={() => setShowChart(o => !o)}
+            aria-expanded={showChart}
+            className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3h6v4H9zM3 17h6v4H3zm12 0h6v4h-6zM12 7v6M6 13h12M6 13v4m12-4v4" />
+            </svg>
+            {showChart ? 'Hide org chart' : 'Org chart'}
+          </button>
           <button onClick={load} className="text-xs text-blue-600 hover:text-blue-700 font-medium">Refresh</button>
         </div>
       </div>
@@ -319,6 +331,11 @@ export function WorkspaceUsersTable() {
         </div>
       )}
       {porterError && <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{porterError}</div>}
+      {showChart && (
+        <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+          <OrgChart users={users.filter(u => !isExcluded(u.email))} />
+        </div>
+      )}
 
       <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
         <button
