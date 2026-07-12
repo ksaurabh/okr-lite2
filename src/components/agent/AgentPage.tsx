@@ -289,6 +289,30 @@ const releasesMsg = (
 const jiraMsg = (groups: { version: string; tickets: JiraTicket[] }[], unknown: string[], project?: string, jql?: string): Msg =>
   ({ role: 'agent', kind: 'jira', groups, unknown, project, jql });
 
+// Pivot a release's tickets into a status (rows) × type (columns) count matrix.
+// Statuses are ordered by workflow category (To Do → In Progress → Done).
+function pivotByStatusType(tickets: JiraTicket[]) {
+  const typeSet = new Set<string>();
+  const statuses = new Map<string, { name: string; category: string }>();
+  const counts = new Map<string, Map<string, number>>(); // status -> type -> n
+  for (const t of tickets) {
+    const type = t.type || '—';
+    const status = t.status || '—';
+    typeSet.add(type);
+    if (!statuses.has(status)) statuses.set(status, { name: status, category: t.statusCategory || '' });
+    if (!counts.has(status)) counts.set(status, new Map());
+    const row = counts.get(status)!;
+    row.set(type, (row.get(type) || 0) + 1);
+  }
+  const catRank = (c: string) => (c === 'new' ? 0 : c === 'indeterminate' ? 1 : c === 'done' ? 2 : 3);
+  const rows = [...statuses.values()].sort((a, b) => catRank(a.category) - catRank(b.category) || a.name.localeCompare(b.name));
+  const types = [...typeSet].sort((a, b) => a.localeCompare(b));
+  const cell = (status: string, type: string) => counts.get(status)?.get(type) || 0;
+  const rowTotal = (status: string) => types.reduce((n, ty) => n + cell(status, ty), 0);
+  const colTotal = (type: string) => rows.reduce((n, s) => n + cell(s.name, type), 0);
+  return { rows, types, cell, rowTotal, colTotal, total: tickets.length };
+}
+
 // Side-by-side parent/child plan view. Reuses the exact /plans split (ListsPage in
 // embedded mode) so the agent view is identical to the Plans page.
 function AgentSplitView({ who, parentListId, childListId, parentName, childName }: { who: string; parentListId: string; childListId: string; parentName: string; childName: string }) {
@@ -656,8 +680,6 @@ function renderMsg(m: Msg): React.ReactNode {
     }
     case 'jira': {
       const totalTickets = m.groups.reduce((s, g) => s + g.tickets.length, 0);
-      const statusColor = (c: string) =>
-        c === 'done' ? 'text-green-700' : c === 'indeterminate' ? 'text-blue-700' : 'text-gray-600';
       return (
         <div>
           <p className="mb-1">
@@ -672,41 +694,46 @@ function renderMsg(m: Msg): React.ReactNode {
               No matching Jira fix version for: {m.unknown.join(', ')} — skipped.
             </p>
           )}
-          {m.groups.map(g => (
-            <div key={g.version} className="mt-2">
-              <p className="text-sm font-medium text-gray-700">{g.version} ({g.tickets.length})</p>
-              {g.tickets.length === 0 ? (
-                <p className="text-gray-500 text-sm">No tickets in this release.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="mt-1 text-sm">
-                    <thead>
-                      <tr className="text-xs text-gray-400 text-left">
-                        <th className="py-1 pr-4 font-medium">Key</th>
-                        <th className="py-1 pr-4 font-medium">Type</th>
-                        <th className="py-1 pr-4 font-medium">Status</th>
-                        <th className="py-1 pr-4 font-medium">Assignee</th>
-                        <th className="py-1 font-medium">Summary</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {g.tickets.map(t => (
-                        <tr key={t.key} className="border-b border-gray-100 last:border-0">
-                          <td className="py-1 pr-4 whitespace-nowrap">
-                            <a href={t.url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline font-medium">{t.key}</a>
-                          </td>
-                          <td className="py-1 pr-4 text-gray-600">{t.type}</td>
-                          <td className={`py-1 pr-4 whitespace-nowrap ${statusColor(t.statusCategory)}`}>{t.status}</td>
-                          <td className="py-1 pr-4 text-gray-600 whitespace-nowrap">{t.assignee}</td>
-                          <td className="py-1 text-gray-800">{t.summary}</td>
+          {m.groups.map(g => {
+            const p = pivotByStatusType(g.tickets);
+            return (
+              <div key={g.version} className="mt-3">
+                <p className="text-sm font-medium text-gray-700">{g.version} ({g.tickets.length})</p>
+                {g.tickets.length === 0 ? (
+                  <p className="text-gray-500 text-sm">No tickets in this release.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="mt-1 text-sm border-collapse">
+                      <thead>
+                        <tr className="text-xs text-gray-500">
+                          <th className="py-1 pr-4 font-medium text-left">Status \ Type</th>
+                          {p.types.map(ty => <th key={ty} className="py-1 px-3 font-medium text-right">{ty}</th>)}
+                          <th className="py-1 pl-3 font-medium text-right border-l border-gray-200">Total</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          ))}
+                      </thead>
+                      <tbody>
+                        {p.rows.map(s => (
+                          <tr key={s.name} className="border-t border-gray-100">
+                            <td className="py-1 pr-4 text-gray-800 whitespace-nowrap">{s.name}</td>
+                            {p.types.map(ty => {
+                              const n = p.cell(s.name, ty);
+                              return <td key={ty} className={`py-1 px-3 text-right tabular-nums ${n ? 'text-gray-700' : 'text-gray-300'}`}>{n || '·'}</td>;
+                            })}
+                            <td className="py-1 pl-3 text-right tabular-nums font-medium border-l border-gray-200">{p.rowTotal(s.name)}</td>
+                          </tr>
+                        ))}
+                        <tr className="border-t border-gray-300 font-medium">
+                          <td className="py-1 pr-4 text-right">Total</td>
+                          {p.types.map(ty => <td key={ty} className="py-1 px-3 text-right tabular-nums">{p.colTotal(ty)}</td>)}
+                          <td className="py-1 pl-3 text-right tabular-nums border-l border-gray-200">{p.total}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       );
     }
