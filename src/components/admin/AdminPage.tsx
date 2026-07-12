@@ -8,7 +8,7 @@ import { WorkspaceUsersTable } from './WorkspaceUsersTable';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
-interface SyncResult { synced: number; added: number; updated: number; linked: number; deactivated: number; suspended: number; totalDirectory: number; skippedOtherDomain: number; domain: string; }
+interface SyncResult { synced: number; added: number; updated: number; linked: number; deactivated: number; suspended: number; totalDirectory: number; skippedOtherDomain: number; skippedExcluded?: number; domain: string; }
 interface DeptImportResult { count: number; }
 
 export function AdminPage() {
@@ -450,10 +450,11 @@ export function AdminPage() {
             Synced <span className="font-medium">{syncResult.synced}</span> users from <span className="font-medium">{syncResult.domain}</span>
             {' '}— {syncResult.added} added, {syncResult.updated} updated, {syncResult.linked} linked to a manager
             {syncResult.deactivated > 0 && <>, <span className="font-medium">{syncResult.deactivated}</span> marked inactive</>}
-            {(syncResult.suspended > 0 || syncResult.skippedOtherDomain > 0) && (
+            {(syncResult.suspended > 0 || syncResult.skippedOtherDomain > 0 || (syncResult.skippedExcluded ?? 0) > 0) && (
               <span className="text-green-700">
                 {' '}({syncResult.suspended} suspended in Workspace
-                {syncResult.skippedOtherDomain > 0 ? `, skipped ${syncResult.skippedOtherDomain} in other domains` : ''})
+                {syncResult.skippedOtherDomain > 0 ? `, skipped ${syncResult.skippedOtherDomain} in other domains` : ''}
+                {(syncResult.skippedExcluded ?? 0) > 0 ? `, ${syncResult.skippedExcluded} excluded` : ''})
               </span>
             )}.
           </div>

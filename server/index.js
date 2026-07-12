@@ -173,13 +173,40 @@ function directoryDepartment(d) {
   return org?.department ? String(org.department) : undefined;
 }
 
+// ---- Emails excluded from the reporting structure (per-org list) ----
+// An excluded email is kept as a user record but removed from the reporting tree:
+// it isn't resolved as anyone's manager and its own manager link is cleared.
+function getExcludedEmails(orgId) {
+  const data = getOKRData();
+  const list = data.excludedEmails && data.excludedEmails[orgId];
+  return (Array.isArray(list) ? list : []).map(e => String(e).trim().toLowerCase()).filter(Boolean);
+}
+function saveExcludedEmails(orgId, list) {
+  const data = getOKRData();
+  data.excludedEmails = data.excludedEmails || {};
+  const clean = [];
+  for (const e of Array.isArray(list) ? list : []) {
+    const v = String(e).trim().toLowerCase();
+    if (v && !clean.includes(v)) clean.push(v);
+  }
+  data.excludedEmails[orgId] = clean;
+  saveOKRData(data);
+  return clean;
+}
+
 // Resolve each org user's managerId from their managerEmail (in place). Returns
-// the number of users linked to a manager that exists in the system.
+// the number of users linked to a manager that exists in the system. Emails
+// excluded from the reporting structure are left out of the tree: they can't be
+// resolved as a manager, and their own managerId is cleared.
 function resolveManagerIds(users, organizationId) {
-  const idByEmail = new Map(users.filter(u => u.organizationId === organizationId).map(u => [u.email?.toLowerCase(), u.id]));
+  const excluded = new Set(getExcludedEmails(organizationId));
+  const idByEmail = new Map(users
+    .filter(u => u.organizationId === organizationId && !excluded.has(u.email?.toLowerCase()))
+    .map(u => [u.email?.toLowerCase(), u.id]));
   let linked = 0;
   for (const u of users) {
     if (u.organizationId !== organizationId) continue;
+    if (excluded.has(u.email?.toLowerCase())) { u.managerId = undefined; continue; }
     if (u.managerEmail) {
       const mid = idByEmail.get(u.managerEmail);
       u.managerId = mid || undefined; // clear if the manager isn't a known user
@@ -1876,6 +1903,27 @@ app.put('/api/admin/departments', requireOrgAdminOrSuperAdmin, (req, res) => {
   res.json({ departments: getDepartments(org.id) });
 });
 
+// Emails excluded from the reporting structure.
+app.get('/api/excluded-emails', requireAuth, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.json({ excludedEmails: [] });
+  res.json({ excludedEmails: getExcludedEmails(org.id) });
+});
+
+app.put('/api/admin/excluded-emails', requireOrgAdminOrSuperAdmin, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.status(403).json({ error: 'No organization found' });
+  const { excludedEmails } = req.body || {};
+  if (!Array.isArray(excludedEmails)) return res.status(400).json({ error: 'excludedEmails must be an array' });
+  const saved = saveExcludedEmails(org.id, excludedEmails);
+  // Re-resolve so excluded users (and anyone reporting to them) drop out of the
+  // reporting tree immediately.
+  const users = getUsers();
+  resolveManagerIds(users, org.id);
+  saveUsers(users);
+  res.json({ excludedEmails: saved });
+});
+
 // Export the org's defined departments as CSV (columns: name, parent).
 app.get('/api/admin/departments/export', requireOrgAdminOrSuperAdmin, (req, res) => {
   const org = getOrganizationByDomain(req.user.domain);
@@ -2077,24 +2125,28 @@ app.post('/api/admin/sync-workspace-users', requireOrgAdminOrSuperAdmin, async (
       if (!pageToken) break;
     }
 
-    // Sync all accounts in this org's domain — including suspended ones, so their
-    // active status is imported and existing users who left get marked inactive.
+    // Sync accounts in this org's domain — including suspended ones, so their
+    // active status is imported and users who left get marked inactive — minus
+    // any emails an admin has excluded from the reporting structure.
     const domain = org.domain;
+    const excluded = new Set(getExcludedEmails(org.id));
     const inDomain = directoryUsers.filter(u => (u.primaryEmail || '').split('@')[1]?.toLowerCase() === domain);
-    const suspended = inDomain.filter(u => u.suspended).length;
-    const { added, updated, linked, deactivated } = syncWorkspaceUsers(org.id, domain, inDomain);
-    console.log(`[workspace-sync] ${req.user.email}: ${directoryUsers.length} in directory, synced ${inDomain.length} (${added} added, ${updated} updated, ${linked} linked to a manager, ${deactivated} deactivated, ${suspended} suspended)`);
+    const included = inDomain.filter(u => !excluded.has((u.primaryEmail || '').toLowerCase()));
+    const suspended = included.filter(u => u.suspended).length;
+    const { added, updated, linked, deactivated } = syncWorkspaceUsers(org.id, domain, included);
+    console.log(`[workspace-sync] ${req.user.email}: ${directoryUsers.length} in directory, synced ${included.length} (${added} added, ${updated} updated, ${linked} linked to a manager, ${deactivated} deactivated, ${suspended} suspended)`);
 
     res.json({
       ok: true,
       totalDirectory: directoryUsers.length,
-      synced: inDomain.length,
+      synced: included.length,
       added,
       updated,
       linked,
       deactivated,
       suspended,
       skippedOtherDomain: directoryUsers.length - inDomain.length,
+      skippedExcluded: inDomain.length - included.length,
       domain,
     });
   } catch (e) {
