@@ -1903,7 +1903,7 @@ app.get('/api/jira/release-tickets', requireAuth, async (req, res) => {
     const spField = await resolveStoryPointsFieldId(cfg);
     const jql = `project = "${projectKey}" AND fixVersion in (${known.map(x => x.v.id).join(',')}) ORDER BY status ASC, key ASC`;
     console.log(`[jira] project=${projectKey} storyPointsField=${spField || 'none'} JQL: ${jql}`);
-    const fields = ['summary', 'status', 'assignee', 'issuetype', 'fixVersions', 'priority', ...(spField ? [spField] : [])];
+    const fields = ['summary', 'status', 'assignee', 'issuetype', 'fixVersions', 'priority', 'resolutiondate', ...(spField ? [spField] : [])];
     let data;
     let r = await jiraFetch(cfg, '/rest/api/3/search/jql', { method: 'POST', body: JSON.stringify({ jql, fields, maxResults: 200 }) });
     if (r.ok) {
@@ -1923,6 +1923,7 @@ app.get('/api/jira/release-tickets', requireAuth, async (req, res) => {
       url: `${browse}/browse/${it.key}`,
       fixVersions: (it.fields?.fixVersions || []).map(v => v.name),
       storyPoints: spField && it.fields?.[spField] != null ? (Number(it.fields[spField]) || 0) : 0,
+      resolved: it.fields?.resolutiondate || null,
     });
     const tickets = (data.issues || []).map(toTicket);
     // Group by requested version (an issue may carry more than one fix version).
