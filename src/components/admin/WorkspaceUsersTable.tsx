@@ -27,6 +27,7 @@ export function WorkspaceUsersTable() {
   // Emails excluded from the reporting structure (lowercase).
   const [excludedEmails, setExcludedEmails] = useState<string[]>([]);
   const [deptsOpen, setDeptsOpen] = useState(false);
+  const [collapsedDepts, setCollapsedDepts] = useState<Set<string>>(new Set()); // lowercase dept names
   // JSON export/import of the whole "Users & reporting" set.
   const [porterError, setPorterError] = useState<string | null>(null);
   const [porterResult, setPorterResult] = useState<{ updated: number; departments: number; excludedEmails: number; unmatched: string[]; unknownManagers: string[] } | null>(null);
@@ -69,6 +70,33 @@ export function WorkspaceUsersTable() {
     }
     return out;
   }, [definedDepartments]);
+
+  // Parent pointer (lowercase) per defined department, and the set of departments
+  // that have at least one child — used to make the tree collapsible.
+  const { parentOf, hasChildren } = useMemo(() => {
+    const byLower = new Map(definedDepartments.map(d => [d.name.toLowerCase(), d] as const));
+    const parentOf = new Map<string, string | null>();
+    for (const d of definedDepartments) {
+      const p = d.parentName ? d.parentName.toLowerCase() : null;
+      parentOf.set(d.name.toLowerCase(), p && p !== d.name.toLowerCase() && byLower.has(p) ? p : null);
+    }
+    const hasChildren = new Set<string>();
+    for (const p of parentOf.values()) if (p) hasChildren.add(p);
+    return { parentOf, hasChildren };
+  }, [definedDepartments]);
+
+  // A department is hidden when any of its ancestors is collapsed.
+  const hiddenByCollapse = useCallback((nameLower: string) => {
+    let p = parentOf.get(nameLower) ?? null;
+    while (p) { if (collapsedDepts.has(p)) return true; p = parentOf.get(p) ?? null; }
+    return false;
+  }, [parentOf, collapsedDepts]);
+
+  const toggleDept = (nameLower: string) => setCollapsedDepts(prev => {
+    const next = new Set(prev);
+    if (next.has(nameLower)) next.delete(nameLower); else next.add(nameLower);
+    return next;
+  });
 
   // Departments that employees are in (from the merged list) but that aren't in
   // the defined hierarchy — surfaced so every real department is visible.
@@ -355,18 +383,33 @@ export function WorkspaceUsersTable() {
           <div className="mt-2">
             <div className="mb-2 space-y-1">
               {definedDepartments.length === 0 && <span className="text-xs text-gray-400">None defined yet — departments synced from Workspace are still selectable.</span>}
-              {orderedDepartments.map(({ dept, depth }) => (
-                <div key={dept.name} className="flex items-center" style={{ paddingLeft: depth * 18 }}>
-                  {depth > 0 && <span className="text-gray-300 mr-1 leading-none">└</span>}
-                  <span className="inline-flex items-center gap-1 text-xs bg-white border border-gray-300 rounded-full pl-2.5 pr-1 py-0.5 text-gray-700">
-                    {dept.name}
-                    <button onClick={() => removeDepartment(dept.name)} title="Remove" className="text-gray-400 hover:text-red-600 rounded-full w-4 h-4 leading-none">×</button>
-                  </span>
-                  <span className="ml-2 text-xs text-gray-500 tabular-nums" title="Employees in this department and its sub-departments">
-                    {deptCount.get(dept.name.toLowerCase()) ?? 0}
-                  </span>
-                </div>
-              ))}
+              {orderedDepartments.filter(({ dept }) => !hiddenByCollapse(dept.name.toLowerCase())).map(({ dept, depth }) => {
+                const key = dept.name.toLowerCase();
+                const kids = hasChildren.has(key);
+                const collapsed = collapsedDepts.has(key);
+                return (
+                  <div key={dept.name} className="flex items-center" style={{ paddingLeft: depth * 18 }}>
+                    {kids ? (
+                      <button onClick={() => toggleDept(key)} aria-expanded={!collapsed} title={collapsed ? 'Expand' : 'Collapse'} className="mr-1 text-gray-400 hover:text-gray-600">
+                        <svg className={`w-3.5 h-3.5 transition-transform ${collapsed ? '' : 'rotate-90'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+                    ) : (
+                      <span className="mr-1 inline-block w-3.5" />
+                    )}
+                    {depth > 0 && <span className="text-gray-300 mr-1 leading-none">└</span>}
+                    <span className="inline-flex items-center gap-1 text-xs bg-white border border-gray-300 rounded-full pl-2.5 pr-1 py-0.5 text-gray-700">
+                      {dept.name}
+                      <button onClick={() => removeDepartment(dept.name)} title="Remove" className="text-gray-400 hover:text-red-600 rounded-full w-4 h-4 leading-none">×</button>
+                    </span>
+                    <span className="ml-2 text-xs text-gray-500 tabular-nums" title="Employees in this department and its sub-departments">
+                      {deptCount.get(key) ?? 0}
+                    </span>
+                    {kids && collapsed && <span className="ml-1 text-[11px] text-gray-400">(collapsed)</span>}
+                  </div>
+                );
+              })}
               {extraDepartments.map(name => (
                 <div key={`x-${name}`} className="flex items-center">
                   <span className="inline-flex items-center gap-1 text-xs bg-white border border-dashed border-gray-300 rounded-full px-2.5 py-0.5 text-gray-500 italic" title="In use (from Workspace), not yet defined">
