@@ -1,5 +1,9 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { User } from '../../types';
+
+const MIN_ZOOM = 0.2;
+const MAX_ZOOM = 2;
+const clampZoom = (z: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
 
 interface OrgNode {
   user: User;
@@ -117,6 +121,17 @@ function NodeCard({ node, collapsedIds, onToggle }: {
 // expand/collapse. Self-contained (no data fetching) so it can be embedded.
 export function OrgChart({ users }: { users: User[] }) {
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 8, y: 8 });
+  const [dragging, setDragging] = useState(false);
+
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
+  // Latest zoom/pan, so the once-attached wheel listener reads current values.
+  const zoomRef = useRef(zoom);
+  const panRef = useRef(pan);
+  useEffect(() => { zoomRef.current = zoom; panRef.current = pan; }, [zoom, pan]);
 
   const forest = useMemo(() => buildForest(users), [users]);
   const parentIds = useMemo(() => collectParentIds(forest), [forest]);
@@ -132,6 +147,68 @@ export function OrgChart({ users }: { users: User[] }) {
   const expandAll = useCallback(() => setCollapsedIds(new Set()), []);
   const collapseAll = useCallback(() => setCollapsedIds(new Set(parentIds)), [parentIds]);
 
+  // Scale so the graph's natural width fits the viewport (only shrinks; a small
+  // chart is left at 100%). Resets the pan to the top-left.
+  const fitToWidth = useCallback(() => {
+    const vp = viewportRef.current, content = contentRef.current;
+    if (!vp || !content) return;
+    const cw = content.scrollWidth;
+    const vw = vp.clientWidth;
+    if (!cw || !vw) return;
+    setZoom(clampZoom(Math.min(1, (vw - 16) / cw)));
+    setPan({ x: 8, y: 8 });
+  }, []);
+
+  // Fit on first render and whenever the underlying people change.
+  useLayoutEffect(() => { fitToWidth(); }, [forest, fitToWidth]);
+
+  // Zoom around a viewport point (keeps that point stationary).
+  const zoomAt = useCallback((factor: number, cx: number, cy: number) => {
+    const z = zoomRef.current, p = panRef.current;
+    const nz = clampZoom(z * factor);
+    if (nz === z) return;
+    const ratio = nz / z;
+    setZoom(nz);
+    setPan({ x: cx - ratio * (cx - p.x), y: cy - ratio * (cy - p.y) });
+  }, []);
+
+  const zoomButton = (factor: number) => {
+    const vp = viewportRef.current;
+    if (!vp) return;
+    zoomAt(factor, vp.clientWidth / 2, vp.clientHeight / 2);
+  };
+
+  // Ctrl/⌘+wheel (or plain wheel) zooms toward the cursor. Native non-passive
+  // listener so we can preventDefault the page scroll.
+  useEffect(() => {
+    const vp = viewportRef.current;
+    if (!vp) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = vp.getBoundingClientRect();
+      zoomAt(e.deltaY < 0 ? 1.1 : 1 / 1.1, e.clientX - rect.left, e.clientY - rect.top);
+    };
+    vp.addEventListener('wheel', onWheel, { passive: false });
+    return () => vp.removeEventListener('wheel', onWheel);
+  }, [zoomAt]);
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    if ((e.target as HTMLElement).closest('button, a')) return; // let controls work
+    drag.current = { x: e.clientX, y: e.clientY, px: pan.x, py: pan.y };
+    setDragging(true);
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (!drag.current) return;
+    setPan({ x: drag.current.px + (e.clientX - drag.current.x), y: drag.current.py + (e.clientY - drag.current.y) });
+  };
+  const endDrag = (e: React.PointerEvent) => {
+    if (!drag.current) return;
+    drag.current = null;
+    setDragging(false);
+    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+  };
+
   if (forest.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500">
@@ -145,19 +222,36 @@ export function OrgChart({ users }: { users: User[] }) {
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <span className="text-xs text-gray-500">
           {users.length} people{forest.length > 1 && `, ${forest.length} at the top`}
+          <span className="ml-2 text-gray-400">· drag to pan, scroll to zoom</span>
         </span>
         <div className="flex items-center gap-2">
+          <div className="flex items-center rounded-lg border border-gray-300 bg-white">
+            <button onClick={() => zoomButton(1 / 1.2)} title="Zoom out" className="px-2 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50">−</button>
+            <span className="w-11 text-center text-xs tabular-nums text-gray-500">{Math.round(zoom * 100)}%</span>
+            <button onClick={() => zoomButton(1.2)} title="Zoom in" className="px-2 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50">+</button>
+          </div>
+          <button onClick={fitToWidth} className="rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">Fit width</button>
           <button onClick={expandAll} className="rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">Expand all</button>
           <button onClick={collapseAll} className="rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">Collapse all</button>
         </div>
       </div>
-      <div className="overflow-x-auto pb-4">
-        <div className="orgchart min-w-full">
-          <ul>
-            {forest.map(node => (
-              <NodeCard key={node.user.id} node={node} collapsedIds={collapsedIds} onToggle={toggle} />
-            ))}
-          </ul>
+      <div
+        ref={viewportRef}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerLeave={endDrag}
+        className="relative h-[70vh] overflow-hidden rounded-lg border border-gray-200 bg-gray-50"
+        style={{ cursor: dragging ? 'grabbing' : 'grab', touchAction: 'none' }}
+      >
+        <div ref={contentRef} className="inline-block origin-top-left" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}>
+          <div className="orgchart">
+            <ul>
+              {forest.map(node => (
+                <NodeCard key={node.user.id} node={node} collapsedIds={collapsedIds} onToggle={toggle} />
+              ))}
+            </ul>
+          </div>
         </div>
       </div>
     </div>
