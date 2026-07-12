@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { User, Department } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { AutocompleteInput } from './AutocompleteInput';
+import { OrgChart } from '../orgchart';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -24,6 +25,7 @@ export function WorkspaceUsersTable() {
   const [newDept, setNewDept] = useState('');
   const [newDeptParent, setNewDeptParent] = useState('');
   const [deptsOpen, setDeptsOpen] = useState(false);
+  const [showChart, setShowChart] = useState(false);
 
   const userEmails = useMemo(() => users.map(u => u.email), [users]);
 
@@ -171,12 +173,30 @@ export function WorkspaceUsersTable() {
     <div className="mt-6 pt-6 border-t border-gray-100">
       <div className="flex items-center justify-between gap-3 mb-1">
         <h3 className="font-medium text-gray-900">Users &amp; reporting</h3>
-        <button onClick={load} className="text-xs text-blue-600 hover:text-blue-700 font-medium">Refresh</button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowChart(o => !o)}
+            aria-expanded={showChart}
+            className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3h6v4H9zM3 17h6v4H3zm12 0h6v4h-6zM12 7v6M6 13h12M6 13v4m12-4v4" />
+            </svg>
+            {showChart ? 'Hide org chart' : 'Org chart'}
+          </button>
+          <button onClick={load} className="text-xs text-blue-600 hover:text-blue-700 font-medium">Refresh</button>
+        </div>
       </div>
       <p className="text-sm text-gray-600 mb-3">
         Edit a user's manager email or department — changes are written back to Google Workspace when you click Save.
         Start typing to pick from suggestions.
       </p>
+
+      {showChart && (
+        <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+          <OrgChart users={users} />
+        </div>
+      )}
 
       <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
         <button

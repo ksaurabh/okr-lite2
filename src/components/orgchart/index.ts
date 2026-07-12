@@ -1,1 +1,1 @@
-export { OrgChartPage } from './OrgChartPage';
+export { OrgChart } from './OrgChart';

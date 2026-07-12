@@ -1,7 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type { User } from '../../types';
-
-const API_URL = import.meta.env.VITE_API_URL || '';
 
 interface OrgNode {
   user: User;
@@ -10,7 +8,7 @@ interface OrgNode {
 }
 
 // Build a reporting forest from the flat user list. Roots are users whose
-// managerId is missing or points outside the org; a shared `seen` set makes the
+// managerId is missing or points outside the set; a shared `seen` set makes the
 // walk cycle-safe and ensures each person appears exactly once.
 function buildForest(users: User[]): OrgNode[] {
   const byId = new Map(users.map(u => [u.id, u]));
@@ -115,28 +113,10 @@ function NodeCard({ node, collapsedIds, onToggle }: {
   );
 }
 
-export function OrgChartPage() {
-  const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+// Renders the reporting hierarchy of `users` as a top-down graph with per-node
+// expand/collapse. Self-contained (no data fetching) so it can be embedded.
+export function OrgChart({ users }: { users: User[] }) {
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`${API_URL}/api/users`, { credentials: 'include' });
-      if (!res.ok) { setError(`Failed to load users (${res.status}).`); return; }
-      const data = await res.json();
-      setUsers(Array.isArray(data.users) ? data.users : []);
-    } catch (e) {
-      setError(`Couldn't reach the server: ${e instanceof Error ? e.message : String(e)}`);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
 
   const forest = useMemo(() => buildForest(users), [users]);
   const parentIds = useMemo(() => collectParentIds(forest), [forest]);
@@ -152,42 +132,34 @@ export function OrgChartPage() {
   const expandAll = useCallback(() => setCollapsedIds(new Set()), []);
   const collapseAll = useCallback(() => setCollapsedIds(new Set(parentIds)), [parentIds]);
 
+  if (forest.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500">
+        No users to chart yet. Sync from Google Workspace and set manager relationships to populate the org chart.
+      </div>
+    );
+  }
+
   return (
-    <div className="p-6">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Org Chart</h1>
-          <p className="text-sm text-gray-500">
-            Reporting structure from Google Workspace — {users.length} people
-            {forest.length > 1 && `, ${forest.length} at the top`}.
-          </p>
-        </div>
+    <div>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs text-gray-500">
+          {users.length} people{forest.length > 1 && `, ${forest.length} at the top`}
+        </span>
         <div className="flex items-center gap-2">
-          <button onClick={expandAll} className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">Expand all</button>
-          <button onClick={collapseAll} className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">Collapse all</button>
-          <button onClick={load} className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">Refresh</button>
+          <button onClick={expandAll} className="rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">Expand all</button>
+          <button onClick={collapseAll} className="rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">Collapse all</button>
         </div>
       </div>
-
-      {error && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
-
-      {loading ? (
-        <p className="py-8 text-sm text-gray-500">Loading org chart…</p>
-      ) : forest.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
-          No users yet. Sync from Google Workspace and set manager relationships in the Admin panel to populate the org chart.
+      <div className="overflow-x-auto pb-4">
+        <div className="orgchart min-w-full">
+          <ul>
+            {forest.map(node => (
+              <NodeCard key={node.user.id} node={node} collapsedIds={collapsedIds} onToggle={toggle} />
+            ))}
+          </ul>
         </div>
-      ) : (
-        <div className="overflow-x-auto pb-6">
-          <div className="orgchart min-w-full">
-            <ul>
-              {forest.map(node => (
-                <NodeCard key={node.user.id} node={node} collapsedIds={collapsedIds} onToggle={toggle} />
-              ))}
-            </ul>
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 }
