@@ -8,7 +8,7 @@ import type { List, Objective, User, WorkflowStatus } from '../../types';
 const API_URL = import.meta.env.VITE_API_URL || '';
 const SESSIONS_URL = `${API_URL}/api/users/me/agent-sessions`;
 
-type Step = 'root' | 'treeBrowse' | 'durationGroupPick' | 'planMembershipPick' | 'user' | 'durationType' | 'planFilter' | 'planResults' | 'planSelect' | 'duration' | 'planPick' | 'result' | 'childPlanPick' | 'splitMenu' | 'vpEach' | 'vpPick' | 'itemAction' | 'changeDuration' | 'vpItem' | 'delivSummary' | 'delivDate' | 'delivAssignee' | 'delivParent' | 'reviewArea';
+type Step = 'root' | 'treeBrowse' | 'durationGroupPick' | 'planMembershipPick' | 'user' | 'durationType' | 'planFilter' | 'planResults' | 'planSelect' | 'duration' | 'planPick' | 'result' | 'childPlanPick' | 'splitMenu' | 'vpEach' | 'vpPick' | 'itemAction' | 'changeDuration' | 'vpItem' | 'delivSummary' | 'delivDate' | 'delivAssignee' | 'delivParent' | 'reviewArea' | 'jiraProjectPick';
 
 // Serializable chat messages (so sessions can be persisted and resumed).
 type Msg =
@@ -24,11 +24,15 @@ type Msg =
   | { role: 'agent'; kind: 'breakdown'; title: string; rows: { name: string; count: number; vp: number }[]; totalCount: number; totalVp: number }
   | { role: 'agent'; kind: 'deliverable'; summary: string; neededBy: string; assigneeId: string; assigneeName: string; ownerId: string }
   | { role: 'agent'; kind: 'releases'; area: string; sheetTitle: string; asOf: string; groups: { key: string; label: string; items: ReleaseItem[] }[]; recent: ReleaseItem[]; columns: string[]; note?: string; rawHeaders?: string[]; rawRows?: string[][] }
-  | { role: 'agent'; kind: 'reauth'; message: string };
+  | { role: 'agent'; kind: 'reauth'; message: string }
+  | { role: 'agent'; kind: 'jira'; groups: { version: string; tickets: JiraTicket[] }[]; unknown: string[]; project?: string; jql?: string };
 
 // One classified row from the Release Calendar. `fields` holds the values for the
 // detected display columns (name/status/start/prod); `why` explains the bucket.
 interface ReleaseItem { name: string; fields: Record<string, string>; why: string; }
+
+// A Jira issue in a release (fixVersion), as returned by /api/jira/release-tickets.
+interface JiraTicket { key: string; summary: string; status: string; statusCategory: string; assignee: string; type: string; url: string; fixVersions: string[]; }
 
 interface SessionState {
   step: Step;
@@ -103,6 +107,7 @@ const PREV: Record<Step, Step> = {
   delivAssignee: 'delivDate',
   delivParent: 'delivAssignee',
   reviewArea: 'root',
+  jiraProjectPick: 'reviewArea',
 };
 
 const VALUE_STEPS: Step[] = ['vpEach', 'vpItem'];
@@ -280,6 +285,9 @@ const releasesMsg = (
   groups: { key: string; label: string; items: ReleaseItem[] }[], recent: ReleaseItem[],
   columns: string[], note?: string, rawHeaders?: string[], rawRows?: string[][],
 ): Msg => ({ role: 'agent', kind: 'releases', area, sheetTitle, asOf, groups, recent, columns, note, rawHeaders, rawRows });
+
+const jiraMsg = (groups: { version: string; tickets: JiraTicket[] }[], unknown: string[], project?: string, jql?: string): Msg =>
+  ({ role: 'agent', kind: 'jira', groups, unknown, project, jql });
 
 // Side-by-side parent/child plan view. Reuses the exact /plans split (ListsPage in
 // embedded mode) so the agent view is identical to the Plans page.
@@ -646,6 +654,62 @@ function renderMsg(m: Msg): React.ReactNode {
         </div>
       );
     }
+    case 'jira': {
+      const totalTickets = m.groups.reduce((s, g) => s + g.tickets.length, 0);
+      const statusColor = (c: string) =>
+        c === 'done' ? 'text-green-700' : c === 'indeterminate' ? 'text-blue-700' : 'text-gray-600';
+      return (
+        <div>
+          <p className="mb-1">
+            Jira tickets in the in-progress releases — {totalTickets} {totalTickets === 1 ? 'ticket' : 'tickets'} across {m.groups.length} {m.groups.length === 1 ? 'release' : 'releases'}
+            {m.project ? <span className="text-gray-400 text-xs ml-2">project {m.project}</span> : null}
+          </p>
+          {m.jql && (
+            <p className="text-[11px] text-gray-400 font-mono mb-1 break-all">JQL: {m.jql}</p>
+          )}
+          {m.unknown.length > 0 && (
+            <p className="text-amber-600 text-xs mb-1">
+              No matching Jira fix version for: {m.unknown.join(', ')} — skipped.
+            </p>
+          )}
+          {m.groups.map(g => (
+            <div key={g.version} className="mt-2">
+              <p className="text-sm font-medium text-gray-700">{g.version} ({g.tickets.length})</p>
+              {g.tickets.length === 0 ? (
+                <p className="text-gray-500 text-sm">No tickets in this release.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="mt-1 text-sm">
+                    <thead>
+                      <tr className="text-xs text-gray-400 text-left">
+                        <th className="py-1 pr-4 font-medium">Key</th>
+                        <th className="py-1 pr-4 font-medium">Type</th>
+                        <th className="py-1 pr-4 font-medium">Status</th>
+                        <th className="py-1 pr-4 font-medium">Assignee</th>
+                        <th className="py-1 font-medium">Summary</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {g.tickets.map(t => (
+                        <tr key={t.key} className="border-b border-gray-100 last:border-0">
+                          <td className="py-1 pr-4 whitespace-nowrap">
+                            <a href={t.url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline font-medium">{t.key}</a>
+                          </td>
+                          <td className="py-1 pr-4 text-gray-600">{t.type}</td>
+                          <td className={`py-1 pr-4 whitespace-nowrap ${statusColor(t.statusCategory)}`}>{t.status}</td>
+                          <td className="py-1 pr-4 text-gray-600 whitespace-nowrap">{t.assignee}</td>
+                          <td className="py-1 text-gray-800">{t.summary}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      );
+    }
     default:
       return null;
   }
@@ -851,6 +915,9 @@ export function AgentPage() {
   // Draft for the "Add a deliverable" flow.
   const [delivSummary, setDelivSummary] = useState('');
   const [delivNeededBy, setDelivNeededBy] = useState('');
+  // Ephemeral state for the Jira project picker (when the default project isn't found).
+  const [jiraProjects, setJiraProjects] = useState<{ key: string; name: string }[]>([]);
+  const [pendingJiraVersions, setPendingJiraVersions] = useState<string[]>([]);
   const periodsSorted = useMemo(
     () => [...periods].sort((a, b) => (a.startDate || '').localeCompare(b.startDate || '') || a.name.localeCompare(b.name)),
     [periods]
@@ -943,6 +1010,7 @@ export function AgentPage() {
       case 'delivAssignee': return usersSorted.map(u => u.name || u.email);
       case 'delivParent': return [];
       case 'reviewArea': return REVIEW_AREAS;
+      case 'jiraProjectPick': return [...jiraProjects.map(p => `${p.key} — ${p.name}`), 'None (skip Jira)'];
       case 'planPick': return planChoiceIds.map(planLabel);
       case 'vpPick': return resultObjectiveIds.map(itemLabel);
       case 'itemAction': return ITEM_ACTIONS;
@@ -1199,6 +1267,9 @@ export function AgentPage() {
   // ---- Review Progress ----
   const reviewAreaPrompt = () => menuMsg('Which area would you like to review? Type the number:', REVIEW_AREAS);
 
+  // Return to the area menu (Engineering, …) after a review finishes.
+  const backToArea = () => { setStep('reviewArea'); appendAgent(reviewAreaPrompt()); };
+
   // Engineering review: pull the Release Calendar sheet and show what's in
   // progress, just shipped (Prod within 30 days), or due in the next 30 days.
   const reviewEngineering = async () => {
@@ -1213,14 +1284,17 @@ export function AgentPage() {
           // surface Google's own message when present so the cause is visible.
           const extra = d.detail ? ` (Google said: ${d.detail})` : '';
           appendAgent({ role: 'agent', kind: 'reauth', message: (d.message || 'Reconnect your Google account to read the Release Calendar.') + extra });
+          backToArea();
           return;
         }
         if (d?.error === 'sheet_not_found') {
           appendAgent(textMsg(d.message || 'The Release Calendar was not found or is not shared with your Google account.', 'error'));
+          backToArea();
           return;
         }
         const detail = d?.detail ? ` — ${d.detail}` : (d?.message ? ` — ${d.message}` : '');
         appendAgent(textMsg(`Couldn't load the Release Calendar (error ${res.status})${detail}.`, 'error'));
+        backToArea();
         return;
       }
       const data = await res.json() as { sheetTitle: string; tab: string; headers: string[]; rows: string[][] };
@@ -1228,6 +1302,7 @@ export function AgentPage() {
       const rows = data.rows || [];
       if (headers.length === 0 || rows.length === 0) {
         appendAgent(textMsg('The Release Calendar appears to be empty.', 'error'));
+        backToArea();
         return;
       }
       const today = new Date();
@@ -1244,10 +1319,57 @@ export function AgentPage() {
       if (detected) {
         appendAgent(textMsg(`In progress: ${counts.in_progress} · Just completed: ${counts.completed} · Upcoming: ${counts.upcoming}.`));
       }
+      // Then pull the Jira tickets for whatever is in progress now.
+      const inProgress = groups.find(g => g.key === 'in_progress');
+      const names = inProgress ? inProgress.items.map(it => it.name) : [];
+      if (names.length) await fetchJiraForReleases(names);
+      else backToArea();
     } catch (err) {
       appendAgent(textMsg(`Couldn't reach the server: ${err instanceof Error ? err.message : String(err)}`, 'error'));
+      backToArea();
     }
   };
+
+  // Fetch Jira tickets (by fixVersion) for the given release names. `project`
+  // overrides/persists the release project. If the project can't be found, drop
+  // into a picker so the user can choose one (or none). Releases with no matching
+  // Jira fix version are reported and skipped.
+  const fetchJiraForReleases = async (versions: string[], project?: string) => {
+    appendAgent(textMsg(`Fetching Jira tickets for in-progress ${versions.length === 1 ? 'release' : 'releases'}: ${versions.join(', ')}…`));
+    try {
+      const qs = `versions=${encodeURIComponent(versions.join(','))}${project ? `&project=${encodeURIComponent(project)}` : ''}`;
+      const res = await fetch(`${API_URL}/api/jira/release-tickets?${qs}`, { credentials: 'include' });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({} as { error?: string; message?: string; detail?: string; projectNotFound?: boolean; projects?: { key: string; name: string }[] }));
+        if (d?.projectNotFound && Array.isArray(d.projects) && d.projects.length) {
+          // Let the user pick which Jira project holds these releases.
+          setPendingJiraVersions(versions);
+          setJiraProjects(d.projects);
+          setStep('jiraProjectPick');
+          appendAgent(jiraProjectPrompt(d.projects));
+          return; // picker is showing — no area prompt
+        }
+        appendAgent(textMsg(`Couldn't load Jira tickets: ${d?.message || d?.error || `error ${res.status}`}`, 'error'));
+        if (d?.detail) appendAgent(textMsg(`Jira project lookup: ${d.detail}`));
+        backToArea();
+        return;
+      }
+      const data = await res.json() as { configured: boolean; groups?: { version: string; tickets: JiraTicket[] }[]; unknown?: string[]; project?: string; jql?: string };
+      if (!data.configured) {
+        appendAgent(textMsg('Jira isn\'t configured for your organization yet — an admin can set it up under Admin → Jira.', 'error'));
+      } else {
+        appendAgent(jiraMsg(data.groups || [], data.unknown || [], data.project, data.jql));
+      }
+      backToArea();
+    } catch (err) {
+      appendAgent(textMsg(`Couldn't reach Jira: ${err instanceof Error ? err.message : String(err)}`, 'error'));
+      backToArea();
+    }
+  };
+
+  const jiraProjectPrompt = (projects: { key: string; name: string }[]) =>
+    menuMsg("I couldn't find the release project in Jira. Pick which project holds these releases (or None to skip). Type the number:",
+      [...projects.map(p => `${p.key} — ${p.name}`), 'None (skip Jira)']);
 
   const showPlanItems = (plan: List, code: string = answeredCodeRef.current) => {
     const u = usersSorted.find(x => x.id === selectedUserId);
@@ -1335,6 +1457,7 @@ export function AgentPage() {
       case 'vpEach': appendAgent(vpEachPrompt(vpEachIndex)); break;
       case 'vpItem': appendAgent(vpItemPrompt(objTitle(vpTargetId))); break;
       case 'reviewArea': appendAgent(reviewAreaPrompt()); break;
+      case 'jiraProjectPick': appendAgent(jiraProjectPrompt(jiraProjects)); break;
     }
   };
 
@@ -1623,7 +1746,16 @@ export function AgentPage() {
         else { setStep('reviewArea'); appendAgent(reviewAreaPrompt()); }
         break;
       case 'reviewArea':
-        if (n === 1) { reviewEngineering(); appendAgent(reviewAreaPrompt()); }
+        if (n === 1) reviewEngineering(); // shows its own follow-up prompt when done
+        break;
+      case 'jiraProjectPick':
+        if (n <= jiraProjects.length) {
+          const proj = jiraProjects[n - 1];
+          fetchJiraForReleases(pendingJiraVersions, proj.key);
+        } else {
+          appendAgent(textMsg('Skipped Jira for these releases.'));
+          backToArea();
+        }
         break;
       case 'treeBrowse':
         if (n === 1) { showTopInitiatives(false); appendAgent(treeBrowsePrompt()); }
@@ -1888,7 +2020,7 @@ export function AgentPage() {
                   );
                 }
                 // The embedded objective tree needs full width, not the narrow bubble.
-                const wide = m.role === 'agent' && (m.kind === 'objlist' || m.kind === 'split');
+                const wide = m.role === 'agent' && (m.kind === 'objlist' || m.kind === 'split' || m.kind === 'releases' || m.kind === 'jira');
                 return (
                   <div key={i} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
                     <div className={wide ? 'w-full text-sm text-gray-800' : `max-w-[85%] rounded-lg px-3 py-2 text-sm ${m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-800'}`}>
