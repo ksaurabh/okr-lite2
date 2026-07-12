@@ -787,6 +787,13 @@ class MsgBoundary extends Component<{ children: React.ReactNode }, { failed: boo
   }
 }
 
+// Renders one message via renderMsg. Calling renderMsg inside a child component
+// (rather than eagerly as MsgBoundary's children) ensures any error it throws
+// happens within the boundary's subtree, so MsgBoundary actually catches it.
+function RenderedMsg({ m }: { m: Msg }) {
+  return <>{renderMsg(m)}</>;
+}
+
 export function AgentPage() {
   const { user, organization, login } = useAuth();
   const userEmail = user?.email || '';
@@ -1885,7 +1892,7 @@ export function AgentPage() {
                 return (
                   <div key={i} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
                     <div className={wide ? 'w-full text-sm text-gray-800' : `max-w-[85%] rounded-lg px-3 py-2 text-sm ${m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-800'}`}>
-                      <MsgBoundary>{renderMsg(m)}</MsgBoundary>
+                      <MsgBoundary><RenderedMsg m={m} /></MsgBoundary>
                     </div>
                   </div>
                 );
