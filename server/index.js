@@ -998,6 +998,24 @@ async function listAllJiraProjects(cfg) {
   return { projects: out, tried };
 }
 
+// Resolve the "Story Points" custom field id for this instance (cached per site).
+const STORY_POINTS_FIELD_CACHE = new Map(); // baseUrl -> fieldId | null
+async function resolveStoryPointsFieldId(cfg) {
+  const key = cfg.baseUrl || '';
+  if (STORY_POINTS_FIELD_CACHE.has(key)) return STORY_POINTS_FIELD_CACHE.get(key);
+  let id = null;
+  const r = await jiraFetch(cfg, '/rest/api/3/field');
+  if (r.ok) {
+    const fields = await r.json().catch(() => []);
+    const arr = Array.isArray(fields) ? fields : [];
+    const find = (re) => arr.find(f => re.test(String(f.name || '')));
+    const f = find(/^story points$/i) || find(/^story point estimate$/i) || find(/story point/i);
+    id = f ? f.id : null;
+  }
+  STORY_POINTS_FIELD_CACHE.set(key, id);
+  return id;
+}
+
 // Resolve a Jira project by key OR name (the spreadsheet/user may give either).
 // Returns { project, projects, tried } — `projects` is the full visible list and
 // `tried` the diagnostics, for a helpful error when nothing matched.
@@ -1882,9 +1900,10 @@ app.get('/api/jira/release-tickets', requireAuth, async (req, res) => {
     const unknown = wanted.filter(name => !byName.get(name.toLowerCase()));
     if (known.length === 0) return res.json({ configured: true, groups: [], unknown, browse, project: projectKey });
 
+    const spField = await resolveStoryPointsFieldId(cfg);
     const jql = `project = "${projectKey}" AND fixVersion in (${known.map(x => x.v.id).join(',')}) ORDER BY status ASC, key ASC`;
-    console.log(`[jira] project=${projectKey} JQL: ${jql}`);
-    const fields = ['summary', 'status', 'assignee', 'issuetype', 'fixVersions', 'priority'];
+    console.log(`[jira] project=${projectKey} storyPointsField=${spField || 'none'} JQL: ${jql}`);
+    const fields = ['summary', 'status', 'assignee', 'issuetype', 'fixVersions', 'priority', ...(spField ? [spField] : [])];
     let data;
     let r = await jiraFetch(cfg, '/rest/api/3/search/jql', { method: 'POST', body: JSON.stringify({ jql, fields, maxResults: 200 }) });
     if (r.ok) {
@@ -1903,6 +1922,7 @@ app.get('/api/jira/release-tickets', requireAuth, async (req, res) => {
       type: it.fields?.issuetype?.name || '',
       url: `${browse}/browse/${it.key}`,
       fixVersions: (it.fields?.fixVersions || []).map(v => v.name),
+      storyPoints: spField && it.fields?.[spField] != null ? (Number(it.fields[spField]) || 0) : 0,
     });
     const tickets = (data.issues || []).map(toTicket);
     // Group by requested version (an issue may carry more than one fix version).
