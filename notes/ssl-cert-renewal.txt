@@ -1,0 +1,75 @@
+SSL Certificate Renewal — okr.airmdr.net
+=========================================
+
+Quick facts
+-----------
+- The cert is a LET'S ENCRYPT cert issued via `certbot --nginx` (NOT self-signed,
+  even though an expired LE cert shows the same browser "not secure" warning).
+- Let's Encrypt certs are valid for 90 days. certbot auto-renews at ~60 days
+  via the certbot-renew.timer. If that timer isn't running, the cert expires.
+- Host: AWS Lightsail, Amazon Linux (dnf), nginx reverse proxy in front of the
+  Express API (PM2 process "okr-lite"). App dir: ~/okr-lite2.
+
+SSH in
+------
+  ssh ec2-user@okr.airmdr.net
+  # or: ssh -i your-key.pem ec2-user@<lightsail-ip>
+
+1. Check current cert + expiry
+------------------------------
+  sudo certbot certificates
+  # confirms domain okr.airmdr.net and its expiry date
+
+  # Or check what's actually being served (run as ONE line — don't let the
+  # terminal wrap it, or bash runs "-dates" as its own command):
+  echo | openssl s_client -connect okr.airmdr.net:443 -servername okr.airmdr.net 2>/dev/null | openssl x509 -noout -issuer -dates
+  # Healthy: issuer=... Let's Encrypt ...  and notAfter ~90 days out.
+
+2. Renew
+--------
+  sudo certbot renew
+  # If it says "not yet due" but the cert is genuinely expired:
+  sudo certbot renew --force-renewal
+  # If renewal fails validation, re-run full issuance (original deploy command):
+  sudo certbot --nginx -d okr.airmdr.net
+
+  NOTE: HTTP-01 validation needs port 80 reachable from the internet.
+  Confirm Lightsail console -> instance -> Networking has HTTP(80) + HTTPS(443).
+
+3. Reload nginx
+---------------
+  sudo nginx -t                 # verify config
+  sudo systemctl reload nginx   # certbot renew may not reload on its own
+
+4. Verify
+---------
+  # single line, see step 1
+  echo | openssl s_client -connect okr.airmdr.net:443 -servername okr.airmdr.net 2>/dev/null | openssl x509 -noout -issuer -dates
+  # Then hard-refresh https://okr.airmdr.net in a browser.
+
+5. Fix root cause — re-enable auto-renewal
+------------------------------------------
+  sudo systemctl enable --now certbot-renew.timer
+  systemctl list-timers | grep certbot
+  sudo certbot renew --dry-run   # simulates renewal without hitting rate limits
+
+Troubleshooting: "conflicting server name" warning
+--------------------------------------------------
+  nginx: [warn] conflicting server name "okr.airmdr.net" on 0.0.0.0:80, ignored
+
+  Means TWO server blocks both claim okr.airmdr.net:80 — usually a duplicate
+  left behind by running `certbot --nginx` more than once (e.g. a .save backup
+  or a second block in the same file). Find them:
+
+  grep -rn "server_name" /etc/nginx/nginx.conf /etc/nginx/conf.d/ /etc/nginx/sites-enabled/ 2>/dev/null
+  ls -la /etc/nginx/conf.d/
+
+  Remove the redundant block/file, then:
+  sudo nginx -t                 # warning should be gone
+  sudo systemctl reload nginx
+
+If `certbot certificates` shows NO certs at all
+-----------------------------------------------
+  nginx may be serving a fallback self-signed cert. Skip renewal and do a fresh
+  issuance:
+  sudo certbot --nginx -d okr.airmdr.net
