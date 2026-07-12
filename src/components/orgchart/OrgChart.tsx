@@ -64,10 +64,11 @@ function initials(u: User): string {
   return chars.toUpperCase();
 }
 
-function NodeCard({ node, collapsedIds, onToggle }: {
+function NodeCard({ node, collapsedIds, onToggle, depth }: {
   node: OrgNode;
   collapsedIds: Set<string>;
   onToggle: (id: string) => void;
+  depth: number;
 }) {
   const { user, children, descendants } = node;
   const hasKids = children.length > 0;
@@ -92,6 +93,11 @@ function NodeCard({ node, collapsedIds, onToggle }: {
         )}
         <div className="max-w-full truncate text-center text-[11px] text-gray-400" title={user.email}>{user.email}</div>
         {hasKids && (
+          <div className="text-center text-[11px] font-medium text-gray-600" title="Direct reports · whole team including this person">
+            {children.length} direct · {descendants + 1} total
+          </div>
+        )}
+        {hasKids && (
           <button
             type="button"
             onClick={() => onToggle(user.id)}
@@ -107,9 +113,10 @@ function NodeCard({ node, collapsedIds, onToggle }: {
         )}
       </div>
       {hasKids && !isCollapsed && (
-        <ul>
+        // Grandchildren (a depth>=1 node's children) and deeper lay out vertically.
+        <ul className={depth >= 1 ? 'vert' : undefined}>
           {children.map(child => (
-            <NodeCard key={child.user.id} node={child} collapsedIds={collapsedIds} onToggle={onToggle} />
+            <NodeCard key={child.user.id} node={child} collapsedIds={collapsedIds} onToggle={onToggle} depth={depth + 1} />
           ))}
         </ul>
       )}
@@ -248,7 +255,7 @@ export function OrgChart({ users }: { users: User[] }) {
           <div className="orgchart">
             <ul>
               {forest.map(node => (
-                <NodeCard key={node.user.id} node={node} collapsedIds={collapsedIds} onToggle={toggle} />
+                <NodeCard key={node.user.id} node={node} collapsedIds={collapsedIds} onToggle={toggle} depth={0} />
               ))}
             </ul>
           </div>

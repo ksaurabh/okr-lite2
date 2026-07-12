@@ -59,3 +59,46 @@ body {
 .orgchart > ul { padding-top: 0; }
 .orgchart > ul > li::before,
 .orgchart > ul > li::after { display: none; }
+
+/* --- Grandchildren and deeper: indented vertical list (ul.vert) --- */
+.orgchart ul.vert {
+  flex-direction: column;
+  align-items: flex-start;
+  padding-top: 4px;
+  padding-left: 24px;
+}
+.orgchart ul.vert > li {
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 6px 0 0 0;
+}
+/* Drop the horizontal-row connectors; draw an indented spine + elbow instead. */
+.orgchart ul.vert > li::before,
+.orgchart ul.vert > li::after {
+  display: block;
+  right: auto;
+  width: auto;
+  height: auto;
+  border: 0;
+}
+/* Vertical spine down the left of the list. */
+.orgchart ul.vert > li::before {
+  left: -13px;
+  top: -6px;
+  bottom: 0;
+  border-left: 2px solid var(--orgchart-line);
+}
+/* Last child: spine stops at its elbow rather than running past. */
+.orgchart ul.vert > li:last-child::before {
+  bottom: auto;
+  height: 34px;
+}
+/* Horizontal elbow from the spine into the card. */
+.orgchart ul.vert > li::after {
+  left: -13px;
+  top: 28px;
+  width: 13px;
+  border-top: 2px solid var(--orgchart-line);
+}
+/* No centered parent-drop connector in the vertical section. */
+.orgchart ul.vert::before { display: none; }
