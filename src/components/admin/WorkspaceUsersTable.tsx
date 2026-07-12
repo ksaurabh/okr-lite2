@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { User } from '../../types';
+import type { User, Department } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { AutocompleteInput } from './AutocompleteInput';
 
@@ -20,10 +20,38 @@ export function WorkspaceUsersTable() {
   const [filter, setFilter] = useState('');
   // Departments (defined list + the merged selectable list for autocomplete).
   const [departments, setDepartments] = useState<string[]>([]);
-  const [definedDepartments, setDefinedDepartments] = useState<string[]>([]);
+  const [definedDepartments, setDefinedDepartments] = useState<Department[]>([]);
   const [newDept, setNewDept] = useState('');
+  const [newDeptParent, setNewDeptParent] = useState('');
 
   const userEmails = useMemo(() => users.map(u => u.email), [users]);
+
+  // Defined departments flattened into display order with a nesting depth, so the
+  // hierarchy renders as an indented tree. Departments whose parent is missing are
+  // treated as top-level.
+  const orderedDepartments = useMemo(() => {
+    const byLower = new Map(definedDepartments.map(d => [d.name.toLowerCase(), d] as const));
+    const parentKey = (d: Department) => {
+      const p = d.parentName ? d.parentName.toLowerCase() : null;
+      return p && p !== d.name.toLowerCase() && byLower.has(p) ? p : null;
+    };
+    const childrenOf = (parent: string | null) => definedDepartments
+      .filter(d => parentKey(d) === parent)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const out: { dept: Department; depth: number }[] = [];
+    const seen = new Set<string>();
+    const walk = (parent: string | null, depth: number) => {
+      for (const d of childrenOf(parent)) {
+        const key = d.name.toLowerCase();
+        if (seen.has(key)) continue; // defensive: never recurse into a cycle
+        seen.add(key);
+        out.push({ dept: d, depth });
+        walk(key, depth + 1);
+      }
+    };
+    walk(null, 0);
+    return out;
+  }, [definedDepartments]);
 
   const loadDepartments = useCallback(async () => {
     try {
@@ -35,7 +63,7 @@ export function WorkspaceUsersTable() {
     } catch { /* ignore */ }
   }, []);
 
-  const saveDefinedDepartments = async (next: string[]) => {
+  const saveDefinedDepartments = async (next: Department[]) => {
     setDefinedDepartments(next);
     try {
       const res = await fetch(`${API_URL}/api/admin/departments`, {
@@ -48,11 +76,21 @@ export function WorkspaceUsersTable() {
 
   const addDepartment = () => {
     const v = newDept.trim();
-    if (!v || definedDepartments.some(d => d.toLowerCase() === v.toLowerCase())) { setNewDept(''); return; }
-    saveDefinedDepartments([...definedDepartments, v]);
+    if (!v || definedDepartments.some(d => d.name.toLowerCase() === v.toLowerCase())) { setNewDept(''); return; }
+    const parentName = newDeptParent && definedDepartments.some(d => d.name === newDeptParent) ? newDeptParent : null;
+    saveDefinedDepartments([...definedDepartments, { name: v, parentName }]);
     setNewDept('');
+    setNewDeptParent('');
   };
-  const removeDepartment = (d: string) => saveDefinedDepartments(definedDepartments.filter(x => x !== d));
+  // Remove a department; re-parent its children onto its own parent so nothing is
+  // orphaned.
+  const removeDepartment = (name: string) => {
+    const grandparent = definedDepartments.find(d => d.name === name)?.parentName ?? null;
+    const next = definedDepartments
+      .filter(d => d.name !== name)
+      .map(d => (d.parentName === name ? { ...d, parentName: grandparent } : d));
+    saveDefinedDepartments(next);
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -141,13 +179,16 @@ export function WorkspaceUsersTable() {
 
       <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
         <div className="text-sm font-medium text-gray-800 mb-2">Departments</div>
-        <div className="flex flex-wrap items-center gap-1.5 mb-2">
+        <div className="mb-2 space-y-1">
           {definedDepartments.length === 0 && <span className="text-xs text-gray-400">None defined yet — departments synced from Workspace are still selectable.</span>}
-          {definedDepartments.map(d => (
-            <span key={d} className="inline-flex items-center gap-1 text-xs bg-white border border-gray-300 rounded-full pl-2.5 pr-1 py-0.5 text-gray-700">
-              {d}
-              <button onClick={() => removeDepartment(d)} title="Remove" className="text-gray-400 hover:text-red-600 rounded-full w-4 h-4 leading-none">×</button>
-            </span>
+          {orderedDepartments.map(({ dept, depth }) => (
+            <div key={dept.name} className="flex items-center" style={{ paddingLeft: depth * 18 }}>
+              {depth > 0 && <span className="text-gray-300 mr-1 leading-none">└</span>}
+              <span className="inline-flex items-center gap-1 text-xs bg-white border border-gray-300 rounded-full pl-2.5 pr-1 py-0.5 text-gray-700">
+                {dept.name}
+                <button onClick={() => removeDepartment(dept.name)} title="Remove" className="text-gray-400 hover:text-red-600 rounded-full w-4 h-4 leading-none">×</button>
+              </span>
+            </div>
           ))}
         </div>
         <div className="flex gap-2">
@@ -158,6 +199,17 @@ export function WorkspaceUsersTable() {
             placeholder="Add a department…"
             className="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
+          <select
+            value={newDeptParent}
+            onChange={(e) => setNewDeptParent(e.target.value)}
+            title="Nest under a parent department"
+            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">Top level</option>
+            {[...definedDepartments].sort((a, b) => a.name.localeCompare(b.name)).map(d => (
+              <option key={d.name} value={d.name}>Under {d.name}</option>
+            ))}
+          </select>
           <button onClick={addDepartment} disabled={!newDept.trim()} className="text-sm font-medium px-3 py-1.5 rounded-lg bg-gray-200 text-gray-800 hover:bg-gray-300 disabled:opacity-40">Add</button>
         </div>
       </div>

@@ -179,6 +179,14 @@ export interface Organization {
   updatedAt: string;
 }
 
+// An org-level defined department. Departments are identified by name (the same
+// value stored on User.department and synced from Google Workspace). `parentName`
+// nests a department under another one; null/absent means top-level.
+export interface Department {
+  name: string;
+  parentName?: string | null;
+}
+
 export interface User {
   id: string;
   email: string;
