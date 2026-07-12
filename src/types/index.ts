@@ -201,6 +201,7 @@ export interface User {
   managerEmail?: string;   // reporting: this user's manager (email)
   managerId?: string;      // resolved id of the manager's user record
   department?: string;     // from Google Workspace directory
+  active?: boolean;        // from Google Workspace directory (false = suspended). Undefined = treat as active.
 }
 
 // Plan view saved filter
