@@ -312,6 +312,20 @@ function pivotByStatusType(tickets: JiraTicket[]) {
   return { rows, types, cell, rowTotal, colTotal, total: tickets.length };
 }
 
+const isEpic = (t: JiraTicket) => /^epic$/i.test(t.type || '');
+
+// Count epics per assignee (rows), highest first, Unassigned last.
+function epicsByAssignee(epics: JiraTicket[]) {
+  const map = new Map<string, number>();
+  for (const t of epics) { const who = t.assignee || 'Unassigned'; map.set(who, (map.get(who) || 0) + 1); }
+  const rows = [...map.entries()].sort((a, b) => {
+    if (a[0] === 'Unassigned') return 1;
+    if (b[0] === 'Unassigned') return -1;
+    return b[1] - a[1] || a[0].localeCompare(b[0]);
+  });
+  return { rows, total: epics.length };
+}
+
 // Pivot a release's tickets into an assignee (rows) × type (columns) matrix of
 // ticket count + summed story points.
 function pivotByAssigneeType(tickets: JiraTicket[]) {
@@ -725,8 +739,11 @@ function renderMsg(m: Msg): React.ReactNode {
             </p>
           )}
           {m.groups.map(g => {
+            const epics = g.tickets.filter(isEpic);
+            const nonEpics = g.tickets.filter(t => !isEpic(t));
             const p = pivotByStatusType(g.tickets);
-            const a = pivotByAssigneeType(g.tickets);
+            const a = pivotByAssigneeType(nonEpics); // epics excluded from count/SP by assignee
+            const ep = epicsByAssignee(epics);
             return (
               <div key={g.version} className="mt-3">
                 <p className="text-sm font-medium text-gray-700">{g.version} ({g.tickets.length})</p>
@@ -764,35 +781,65 @@ function renderMsg(m: Msg): React.ReactNode {
                       </table>
                     </div>
 
-                    <p className="text-xs text-gray-400 mt-2">Tickets &amp; story points by assignee × type <span className="text-gray-300">(count · sp)</span></p>
-                    <div className="overflow-x-auto">
-                      <table className="mt-0.5 text-sm border-collapse">
-                        <thead>
-                          <tr className="text-xs text-gray-500">
-                            <th className="py-1 pr-4 font-medium text-left">Assignee \ Type</th>
-                            {a.types.map(ty => <th key={ty} className="py-1 px-3 font-medium text-right">{ty}</th>)}
-                            <th className="py-1 pl-3 font-medium text-right border-l border-gray-200">Total</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {a.rows.map(who => (
-                            <tr key={who} className="border-t border-gray-100">
-                              <td className="py-1 pr-4 text-gray-800 whitespace-nowrap">{who}</td>
-                              {a.types.map(ty => {
-                                const c = a.cell(who, ty);
-                                return <td key={ty} className={`py-1 px-3 text-right tabular-nums ${c.count ? 'text-gray-700' : 'text-gray-300'}`}>{c.count ? `${c.count} · ${c.sp}` : '·'}</td>;
-                              })}
-                              <td className="py-1 pl-3 text-right tabular-nums font-medium border-l border-gray-200">{(() => { const t = a.rowTotal(who); return `${t.count} · ${t.sp}`; })()}</td>
+                    {(['count', 'sp'] as const).map(metric => (
+                      <div key={metric}>
+                        <p className="text-xs text-gray-400 mt-2">{metric === 'count' ? 'Ticket count' : 'Story points'} by assignee × type <span className="text-gray-300">(excl. epics)</span></p>
+                        <div className="overflow-x-auto">
+                          <table className="mt-0.5 text-sm border-collapse">
+                            <thead>
+                              <tr className="text-xs text-gray-500">
+                                <th className="py-1 pr-4 font-medium text-left">Assignee \ Type</th>
+                                {a.types.map(ty => <th key={ty} className="py-1 px-3 font-medium text-right">{ty}</th>)}
+                                <th className="py-1 pl-3 font-medium text-right border-l border-gray-200">Total</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {a.rows.map(who => (
+                                <tr key={who} className="border-t border-gray-100">
+                                  <td className="py-1 pr-4 text-gray-800 whitespace-nowrap">{who}</td>
+                                  {a.types.map(ty => {
+                                    const v = a.cell(who, ty)[metric];
+                                    return <td key={ty} className={`py-1 px-3 text-right tabular-nums ${v ? 'text-gray-700' : 'text-gray-300'}`}>{v || '·'}</td>;
+                                  })}
+                                  <td className="py-1 pl-3 text-right tabular-nums font-medium border-l border-gray-200">{a.rowTotal(who)[metric]}</td>
+                                </tr>
+                              ))}
+                              <tr className="border-t border-gray-300 font-medium">
+                                <td className="py-1 pr-4 text-right">Total</td>
+                                {a.types.map(ty => <td key={ty} className="py-1 px-3 text-right tabular-nums">{a.colTotal(ty)[metric]}</td>)}
+                                <td className="py-1 pl-3 text-right tabular-nums border-l border-gray-200">{a.grand[metric]}</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ))}
+
+                    <p className="text-xs text-gray-400 mt-2">Epics by assignee {epics.length === 0 && <span className="text-gray-300">(none)</span>}</p>
+                    {epics.length > 0 && (
+                      <div className="overflow-x-auto">
+                        <table className="mt-0.5 text-sm border-collapse">
+                          <thead>
+                            <tr className="text-xs text-gray-500">
+                              <th className="py-1 pr-6 font-medium text-left">Assignee</th>
+                              <th className="py-1 font-medium text-right">Epics</th>
                             </tr>
-                          ))}
-                          <tr className="border-t border-gray-300 font-medium">
-                            <td className="py-1 pr-4 text-right">Total</td>
-                            {a.types.map(ty => { const t = a.colTotal(ty); return <td key={ty} className="py-1 px-3 text-right tabular-nums">{`${t.count} · ${t.sp}`}</td>; })}
-                            <td className="py-1 pl-3 text-right tabular-nums border-l border-gray-200">{`${a.grand.count} · ${a.grand.sp}`}</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
+                          </thead>
+                          <tbody>
+                            {ep.rows.map(([who, n]) => (
+                              <tr key={who} className="border-t border-gray-100">
+                                <td className="py-1 pr-6 text-gray-800 whitespace-nowrap">{who}</td>
+                                <td className="py-1 text-right tabular-nums text-gray-700">{n}</td>
+                              </tr>
+                            ))}
+                            <tr className="border-t border-gray-300 font-medium">
+                              <td className="py-1 pr-6 text-right">Total</td>
+                              <td className="py-1 text-right tabular-nums">{ep.total}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </>
                 )}
               </div>
