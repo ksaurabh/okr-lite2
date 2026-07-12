@@ -32,7 +32,7 @@ type Msg =
 interface ReleaseItem { name: string; fields: Record<string, string>; why: string; }
 
 // A Jira issue in a release (fixVersion), as returned by /api/jira/release-tickets.
-interface JiraTicket { key: string; summary: string; status: string; statusCategory: string; assignee: string; type: string; url: string; fixVersions: string[]; }
+interface JiraTicket { key: string; summary: string; status: string; statusCategory: string; assignee: string; type: string; url: string; fixVersions: string[]; storyPoints: number; }
 
 interface SessionState {
   step: Step;
@@ -204,19 +204,18 @@ function classifyReleases(headers: string[], rows: string[][], today: Date) {
   };
   const stageDatesOf = (row: string[]) => dateIdxs.map(i => parseSheetDate(cellOf(row, i))).filter((d): d is Date => !!d);
 
-  const columns: string[] = [];
-  const pushCol = (label?: string) => { if (label && !columns.includes(label)) columns.push(label); };
-  pushCol(headers[nameIdx]);
-  if (branchIdx >= 0) pushCol(headers[branchIdx]);
-  if (devIdx >= 0) pushCol(headers[devIdx]);
-  if (prodIdx >= 0) pushCol(headers[prodIdx]);
+  // Display columns: the release name plus the pipeline stage dates, in order.
+  const normKey = (h: string) => String(h ?? '').toLowerCase().replace(/[\s_-]/g, '');
+  const STAGE_LABELS = ['Dev', 'Test', 'Staging', 'Pre-Prod', 'Prod'];
+  const stageDisplayIdxs = STAGE_LABELS
+    .map(label => headers.findIndex(h => normKey(h) === normKey(label)))
+    .filter(i => i >= 0);
+  const columns: string[] = [headers[nameIdx], ...stageDisplayIdxs.map(i => headers[i])];
 
   const fieldsOf = (row: string[]): Record<string, string> => {
     const f: Record<string, string> = {};
     f[headers[nameIdx]] = cellOf(row, nameIdx) || '(untitled)';
-    if (branchIdx >= 0) f[headers[branchIdx]] = cellOf(row, branchIdx);
-    if (devIdx >= 0) f[headers[devIdx]] = cellOf(row, devIdx);
-    if (prodIdx >= 0) f[headers[prodIdx]] = cellOf(row, prodIdx);
+    for (const i of stageDisplayIdxs) f[headers[i]] = cellOf(row, i);
     return f;
   };
 
@@ -311,6 +310,37 @@ function pivotByStatusType(tickets: JiraTicket[]) {
   const rowTotal = (status: string) => types.reduce((n, ty) => n + cell(status, ty), 0);
   const colTotal = (type: string) => rows.reduce((n, s) => n + cell(s.name, type), 0);
   return { rows, types, cell, rowTotal, colTotal, total: tickets.length };
+}
+
+// Pivot a release's tickets into an assignee (rows) × type (columns) matrix of
+// ticket count + summed story points.
+function pivotByAssigneeType(tickets: JiraTicket[]) {
+  const typeSet = new Set<string>();
+  const assigneeSet = new Set<string>();
+  const counts = new Map<string, Map<string, { count: number; sp: number }>>(); // assignee -> type -> {count,sp}
+  for (const t of tickets) {
+    const type = t.type || '—';
+    const who = t.assignee || 'Unassigned';
+    typeSet.add(type);
+    assigneeSet.add(who);
+    if (!counts.has(who)) counts.set(who, new Map());
+    const row = counts.get(who)!;
+    const prev = row.get(type) || { count: 0, sp: 0 };
+    row.set(type, { count: prev.count + 1, sp: prev.sp + (t.storyPoints || 0) });
+  }
+  const types = [...typeSet].sort((a, b) => a.localeCompare(b));
+  // Unassigned last; otherwise by descending ticket count then name.
+  const totalFor = (who: string) => types.reduce((n, ty) => n + (counts.get(who)?.get(ty)?.count || 0), 0);
+  const rows = [...assigneeSet].sort((a, b) => {
+    if (a === 'Unassigned') return 1;
+    if (b === 'Unassigned') return -1;
+    return totalFor(b) - totalFor(a) || a.localeCompare(b);
+  });
+  const cell = (who: string, type: string) => counts.get(who)?.get(type) || { count: 0, sp: 0 };
+  const rowTotal = (who: string) => types.reduce((acc, ty) => { const c = cell(who, ty); return { count: acc.count + c.count, sp: acc.sp + c.sp }; }, { count: 0, sp: 0 });
+  const colTotal = (type: string) => rows.reduce((acc, who) => { const c = cell(who, type); return { count: acc.count + c.count, sp: acc.sp + c.sp }; }, { count: 0, sp: 0 });
+  const grand = { count: tickets.length, sp: tickets.reduce((n, t) => n + (t.storyPoints || 0), 0) };
+  return { rows, types, cell, rowTotal, colTotal, grand };
 }
 
 // Side-by-side parent/child plan view. Reuses the exact /plans split (ListsPage in
@@ -696,40 +726,74 @@ function renderMsg(m: Msg): React.ReactNode {
           )}
           {m.groups.map(g => {
             const p = pivotByStatusType(g.tickets);
+            const a = pivotByAssigneeType(g.tickets);
             return (
               <div key={g.version} className="mt-3">
                 <p className="text-sm font-medium text-gray-700">{g.version} ({g.tickets.length})</p>
                 {g.tickets.length === 0 ? (
                   <p className="text-gray-500 text-sm">No tickets in this release.</p>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="mt-1 text-sm border-collapse">
-                      <thead>
-                        <tr className="text-xs text-gray-500">
-                          <th className="py-1 pr-4 font-medium text-left">Status \ Type</th>
-                          {p.types.map(ty => <th key={ty} className="py-1 px-3 font-medium text-right">{ty}</th>)}
-                          <th className="py-1 pl-3 font-medium text-right border-l border-gray-200">Total</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {p.rows.map(s => (
-                          <tr key={s.name} className="border-t border-gray-100">
-                            <td className="py-1 pr-4 text-gray-800 whitespace-nowrap">{s.name}</td>
-                            {p.types.map(ty => {
-                              const n = p.cell(s.name, ty);
-                              return <td key={ty} className={`py-1 px-3 text-right tabular-nums ${n ? 'text-gray-700' : 'text-gray-300'}`}>{n || '·'}</td>;
-                            })}
-                            <td className="py-1 pl-3 text-right tabular-nums font-medium border-l border-gray-200">{p.rowTotal(s.name)}</td>
+                  <>
+                    <p className="text-xs text-gray-400 mt-1">Tickets by status × type</p>
+                    <div className="overflow-x-auto">
+                      <table className="mt-0.5 text-sm border-collapse">
+                        <thead>
+                          <tr className="text-xs text-gray-500">
+                            <th className="py-1 pr-4 font-medium text-left">Status \ Type</th>
+                            {p.types.map(ty => <th key={ty} className="py-1 px-3 font-medium text-right">{ty}</th>)}
+                            <th className="py-1 pl-3 font-medium text-right border-l border-gray-200">Total</th>
                           </tr>
-                        ))}
-                        <tr className="border-t border-gray-300 font-medium">
-                          <td className="py-1 pr-4 text-right">Total</td>
-                          {p.types.map(ty => <td key={ty} className="py-1 px-3 text-right tabular-nums">{p.colTotal(ty)}</td>)}
-                          <td className="py-1 pl-3 text-right tabular-nums border-l border-gray-200">{p.total}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody>
+                          {p.rows.map(s => (
+                            <tr key={s.name} className="border-t border-gray-100">
+                              <td className="py-1 pr-4 text-gray-800 whitespace-nowrap">{s.name}</td>
+                              {p.types.map(ty => {
+                                const n = p.cell(s.name, ty);
+                                return <td key={ty} className={`py-1 px-3 text-right tabular-nums ${n ? 'text-gray-700' : 'text-gray-300'}`}>{n || '·'}</td>;
+                              })}
+                              <td className="py-1 pl-3 text-right tabular-nums font-medium border-l border-gray-200">{p.rowTotal(s.name)}</td>
+                            </tr>
+                          ))}
+                          <tr className="border-t border-gray-300 font-medium">
+                            <td className="py-1 pr-4 text-right">Total</td>
+                            {p.types.map(ty => <td key={ty} className="py-1 px-3 text-right tabular-nums">{p.colTotal(ty)}</td>)}
+                            <td className="py-1 pl-3 text-right tabular-nums border-l border-gray-200">{p.total}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <p className="text-xs text-gray-400 mt-2">Tickets &amp; story points by assignee × type <span className="text-gray-300">(count · sp)</span></p>
+                    <div className="overflow-x-auto">
+                      <table className="mt-0.5 text-sm border-collapse">
+                        <thead>
+                          <tr className="text-xs text-gray-500">
+                            <th className="py-1 pr-4 font-medium text-left">Assignee \ Type</th>
+                            {a.types.map(ty => <th key={ty} className="py-1 px-3 font-medium text-right">{ty}</th>)}
+                            <th className="py-1 pl-3 font-medium text-right border-l border-gray-200">Total</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {a.rows.map(who => (
+                            <tr key={who} className="border-t border-gray-100">
+                              <td className="py-1 pr-4 text-gray-800 whitespace-nowrap">{who}</td>
+                              {a.types.map(ty => {
+                                const c = a.cell(who, ty);
+                                return <td key={ty} className={`py-1 px-3 text-right tabular-nums ${c.count ? 'text-gray-700' : 'text-gray-300'}`}>{c.count ? `${c.count} · ${c.sp}` : '·'}</td>;
+                              })}
+                              <td className="py-1 pl-3 text-right tabular-nums font-medium border-l border-gray-200">{(() => { const t = a.rowTotal(who); return `${t.count} · ${t.sp}`; })()}</td>
+                            </tr>
+                          ))}
+                          <tr className="border-t border-gray-300 font-medium">
+                            <td className="py-1 pr-4 text-right">Total</td>
+                            {a.types.map(ty => { const t = a.colTotal(ty); return <td key={ty} className="py-1 px-3 text-right tabular-nums">{`${t.count} · ${t.sp}`}</td>; })}
+                            <td className="py-1 pl-3 text-right tabular-nums border-l border-gray-200">{`${a.grand.count} · ${a.grand.sp}`}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
                 )}
               </div>
             );
