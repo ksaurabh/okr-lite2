@@ -22,7 +22,7 @@ type Msg =
   | { role: 'agent'; kind: 'objlist'; title: string; ids: string[]; code?: string }
   | { role: 'agent'; kind: 'split'; who: string; parentListId: string; childListId: string; parentName: string; childName: string }
   | { role: 'agent'; kind: 'breakdown'; title: string; rows: { name: string; count: number; vp: number }[]; totalCount: number; totalVp: number }
-  | { role: 'agent'; kind: 'resolvedWeekly'; title: string; asOf: string; days: number; rows: { name: string; count: number; sp: number }[]; totalCount: number; totalSp: number }
+  | { role: 'agent'; kind: 'resolvedWeekly'; title: string; asOf: string; days: number; rows: { name: string; count: number; sp: number }[]; totalCount: number; totalSp: number; parentRows: ParentGroupRow[] }
   | { role: 'agent'; kind: 'deliverable'; summary: string; neededBy: string; assigneeId: string; assigneeName: string; ownerId: string }
   | { role: 'agent'; kind: 'releases'; area: string; sheetTitle: string; asOf: string; groups: { key: string; label: string; items: ReleaseItem[] }[]; recent: ReleaseItem[]; columns: string[]; note?: string; rawHeaders?: string[]; rawRows?: string[][] }
   | { role: 'agent'; kind: 'reauth'; message: string }
@@ -33,7 +33,9 @@ type Msg =
 interface ReleaseItem { name: string; fields: Record<string, string>; why: string; }
 
 // A Jira issue in a release (fixVersion), as returned by /api/jira/release-tickets.
-interface JiraTicket { key: string; summary: string; status: string; statusCategory: string; assignee: string; type: string; url: string; fixVersions: string[]; storyPoints: number; resolved: string | null; }
+interface JiraTicket { key: string; summary: string; status: string; statusCategory: string; assignee: string; type: string; url: string; fixVersions: string[]; storyPoints: number; resolved: string | null; parentKey?: string | null; parentSummary?: string | null; }
+// One (assignee, parent) group in the weekly resolved breakdown.
+interface ParentGroupRow { assignee: string; parentKey: string; parentSummary: string; parentUrl: string; count: number; sp: number; }
 
 interface SessionState {
   step: Step;
@@ -151,8 +153,30 @@ const splitMsg = (who: string, parentListId: string, childListId: string, parent
   ({ role: 'agent', kind: 'split', who, parentListId, childListId, parentName, childName });
 const breakdownMsg = (title: string, rows: { name: string; count: number; vp: number }[], totalCount: number, totalVp: number): Msg =>
   ({ role: 'agent', kind: 'breakdown', title, rows, totalCount, totalVp });
-const resolvedWeeklyMsg = (title: string, asOf: string, days: number, rows: { name: string; count: number; sp: number }[], totalCount: number, totalSp: number): Msg =>
-  ({ role: 'agent', kind: 'resolvedWeekly', title, asOf, days, rows, totalCount, totalSp });
+const resolvedWeeklyMsg = (title: string, asOf: string, days: number, rows: { name: string; count: number; sp: number }[], totalCount: number, totalSp: number, parentRows: ParentGroupRow[]): Msg =>
+  ({ role: 'agent', kind: 'resolvedWeekly', title, asOf, days, rows, totalCount, totalSp, parentRows });
+
+// Group resolved tickets by (assignee, parent issue) with count + summed story
+// points. Tickets without a parent are grouped under "None".
+function parentBreakdown(tickets: JiraTicket[], browse: string): ParentGroupRow[] {
+  const map = new Map<string, ParentGroupRow>();
+  for (const t of tickets) {
+    const assignee = t.assignee || 'Unassigned';
+    const hasParent = !!t.parentKey;
+    const parentKey = hasParent ? t.parentKey! : 'None';
+    const parentSummary = hasParent ? (t.parentSummary || '') : '';
+    const parentUrl = hasParent && browse ? `${browse}/browse/${t.parentKey}` : '';
+    const k = `${assignee} ${parentKey}`;
+    const e = map.get(k) || { assignee, parentKey, parentSummary, parentUrl, count: 0, sp: 0 };
+    e.count += 1;
+    e.sp += t.storyPoints || 0;
+    map.set(k, e);
+  }
+  return [...map.values()].sort((a, b) =>
+    a.assignee.localeCompare(b.assignee) ||
+    (a.parentKey === 'None' ? 1 : b.parentKey === 'None' ? -1 : b.count - a.count) ||
+    a.parentKey.localeCompare(b.parentKey));
+}
 const deliverableMsg = (summary: string, neededBy: string, assigneeId: string, assigneeName: string, ownerId: string): Msg =>
   ({ role: 'agent', kind: 'deliverable', summary, neededBy, assigneeId, assigneeName, ownerId });
 
@@ -725,6 +749,49 @@ function renderMsg(m: Msg): React.ReactNode {
                 </tr>
               </tbody>
             </table>
+          )}
+          {(m.parentRows?.length ?? 0) > 0 && (
+            <div className="mt-3">
+              <p className="text-xs text-gray-400 mb-1">By assignee &amp; parent issue</p>
+              <div className="overflow-x-auto">
+                <table className="text-sm">
+                  <thead>
+                    <tr className="text-xs text-gray-400 text-left">
+                      <th className="py-1 pr-6 font-medium">Assignee</th>
+                      <th className="py-1 pr-6 font-medium">Parent issue</th>
+                      <th className="py-1 pr-6 font-medium text-right">Issues</th>
+                      <th className="py-1 font-medium text-right">Story points</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {m.parentRows.map((r, i) => (
+                      <tr key={i} className="border-b border-gray-100 last:border-0">
+                        <td className="py-1 pr-6 text-gray-800 whitespace-nowrap">{r.assignee}</td>
+                        <td className="py-1 pr-6 text-gray-700">
+                          {r.parentKey === 'None' ? (
+                            <span className="text-gray-400">None</span>
+                          ) : (
+                            <>
+                              {r.parentUrl
+                                ? <a href={r.parentUrl} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline font-medium">{r.parentKey}</a>
+                                : <span className="font-medium">{r.parentKey}</span>}
+                              {r.parentSummary ? <span className="text-gray-500"> — {r.parentSummary}</span> : null}
+                            </>
+                          )}
+                        </td>
+                        <td className="py-1 pr-6 text-gray-600 text-right tabular-nums">{r.count}</td>
+                        <td className="py-1 text-gray-600 text-right tabular-nums">{r.sp}</td>
+                      </tr>
+                    ))}
+                    <tr className="font-medium">
+                      <td className="py-1 pr-6" colSpan={2}>Total</td>
+                      <td className="py-1 pr-6 text-right tabular-nums">{m.parentRows.reduce((s, r) => s + r.count, 0)}</td>
+                      <td className="py-1 text-right tabular-nums">{m.parentRows.reduce((s, r) => s + r.sp, 0)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
           )}
         </div>
       );
@@ -1600,7 +1667,7 @@ export function AgentPage() {
         backToAutonomousEng();
         return;
       }
-      const data = await res.json() as { configured: boolean; tickets?: JiraTicket[]; days?: number };
+      const data = await res.json() as { configured: boolean; tickets?: JiraTicket[]; days?: number; browse?: string };
       if (!data.configured) {
         appendAgent(textMsg('Jira isn\'t configured for your organization yet — an admin can set it up under Admin → Jira.', 'error'));
         backToAutonomousEng();
@@ -1609,12 +1676,14 @@ export function AgentPage() {
       const days = data.days || 7;
       const workItems = (data.tickets || []).filter(isWorkItem);
       const { rows, total } = countAndSpByAssignee(workItems);
+      const parentRows = parentBreakdown(workItems, data.browse || '');
       const asOf = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
       appendAgent(resolvedWeeklyMsg(
         'Weekly — resolved in the last 7 days',
         asOf, days,
         rows.map(([name, v]) => ({ name, count: v.count, sp: v.sp })),
         total.count, total.sp,
+        parentRows,
       ));
       backToAutonomousEng();
     } catch (err) {

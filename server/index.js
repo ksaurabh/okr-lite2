@@ -2337,7 +2337,7 @@ app.get('/api/jira/resolved-recently', requireAuth, async (req, res) => {
     const spField = await resolveStoryPointsFieldId(cfg);
     const jql = `project = "${projectKey}" AND resolutiondate >= -${days}d ORDER BY resolutiondate DESC`;
     console.log(`[jira] resolved-recently project=${projectKey} days=${days} storyPointsField=${spField || 'none'} JQL: ${jql}`);
-    const fields = ['summary', 'status', 'assignee', 'issuetype', 'fixVersions', 'priority', 'resolutiondate', ...(spField ? [spField] : [])];
+    const fields = ['summary', 'status', 'assignee', 'issuetype', 'fixVersions', 'priority', 'resolutiondate', 'parent', ...(spField ? [spField] : [])];
     let data;
     let r = await jiraFetch(cfg, '/rest/api/3/search/jql', { method: 'POST', body: JSON.stringify({ jql, fields, maxResults: 200 }) });
     if (r.ok) {
@@ -2358,6 +2358,8 @@ app.get('/api/jira/resolved-recently', requireAuth, async (req, res) => {
       fixVersions: (it.fields?.fixVersions || []).map(v => v.name),
       storyPoints: spField && it.fields?.[spField] != null ? (Number(it.fields[spField]) || 0) : 0,
       resolved: it.fields?.resolutiondate || null,
+      parentKey: it.fields?.parent?.key || null,
+      parentSummary: it.fields?.parent?.fields?.summary || null,
     }));
     res.json({ configured: true, tickets, days, browse, project: projectKey, jql });
   } catch (err) {
