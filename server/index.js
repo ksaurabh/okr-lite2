@@ -1817,6 +1817,35 @@ function saveDepartments(orgId, list) {
   saveOKRData(data);
   return getDepartments(orgId);
 }
+// Normalize a raw department list into a clean hierarchy: dedupe by name
+// (case-insensitive; first wins), resolve each parent to a canonical existing
+// name (dropping missing/self parents), and break cycles.
+function sanitizeDepartments(rawList) {
+  const clean = [];
+  const byLower = new Map();
+  for (const raw of Array.isArray(rawList) ? rawList : []) {
+    const d = normalizeDepartment(raw);
+    if (!d || byLower.has(d.name.toLowerCase())) continue;
+    const entry = { name: d.name, parentName: d.parentName };
+    byLower.set(entry.name.toLowerCase(), entry);
+    clean.push(entry);
+  }
+  for (const entry of clean) {
+    const parent = entry.parentName ? byLower.get(entry.parentName.toLowerCase()) : null;
+    entry.parentName = parent && parent.name.toLowerCase() !== entry.name.toLowerCase() ? parent.name : null;
+  }
+  for (const entry of clean) {
+    const seen = new Set([entry.name.toLowerCase()]);
+    let cur = entry.parentName;
+    while (cur) {
+      const lower = cur.toLowerCase();
+      if (seen.has(lower)) { entry.parentName = null; break; }
+      seen.add(lower);
+      cur = byLower.get(lower)?.parentName || null;
+    }
+  }
+  return clean;
+}
 
 // The selectable department list: the defined list merged with any already in
 // use on users (so directory-synced departments are always selectable).
@@ -1834,35 +1863,43 @@ app.put('/api/admin/departments', requireOrgAdminOrSuperAdmin, (req, res) => {
   if (!org) return res.status(403).json({ error: 'No organization found' });
   const { departments } = req.body || {};
   if (!Array.isArray(departments)) return res.status(400).json({ error: 'departments must be an array' });
-  // Normalize + dedupe by name (case-insensitive; first occurrence wins).
-  const clean = [];
-  const byLower = new Map();
-  for (const raw of departments) {
-    const d = normalizeDepartment(raw);
-    if (!d || byLower.has(d.name.toLowerCase())) continue;
-    const entry = { name: d.name, parentName: d.parentName };
-    byLower.set(entry.name.toLowerCase(), entry);
-    clean.push(entry);
-  }
-  // Resolve each parent to a canonical existing name; drop parents that don't
-  // exist or point at self.
-  for (const entry of clean) {
-    const parent = entry.parentName ? byLower.get(entry.parentName.toLowerCase()) : null;
-    entry.parentName = parent && parent.name.toLowerCase() !== entry.name.toLowerCase() ? parent.name : null;
-  }
-  // Break cycles: walk ancestors, cutting the parent link that closes a loop.
-  for (const entry of clean) {
-    const seen = new Set([entry.name.toLowerCase()]);
-    let cur = entry.parentName;
-    while (cur) {
-      const lower = cur.toLowerCase();
-      if (seen.has(lower)) { entry.parentName = null; break; }
-      seen.add(lower);
-      cur = byLower.get(lower)?.parentName || null;
-    }
-  }
-  saveDepartments(org.id, clean);
+  saveDepartments(org.id, sanitizeDepartments(departments));
   res.json({ departments: getDepartments(org.id) });
+});
+
+// Export the org's defined departments as CSV (columns: name, parent).
+app.get('/api/admin/departments/export', requireOrgAdminOrSuperAdmin, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.status(403).json({ error: 'No organization found' });
+  const defined = getDepartments(org.id).slice().sort((a, b) => a.name.localeCompare(b.name));
+  const rows = [['name', 'parent'], ...defined.map(d => [d.name, d.parentName || ''])];
+  const csv = rows.map(r => r.map(csvEsc).join(',')).join('\n');
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="departments-${org.domain}.csv"`);
+  res.send(csv);
+});
+
+// Import departments from CSV (columns: name, parent). Replaces the defined list.
+app.post('/api/admin/departments/import', requireOrgAdminOrSuperAdmin, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.status(403).json({ error: 'No organization found' });
+  const { csv } = req.body || {};
+  if (typeof csv !== 'string' || !csv.trim()) return res.status(400).json({ error: 'Provide CSV content in { csv }.' });
+
+  const rows = parseCsv(csv).filter(r => r.some(c => (c || '').trim() !== ''));
+  if (rows.length < 2) return res.status(400).json({ error: 'CSV has no data rows.' });
+  const header = rows[0].map(h => h.trim().toLowerCase());
+  const nameIdx = header.indexOf('name');
+  const parentIdx = header.findIndex(h => h === 'parent' || h === 'parent_name' || h === 'parentname');
+  if (nameIdx < 0) return res.status(400).json({ error: 'CSV must have a "name" column header (and optionally "parent").' });
+
+  const raw = rows.slice(1).map(r => ({
+    name: (r[nameIdx] || '').trim(),
+    parentName: parentIdx >= 0 ? (r[parentIdx] || '').trim() : '',
+  })).filter(d => d.name);
+  const clean = sanitizeDepartments(raw);
+  saveDepartments(org.id, clean);
+  res.json({ ok: true, count: clean.length, departments: getDepartments(org.id) });
 });
 
 // ============ Review Progress: Release Calendar (Google Sheet) ============
@@ -2076,56 +2113,6 @@ function parseCsv(text) {
   return rows;
 }
 const csvEsc = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-
-// Export the org's reporting structure as CSV.
-app.get('/api/admin/reporting-structure', requireOrgAdminOrSuperAdmin, (req, res) => {
-  const org = getOrganizationByDomain(req.user.domain);
-  if (!org) return res.status(403).json({ error: 'No organization found' });
-  const users = getUsersByOrganization(org.id).slice().sort((a, b) => (a.email || '').localeCompare(b.email || ''));
-  const byId = new Map(users.map(u => [u.id, u]));
-  const rows = [['email', 'name', 'manager_email', 'manager_name']];
-  for (const u of users) {
-    const mgr = u.managerId ? byId.get(u.managerId) : null;
-    rows.push([u.email || '', u.name || '', u.managerEmail || mgr?.email || '', mgr?.name || '']);
-  }
-  const csv = rows.map(r => r.map(csvEsc).join(',')).join('\n');
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename="reporting-structure-${org.domain}.csv"`);
-  res.send(csv);
-});
-
-// Import a reporting structure from CSV (columns: email, manager_email).
-app.post('/api/admin/reporting-structure', requireOrgAdminOrSuperAdmin, (req, res) => {
-  const org = getOrganizationByDomain(req.user.domain);
-  if (!org) return res.status(403).json({ error: 'No organization found' });
-  const { csv } = req.body || {};
-  if (typeof csv !== 'string' || !csv.trim()) return res.status(400).json({ error: 'Provide CSV content in { csv }.' });
-
-  const rows = parseCsv(csv).filter(r => r.some(c => (c || '').trim() !== ''));
-  if (rows.length < 2) return res.status(400).json({ error: 'CSV has no data rows.' });
-  const header = rows[0].map(h => h.trim().toLowerCase());
-  const emailIdx = header.indexOf('email');
-  const mgrIdx = header.findIndex(h => h === 'manager_email' || h === 'manager');
-  if (emailIdx < 0 || mgrIdx < 0) return res.status(400).json({ error: 'CSV must have "email" and "manager_email" column headers.' });
-
-  const users = getUsers();
-  const byEmail = new Map(users.map(u => [u.email?.toLowerCase(), u]));
-  let updated = 0;
-  const unmatched = new Set(), unknownManagers = new Set();
-  for (const r of rows.slice(1)) {
-    const email = (r[emailIdx] || '').trim().toLowerCase();
-    const mgrEmail = (r[mgrIdx] || '').trim().toLowerCase();
-    if (!email) continue;
-    const u = byEmail.get(email);
-    if (!u || u.organizationId !== org.id) { unmatched.add(email); continue; }
-    u.managerEmail = mgrEmail || undefined;
-    updated++;
-    if (mgrEmail && !byEmail.get(mgrEmail)) unknownManagers.add(mgrEmail);
-  }
-  const linked = resolveManagerIds(users, org.id);
-  saveUsers(users);
-  res.json({ ok: true, updated, linked, unmatched: [...unmatched].slice(0, 50), unknownManagers: [...unknownManagers].slice(0, 50) });
-});
 
 // Update a user's manager and/or department, writing the change back to the
 // Google Workspace directory (and mirroring it locally). Admin-only.
