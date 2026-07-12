@@ -23,6 +23,7 @@ export function WorkspaceUsersTable() {
   const [definedDepartments, setDefinedDepartments] = useState<Department[]>([]);
   const [newDept, setNewDept] = useState('');
   const [newDeptParent, setNewDeptParent] = useState('');
+  const [deptsOpen, setDeptsOpen] = useState(false);
 
   const userEmails = useMemo(() => users.map(u => u.email), [users]);
 
@@ -178,40 +179,55 @@ export function WorkspaceUsersTable() {
       </p>
 
       <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
-        <div className="text-sm font-medium text-gray-800 mb-2">Departments</div>
-        <div className="mb-2 space-y-1">
-          {definedDepartments.length === 0 && <span className="text-xs text-gray-400">None defined yet — departments synced from Workspace are still selectable.</span>}
-          {orderedDepartments.map(({ dept, depth }) => (
-            <div key={dept.name} className="flex items-center" style={{ paddingLeft: depth * 18 }}>
-              {depth > 0 && <span className="text-gray-300 mr-1 leading-none">└</span>}
-              <span className="inline-flex items-center gap-1 text-xs bg-white border border-gray-300 rounded-full pl-2.5 pr-1 py-0.5 text-gray-700">
-                {dept.name}
-                <button onClick={() => removeDepartment(dept.name)} title="Remove" className="text-gray-400 hover:text-red-600 rounded-full w-4 h-4 leading-none">×</button>
-              </span>
+        <button
+          type="button"
+          onClick={() => setDeptsOpen(o => !o)}
+          aria-expanded={deptsOpen}
+          className="flex items-center gap-1.5 w-full text-left text-sm font-medium text-gray-800"
+        >
+          <svg className={`w-4 h-4 text-gray-400 transition-transform ${deptsOpen ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+          Departments
+          {definedDepartments.length > 0 && <span className="text-xs font-normal text-gray-400">({definedDepartments.length})</span>}
+        </button>
+        {deptsOpen && (
+          <div className="mt-2">
+            <div className="mb-2 space-y-1">
+              {definedDepartments.length === 0 && <span className="text-xs text-gray-400">None defined yet — departments synced from Workspace are still selectable.</span>}
+              {orderedDepartments.map(({ dept, depth }) => (
+                <div key={dept.name} className="flex items-center" style={{ paddingLeft: depth * 18 }}>
+                  {depth > 0 && <span className="text-gray-300 mr-1 leading-none">└</span>}
+                  <span className="inline-flex items-center gap-1 text-xs bg-white border border-gray-300 rounded-full pl-2.5 pr-1 py-0.5 text-gray-700">
+                    {dept.name}
+                    <button onClick={() => removeDepartment(dept.name)} title="Remove" className="text-gray-400 hover:text-red-600 rounded-full w-4 h-4 leading-none">×</button>
+                  </span>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-        <div className="flex gap-2">
-          <input
-            value={newDept}
-            onChange={(e) => setNewDept(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addDepartment(); } }}
-            placeholder="Add a department…"
-            className="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <select
-            value={newDeptParent}
-            onChange={(e) => setNewDeptParent(e.target.value)}
-            title="Nest under a parent department"
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">Top level</option>
-            {[...definedDepartments].sort((a, b) => a.name.localeCompare(b.name)).map(d => (
-              <option key={d.name} value={d.name}>Under {d.name}</option>
-            ))}
-          </select>
-          <button onClick={addDepartment} disabled={!newDept.trim()} className="text-sm font-medium px-3 py-1.5 rounded-lg bg-gray-200 text-gray-800 hover:bg-gray-300 disabled:opacity-40">Add</button>
-        </div>
+            <div className="flex gap-2">
+              <input
+                value={newDept}
+                onChange={(e) => setNewDept(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addDepartment(); } }}
+                placeholder="Add a department…"
+                className="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <select
+                value={newDeptParent}
+                onChange={(e) => setNewDeptParent(e.target.value)}
+                title="Nest under a parent department"
+                className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Top level</option>
+                {[...definedDepartments].sort((a, b) => a.name.localeCompare(b.name)).map(d => (
+                  <option key={d.name} value={d.name}>Under {d.name}</option>
+                ))}
+              </select>
+              <button onClick={addDepartment} disabled={!newDept.trim()} className="text-sm font-medium px-3 py-1.5 rounded-lg bg-gray-200 text-gray-800 hover:bg-gray-300 disabled:opacity-40">Add</button>
+            </div>
+          </div>
+        )}
       </div>
 
       {needsReauth && (
