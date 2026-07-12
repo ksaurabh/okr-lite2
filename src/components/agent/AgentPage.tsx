@@ -33,9 +33,9 @@ type Msg =
 interface ReleaseItem { name: string; fields: Record<string, string>; why: string; }
 
 // A Jira issue in a release (fixVersion), as returned by /api/jira/release-tickets.
-interface JiraTicket { key: string; summary: string; status: string; statusCategory: string; assignee: string; type: string; url: string; fixVersions: string[]; storyPoints: number; resolved: string | null; parentKey?: string | null; parentSummary?: string | null; }
+interface JiraTicket { key: string; summary: string; status: string; statusCategory: string; assignee: string; type: string; url: string; fixVersions: string[]; storyPoints: number; resolved: string | null; parentKey?: string | null; parentSummary?: string | null; parentFixVersions?: string[]; }
 // One (assignee, parent) group in the weekly resolved breakdown.
-interface ParentGroupRow { assignee: string; parentKey: string; parentSummary: string; parentUrl: string; count: number; sp: number; }
+interface ParentGroupRow { assignee: string; parentKey: string; parentSummary: string; parentUrl: string; parentFixVersions: string[]; count: number; sp: number; }
 
 interface SessionState {
   step: Step;
@@ -167,7 +167,7 @@ function parentBreakdown(tickets: JiraTicket[], browse: string): ParentGroupRow[
     const parentSummary = hasParent ? (t.parentSummary || '') : '';
     const parentUrl = hasParent && browse ? `${browse}/browse/${t.parentKey}` : '';
     const k = `${assignee} ${parentKey}`;
-    const e = map.get(k) || { assignee, parentKey, parentSummary, parentUrl, count: 0, sp: 0 };
+    const e = map.get(k) || { assignee, parentKey, parentSummary, parentUrl, parentFixVersions: hasParent ? (t.parentFixVersions || []) : [], count: 0, sp: 0 };
     e.count += 1;
     e.sp += t.storyPoints || 0;
     map.set(k, e);
@@ -184,13 +184,13 @@ function parentBreakdown(tickets: JiraTicket[], browse: string): ParentGroupRow[
 function pivotParents(rows: ParentGroupRow[]) {
   const assignees: string[] = [];
   const aSeen = new Set<string>();
-  const parentMap = new Map<string, { key: string; summary: string; url: string }>();
+  const parentMap = new Map<string, { key: string; summary: string; url: string; fixVersions: string[] }>();
   const k = (p: string, a: string) => `${p} ${a}`;
   const countAt = new Map<string, number>();
   const spAt = new Map<string, number>();
   for (const r of rows) {
     if (!aSeen.has(r.assignee)) { aSeen.add(r.assignee); assignees.push(r.assignee); }
-    if (!parentMap.has(r.parentKey)) parentMap.set(r.parentKey, { key: r.parentKey, summary: r.parentSummary, url: r.parentUrl });
+    if (!parentMap.has(r.parentKey)) parentMap.set(r.parentKey, { key: r.parentKey, summary: r.parentSummary, url: r.parentUrl, fixVersions: r.parentFixVersions || [] });
     countAt.set(k(r.parentKey, r.assignee), (countAt.get(k(r.parentKey, r.assignee)) || 0) + r.count);
     spAt.set(k(r.parentKey, r.assignee), (spAt.get(k(r.parentKey, r.assignee)) || 0) + r.sp);
   }
@@ -783,12 +783,15 @@ function renderMsg(m: Msg): React.ReactNode {
           )}
           {(m.parentRows?.length ?? 0) > 0 && (() => {
             const pv = pivotParents(m.parentRows);
-            const parentCell = (p: { key: string; summary: string; url: string }) =>
+            const parentCell = (p: { key: string; summary: string; url: string; fixVersions: string[] }) =>
               p.key === 'None' ? <span className="text-gray-400">None</span> : (
                 <>
                   {p.url
                     ? <a href={p.url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline font-medium">{p.key}</a>
                     : <span className="font-medium">{p.key}</span>}
+                  {p.fixVersions.length > 0 && (
+                    <span className="ml-1.5 text-[11px] text-gray-500">[{p.fixVersions.join(', ')}]</span>
+                  )}
                   {p.summary ? <span className="text-gray-500"> — {p.summary}</span> : null}
                 </>
               );

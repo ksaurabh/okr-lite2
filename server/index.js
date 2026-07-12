@@ -2496,6 +2496,25 @@ app.get('/api/jira/resolved-recently', requireAuth, async (req, res) => {
       parentKey: it.fields?.parent?.key || null,
       parentSummary: it.fields?.parent?.fields?.summary || null,
     }));
+
+    // The parent field in search results doesn't carry fix versions — fetch them
+    // for the distinct parent issues in one extra search (best-effort).
+    const parentKeys = [...new Set(tickets.map(t => t.parentKey).filter(Boolean))];
+    const parentFix = new Map();
+    if (parentKeys.length) {
+      const pjql = `issuekey in (${parentKeys.map(k => `"${k}"`).join(',')})`;
+      try {
+        let pr = await jiraFetch(cfg, '/rest/api/3/search/jql', { method: 'POST', body: JSON.stringify({ jql: pjql, fields: ['fixVersions'], maxResults: parentKeys.length }) });
+        let pdata = pr.ok ? await pr.json() : null;
+        if (!pdata) {
+          pr = await jiraFetch(cfg, `/rest/api/3/search?jql=${encodeURIComponent(pjql)}&fields=fixVersions&maxResults=${parentKeys.length}`);
+          pdata = pr.ok ? await pr.json() : null;
+        }
+        for (const pit of (pdata?.issues || [])) parentFix.set(pit.key, (pit.fields?.fixVersions || []).map(v => v.name));
+      } catch { /* best-effort */ }
+    }
+    for (const t of tickets) t.parentFixVersions = t.parentKey ? (parentFix.get(t.parentKey) || []) : [];
+
     res.json({ configured: true, tickets, days, browse, project: projectKey, jql });
   } catch (err) {
     res.status(500).json({ error: String(err) });
