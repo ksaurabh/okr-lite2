@@ -192,12 +192,16 @@ function resolveManagerIds(users, organizationId) {
 // Create/update user records from Google Workspace Directory entries in a single
 // read/write pass. Unlike upsertUser this does NOT set lastLoginAt (these users
 // haven't signed in) and stamps directorySyncedAt. Captures each user's manager
-// (from directory relations) and resolves managerId. Returns { added, updated, linked }.
+// (from directory relations), department, and active status (Google's `suspended`
+// flag inverted) and resolves managerId. Existing users always have their active
+// status refreshed, so accounts suspended in Workspace get marked inactive here.
+// New records are only created for active accounts (we don't import ex-employees
+// who never used the system). Returns { added, updated, linked, deactivated }.
 function syncWorkspaceUsers(organizationId, domain, directoryUsers) {
   const users = getUsers();
   const byEmail = new Map(users.map(u => [u.email?.toLowerCase(), u]));
   const now = new Date().toISOString();
-  let added = 0, updated = 0;
+  let added = 0, updated = 0, deactivated = 0;
   for (const d of directoryUsers) {
     const email = (d.primaryEmail || '').toLowerCase();
     if (!email) continue;
@@ -205,6 +209,7 @@ function syncWorkspaceUsers(organizationId, domain, directoryUsers) {
     const picture = d.thumbnailPhotoUrl || undefined;
     const managerEmail = directoryManagerEmail(d);
     const department = directoryDepartment(d);
+    const active = !d.suspended;
     const existing = byEmail.get(email);
     if (existing) {
       if (!existing.nameOverride && name) existing.name = name;
@@ -212,9 +217,12 @@ function syncWorkspaceUsers(organizationId, domain, directoryUsers) {
       if (!existing.organizationId) existing.organizationId = organizationId;
       if (managerEmail !== undefined) existing.managerEmail = managerEmail;
       if (department !== undefined) existing.department = department;
+      // Count the transition from active -> inactive (undefined counts as active).
+      if (existing.active !== false && !active) deactivated++;
+      existing.active = active;
       existing.directorySyncedAt = now;
       updated++;
-    } else {
+    } else if (active) {
       const u = {
         id: `user-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
         email,
@@ -227,6 +235,7 @@ function syncWorkspaceUsers(organizationId, domain, directoryUsers) {
         directorySyncedAt: now,
         managerEmail,
         department,
+        active: true,
       };
       users.push(u);
       byEmail.set(email, u);
@@ -235,7 +244,7 @@ function syncWorkspaceUsers(organizationId, domain, directoryUsers) {
   }
   const linked = resolveManagerIds(users, organizationId);
   saveUsers(users);
-  return { added, updated, linked };
+  return { added, updated, linked, deactivated };
 }
 
 function updateUserRole(email, role) {
@@ -2031,12 +2040,13 @@ app.post('/api/admin/sync-workspace-users', requireOrgAdminOrSuperAdmin, async (
       if (!pageToken) break;
     }
 
-    // Only sync active (non-suspended) accounts in this org's domain.
+    // Sync all accounts in this org's domain — including suspended ones, so their
+    // active status is imported and existing users who left get marked inactive.
     const domain = org.domain;
-    const active = directoryUsers.filter(u => !u.suspended);
-    const inDomain = active.filter(u => (u.primaryEmail || '').split('@')[1]?.toLowerCase() === domain);
-    const { added, updated, linked } = syncWorkspaceUsers(org.id, domain, inDomain);
-    console.log(`[workspace-sync] ${req.user.email}: ${directoryUsers.length} in directory, synced ${inDomain.length} (${added} added, ${updated} updated, ${linked} linked to a manager)`);
+    const inDomain = directoryUsers.filter(u => (u.primaryEmail || '').split('@')[1]?.toLowerCase() === domain);
+    const suspended = inDomain.filter(u => u.suspended).length;
+    const { added, updated, linked, deactivated } = syncWorkspaceUsers(org.id, domain, inDomain);
+    console.log(`[workspace-sync] ${req.user.email}: ${directoryUsers.length} in directory, synced ${inDomain.length} (${added} added, ${updated} updated, ${linked} linked to a manager, ${deactivated} deactivated, ${suspended} suspended)`);
 
     res.json({
       ok: true,
@@ -2045,8 +2055,9 @@ app.post('/api/admin/sync-workspace-users', requireOrgAdminOrSuperAdmin, async (
       added,
       updated,
       linked,
-      skippedSuspended: directoryUsers.length - active.length,
-      skippedOtherDomain: active.length - inDomain.length,
+      deactivated,
+      suspended,
+      skippedOtherDomain: directoryUsers.length - inDomain.length,
       domain,
     });
   } catch (e) {

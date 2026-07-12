@@ -249,8 +249,13 @@ export function WorkspaceUsersTable() {
                 const st = status[u.email];
                 const dirty = isDirty(u);
                 return (
-                  <tr key={u.email} className="border-t border-gray-100">
-                    <td className="py-1.5 px-3 text-gray-800 whitespace-nowrap" title={u.name}>{u.email}</td>
+                  <tr key={u.email} className={`border-t border-gray-100${u.active === false ? ' bg-gray-50 text-gray-400' : ''}`}>
+                    <td className="py-1.5 px-3 whitespace-nowrap" title={u.name}>
+                      <span className={u.active === false ? 'text-gray-500' : 'text-gray-800'}>{u.email}</span>
+                      {u.active === false && (
+                        <span className="ml-2 text-[10px] font-medium uppercase tracking-wide px-1.5 py-0.5 rounded bg-gray-200 text-gray-600">Inactive</span>
+                      )}
+                    </td>
                     <td className="py-1.5 px-3 min-w-[220px]">
                       <AutocompleteInput value={d.managerEmail} onChange={(v) => setDraft(u.email, 'managerEmail', v)}
                         options={userEmails} placeholder="manager@…" />
