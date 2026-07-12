@@ -1,0 +1,230 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { User } from '../../types';
+import { useAuth } from '../../context/AuthContext';
+import { AutocompleteInput } from './AutocompleteInput';
+
+const API_URL = import.meta.env.VITE_API_URL || '';
+
+type RowStatus = { state: 'saving' | 'saved' | 'error'; msg?: string };
+
+// Editable table of users -> manager email + department. Edits are written back
+// to Google Workspace (and mirrored locally) via PATCH /api/admin/workspace-user.
+export function WorkspaceUsersTable() {
+  const { login } = useAuth();
+  const [users, setUsers] = useState<User[]>([]);
+  const [drafts, setDrafts] = useState<Record<string, { managerEmail: string; department: string }>>({});
+  const [status, setStatus] = useState<Record<string, RowStatus>>({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [needsReauth, setNeedsReauth] = useState(false);
+  const [filter, setFilter] = useState('');
+  // Departments (defined list + the merged selectable list for autocomplete).
+  const [departments, setDepartments] = useState<string[]>([]);
+  const [definedDepartments, setDefinedDepartments] = useState<string[]>([]);
+  const [newDept, setNewDept] = useState('');
+
+  const userEmails = useMemo(() => users.map(u => u.email), [users]);
+
+  const loadDepartments = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/departments`, { credentials: 'include' });
+      if (!res.ok) return;
+      const data = await res.json();
+      setDepartments(data.departments || []);
+      setDefinedDepartments(data.defined || []);
+    } catch { /* ignore */ }
+  }, []);
+
+  const saveDefinedDepartments = async (next: string[]) => {
+    setDefinedDepartments(next);
+    try {
+      const res = await fetch(`${API_URL}/api/admin/departments`, {
+        method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ departments: next }),
+      });
+      if (res.ok) await loadDepartments();
+    } catch { /* ignore */ }
+  };
+
+  const addDepartment = () => {
+    const v = newDept.trim();
+    if (!v || definedDepartments.some(d => d.toLowerCase() === v.toLowerCase())) { setNewDept(''); return; }
+    saveDefinedDepartments([...definedDepartments, v]);
+    setNewDept('');
+  };
+  const removeDepartment = (d: string) => saveDefinedDepartments(definedDepartments.filter(x => x !== d));
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_URL}/api/users`, { credentials: 'include' });
+      if (!res.ok) { setError(`Couldn't load users (${res.status}).`); return; }
+      const data = await res.json();
+      const list: User[] = (data.users || []).slice().sort((a: User, b: User) => (a.email || '').localeCompare(b.email || ''));
+      setUsers(list);
+      const d: Record<string, { managerEmail: string; department: string }> = {};
+      for (const u of list) d[u.email] = { managerEmail: u.managerEmail || '', department: u.department || '' };
+      setDrafts(d);
+    } catch (err) {
+      setError(`Couldn't reach the server: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); loadDepartments(); }, [load, loadDepartments]);
+
+  const isDirty = (u: User) => {
+    const d = drafts[u.email];
+    if (!d) return false;
+    return d.managerEmail.trim().toLowerCase() !== (u.managerEmail || '').toLowerCase() ||
+      d.department.trim() !== (u.department || '');
+  };
+
+  const setDraft = (email: string, field: 'managerEmail' | 'department', value: string) => {
+    setDrafts(prev => ({ ...prev, [email]: { ...prev[email], [field]: value } }));
+    setStatus(prev => { const n = { ...prev }; delete n[email]; return n; });
+  };
+
+  const save = async (u: User) => {
+    const d = drafts[u.email];
+    if (!d) return;
+    const body: { email: string; managerEmail?: string; department?: string } = { email: u.email };
+    if (d.managerEmail.trim().toLowerCase() !== (u.managerEmail || '').toLowerCase()) body.managerEmail = d.managerEmail.trim();
+    if (d.department.trim() !== (u.department || '')) body.department = d.department.trim();
+    if (body.managerEmail === undefined && body.department === undefined) return;
+
+    setStatus(prev => ({ ...prev, [u.email]: { state: 'saving' } }));
+    setNeedsReauth(false);
+    try {
+      const res = await fetch(`${API_URL}/api/admin/workspace-user`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (data?.error === 'google_reauth_required') setNeedsReauth(true);
+        const detail = data?.detail ? ` (${data.detail})` : '';
+        setStatus(prev => ({ ...prev, [u.email]: { state: 'error', msg: `${data?.message || data?.error || `Error ${res.status}`}${detail}` } }));
+        return;
+      }
+      // Update the local baseline so the row is no longer dirty.
+      setUsers(prev => prev.map(x => x.email === u.email
+        ? { ...x, managerEmail: body.managerEmail !== undefined ? (data.managerEmail || undefined) : x.managerEmail, managerId: data.managerId ?? x.managerId, department: body.department !== undefined ? (body.department || undefined) : x.department }
+        : x));
+      setStatus(prev => ({ ...prev, [u.email]: { state: 'saved', msg: 'Saved to Workspace' } }));
+    } catch (err) {
+      setStatus(prev => ({ ...prev, [u.email]: { state: 'error', msg: err instanceof Error ? err.message : String(err) } }));
+    }
+  };
+
+  const visible = users.filter(u => {
+    if (!filter.trim()) return true;
+    const q = filter.toLowerCase();
+    return u.email.toLowerCase().includes(q) || (u.name || '').toLowerCase().includes(q) ||
+      (drafts[u.email]?.managerEmail || '').toLowerCase().includes(q) || (drafts[u.email]?.department || '').toLowerCase().includes(q);
+  });
+
+  return (
+    <div className="mt-6 pt-6 border-t border-gray-100">
+      <div className="flex items-center justify-between gap-3 mb-1">
+        <h3 className="font-medium text-gray-900">Users &amp; reporting</h3>
+        <button onClick={load} className="text-xs text-blue-600 hover:text-blue-700 font-medium">Refresh</button>
+      </div>
+      <p className="text-sm text-gray-600 mb-3">
+        Edit a user's manager email or department — changes are written back to Google Workspace when you click Save.
+        Start typing to pick from suggestions.
+      </p>
+
+      <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+        <div className="text-sm font-medium text-gray-800 mb-2">Departments</div>
+        <div className="flex flex-wrap items-center gap-1.5 mb-2">
+          {definedDepartments.length === 0 && <span className="text-xs text-gray-400">None defined yet — departments synced from Workspace are still selectable.</span>}
+          {definedDepartments.map(d => (
+            <span key={d} className="inline-flex items-center gap-1 text-xs bg-white border border-gray-300 rounded-full pl-2.5 pr-1 py-0.5 text-gray-700">
+              {d}
+              <button onClick={() => removeDepartment(d)} title="Remove" className="text-gray-400 hover:text-red-600 rounded-full w-4 h-4 leading-none">×</button>
+            </span>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <input
+            value={newDept}
+            onChange={(e) => setNewDept(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addDepartment(); } }}
+            placeholder="Add a department…"
+            className="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <button onClick={addDepartment} disabled={!newDept.trim()} className="text-sm font-medium px-3 py-1.5 rounded-lg bg-gray-200 text-gray-800 hover:bg-gray-300 disabled:opacity-40">Add</button>
+        </div>
+      </div>
+
+      {needsReauth && (
+        <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-900">
+          Google needs to be reconnected with directory write access.
+          <button onClick={login} className="ml-2 text-xs font-medium bg-amber-600 text-white rounded px-3 py-1.5 hover:bg-amber-700">Reconnect Google</button>
+        </div>
+      )}
+      {error && <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{error}</div>}
+
+      <input
+        type="text"
+        value={filter}
+        onChange={(e) => setFilter(e.target.value)}
+        placeholder="Filter by email, name, manager, or department…"
+        className="w-full mb-3 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+      />
+
+      {loading ? (
+        <p className="text-sm text-gray-500 py-4">Loading users…</p>
+      ) : (
+        <div className="overflow-x-auto border border-gray-200 rounded-lg">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 text-xs text-gray-500 text-left">
+              <tr>
+                <th className="py-2 px-3 font-medium">User email</th>
+                <th className="py-2 px-3 font-medium">Manager email</th>
+                <th className="py-2 px-3 font-medium">Department</th>
+                <th className="py-2 px-3 font-medium"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map(u => {
+                const d = drafts[u.email] || { managerEmail: '', department: '' };
+                const st = status[u.email];
+                const dirty = isDirty(u);
+                return (
+                  <tr key={u.email} className="border-t border-gray-100">
+                    <td className="py-1.5 px-3 text-gray-800 whitespace-nowrap" title={u.name}>{u.email}</td>
+                    <td className="py-1.5 px-3 min-w-[220px]">
+                      <AutocompleteInput value={d.managerEmail} onChange={(v) => setDraft(u.email, 'managerEmail', v)}
+                        options={userEmails} placeholder="manager@…" />
+                    </td>
+                    <td className="py-1.5 px-3 min-w-[180px]">
+                      <AutocompleteInput value={d.department} onChange={(v) => setDraft(u.email, 'department', v)}
+                        options={departments} placeholder="Department" />
+                    </td>
+                    <td className="py-1.5 px-3 whitespace-nowrap">
+                      <button onClick={() => save(u)} disabled={!dirty || st?.state === 'saving'}
+                        className="text-xs font-medium px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed">
+                        {st?.state === 'saving' ? 'Saving…' : 'Save'}
+                      </button>
+                      {st?.state === 'saved' && <span className="ml-2 text-xs text-green-600">{st.msg}</span>}
+                      {st?.state === 'error' && <span className="ml-2 text-xs text-red-600" title={st.msg}>Failed</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+              {visible.length === 0 && (
+                <tr><td colSpan={4} className="py-4 px-3 text-gray-400 text-center">No users.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
