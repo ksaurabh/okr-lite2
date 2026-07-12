@@ -8,3 +8,54 @@ body {
 #root {
   min-height: 100vh;
 }
+
+/* ---- Org chart: top-down tree with CSS connector lines ---- */
+.orgchart { --orgchart-line: #d1d5db; display: inline-block; }
+.orgchart ul {
+  display: flex;
+  justify-content: center;
+  position: relative;
+  padding-top: 24px;
+  margin: 0;
+  list-style: none;
+}
+.orgchart li {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  padding: 24px 10px 0;
+}
+/* Horizontal connectors joining a node to its siblings. */
+.orgchart li::before,
+.orgchart li::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 50%;
+  height: 24px;
+  border-top: 2px solid var(--orgchart-line);
+}
+.orgchart li::before { right: 50%; }
+.orgchart li::after { left: 50%; border-left: 2px solid var(--orgchart-line); }
+/* A single child needs only a straight drop, no horizontal bar. */
+.orgchart li:only-child::before,
+.orgchart li:only-child::after { display: none; }
+/* Trim the outer half of the bar on the first/last sibling. */
+.orgchart li:first-child::before,
+.orgchart li:last-child::after { border: 0 none; }
+.orgchart li:last-child::before { border-right: 2px solid var(--orgchart-line); }
+/* Vertical connector dropping from a parent into its children row. */
+.orgchart ul ul::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 0;
+  height: 24px;
+  border-left: 2px solid var(--orgchart-line);
+}
+/* Root row: no incoming connectors above the top-level node(s). */
+.orgchart > ul { padding-top: 0; }
+.orgchart > ul > li::before,
+.orgchart > ul > li::after { display: none; }
