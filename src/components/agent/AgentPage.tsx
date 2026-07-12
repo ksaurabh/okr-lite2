@@ -177,6 +177,37 @@ function parentBreakdown(tickets: JiraTicket[], browse: string): ParentGroupRow[
     (a.parentKey === 'None' ? 1 : b.parentKey === 'None' ? -1 : b.count - a.count) ||
     a.parentKey.localeCompare(b.parentKey));
 }
+
+// Pivot (assignee, parent) rows into a parent-issue (rows) × assignee (columns)
+// matrix, with accessors for count/sp cells, per-parent totals, per-assignee
+// column totals, and grand totals.
+function pivotParents(rows: ParentGroupRow[]) {
+  const assignees: string[] = [];
+  const aSeen = new Set<string>();
+  const parentMap = new Map<string, { key: string; summary: string; url: string }>();
+  const k = (p: string, a: string) => `${p} ${a}`;
+  const countAt = new Map<string, number>();
+  const spAt = new Map<string, number>();
+  for (const r of rows) {
+    if (!aSeen.has(r.assignee)) { aSeen.add(r.assignee); assignees.push(r.assignee); }
+    if (!parentMap.has(r.parentKey)) parentMap.set(r.parentKey, { key: r.parentKey, summary: r.parentSummary, url: r.parentUrl });
+    countAt.set(k(r.parentKey, r.assignee), (countAt.get(k(r.parentKey, r.assignee)) || 0) + r.count);
+    spAt.set(k(r.parentKey, r.assignee), (spAt.get(k(r.parentKey, r.assignee)) || 0) + r.sp);
+  }
+  const count = (p: string, a: string) => countAt.get(k(p, a)) || 0;
+  const sp = (p: string, a: string) => spAt.get(k(p, a)) || 0;
+  const parents = [...parentMap.values()];
+  const parentCount = (p: string) => assignees.reduce((n, a) => n + count(p, a), 0);
+  const parentSp = (p: string) => assignees.reduce((n, a) => n + sp(p, a), 0);
+  parents.sort((x, y) =>
+    (x.key === 'None' ? 1 : y.key === 'None' ? -1 : parentCount(y.key) - parentCount(x.key)) || x.key.localeCompare(y.key));
+  const aCount = (a: string) => parents.reduce((n, p) => n + count(p.key, a), 0);
+  const aSp = (a: string) => parents.reduce((n, p) => n + sp(p.key, a), 0);
+  assignees.sort((a, b) => (a === 'Unassigned' ? 1 : b === 'Unassigned' ? -1 : aCount(b) - aCount(a)) || a.localeCompare(b));
+  const grandCount = parents.reduce((n, p) => n + parentCount(p.key), 0);
+  const grandSp = parents.reduce((n, p) => n + parentSp(p.key), 0);
+  return { parents, assignees, count, sp, parentCount, parentSp, aCount, aSp, grandCount, grandSp };
+}
 const deliverableMsg = (summary: string, neededBy: string, assigneeId: string, assigneeName: string, ownerId: string): Msg =>
   ({ role: 'agent', kind: 'deliverable', summary, neededBy, assigneeId, assigneeName, ownerId });
 
@@ -750,49 +781,82 @@ function renderMsg(m: Msg): React.ReactNode {
               </tbody>
             </table>
           )}
-          {(m.parentRows?.length ?? 0) > 0 && (
-            <div className="mt-3">
-              <p className="text-xs text-gray-400 mb-1">By assignee &amp; parent issue</p>
-              <div className="overflow-x-auto">
-                <table className="text-sm">
-                  <thead>
-                    <tr className="text-xs text-gray-400 text-left">
-                      <th className="py-1 pr-6 font-medium">Assignee</th>
-                      <th className="py-1 pr-6 font-medium">Parent issue</th>
-                      <th className="py-1 pr-6 font-medium text-right">Issues</th>
-                      <th className="py-1 font-medium text-right">Story points</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {m.parentRows.map((r, i) => (
-                      <tr key={i} className="border-b border-gray-100 last:border-0">
-                        <td className="py-1 pr-6 text-gray-800 whitespace-nowrap">{r.assignee}</td>
-                        <td className="py-1 pr-6 text-gray-700">
-                          {r.parentKey === 'None' ? (
-                            <span className="text-gray-400">None</span>
-                          ) : (
-                            <>
-                              {r.parentUrl
-                                ? <a href={r.parentUrl} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline font-medium">{r.parentKey}</a>
-                                : <span className="font-medium">{r.parentKey}</span>}
-                              {r.parentSummary ? <span className="text-gray-500"> — {r.parentSummary}</span> : null}
-                            </>
-                          )}
-                        </td>
-                        <td className="py-1 pr-6 text-gray-600 text-right tabular-nums">{r.count}</td>
-                        <td className="py-1 text-gray-600 text-right tabular-nums">{r.sp}</td>
+          {(m.parentRows?.length ?? 0) > 0 && (() => {
+            const pv = pivotParents(m.parentRows);
+            const parentCell = (p: { key: string; summary: string; url: string }) =>
+              p.key === 'None' ? <span className="text-gray-400">None</span> : (
+                <>
+                  {p.url
+                    ? <a href={p.url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline font-medium">{p.key}</a>
+                    : <span className="font-medium">{p.key}</span>}
+                  {p.summary ? <span className="text-gray-500"> — {p.summary}</span> : null}
+                </>
+              );
+            const matrix = (label: string, at: (p: string, a: string) => number, rowTot: (p: string) => number, colTot: (a: string) => number, grand: number) => (
+              <div className="mt-3">
+                <p className="text-xs text-gray-400 mb-1">{label}</p>
+                <div className="overflow-x-auto">
+                  <table className="text-sm border-collapse">
+                    <thead>
+                      <tr className="text-xs text-gray-400 text-left">
+                        <th className="py-1 pr-6 font-medium">Parent issue</th>
+                        {pv.assignees.map(a => <th key={a} className="py-1 px-3 font-medium text-right">{a}</th>)}
+                        <th className="py-1 pl-3 font-medium text-right border-l border-gray-200">Total</th>
                       </tr>
-                    ))}
-                    <tr className="font-medium">
-                      <td className="py-1 pr-6" colSpan={2}>Total</td>
-                      <td className="py-1 pr-6 text-right tabular-nums">{m.parentRows.reduce((s, r) => s + r.count, 0)}</td>
-                      <td className="py-1 text-right tabular-nums">{m.parentRows.reduce((s, r) => s + r.sp, 0)}</td>
-                    </tr>
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {pv.parents.map(p => (
+                        <tr key={p.key} className="border-t border-gray-100">
+                          <td className="py-1 pr-6 text-gray-700 whitespace-nowrap">{parentCell(p)}</td>
+                          {pv.assignees.map(a => { const v = at(p.key, a); return <td key={a} className={`py-1 px-3 text-right tabular-nums ${v ? 'text-gray-700' : 'text-gray-300'}`}>{v || '·'}</td>; })}
+                          <td className="py-1 pl-3 text-right tabular-nums font-medium border-l border-gray-200">{rowTot(p.key)}</td>
+                        </tr>
+                      ))}
+                      <tr className="border-t border-gray-300 font-medium">
+                        <td className="py-1 pr-6">Total</td>
+                        {pv.assignees.map(a => <td key={a} className="py-1 px-3 text-right tabular-nums">{colTot(a)}</td>)}
+                        <td className="py-1 pl-3 text-right tabular-nums border-l border-gray-200">{grand}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
-          )}
+            );
+            return (
+              <div className="mt-3">
+                {matrix('Ticket count · parent issue (rows) × assignee (columns)', pv.count, pv.parentCount, pv.aCount, pv.grandCount)}
+                {matrix('Story points · parent issue (rows) × assignee (columns)', pv.sp, pv.parentSp, pv.aSp, pv.grandSp)}
+                <div className="mt-3">
+                  <p className="text-xs text-gray-400 mb-1">By parent issue</p>
+                  <div className="overflow-x-auto">
+                    <table className="text-sm">
+                      <thead>
+                        <tr className="text-xs text-gray-400 text-left">
+                          <th className="py-1 pr-6 font-medium">Parent issue</th>
+                          <th className="py-1 pr-6 font-medium text-right">Issues</th>
+                          <th className="py-1 font-medium text-right">Story points</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pv.parents.map(p => (
+                          <tr key={p.key} className="border-b border-gray-100 last:border-0">
+                            <td className="py-1 pr-6 text-gray-700 whitespace-nowrap">{parentCell(p)}</td>
+                            <td className="py-1 pr-6 text-gray-600 text-right tabular-nums">{pv.parentCount(p.key)}</td>
+                            <td className="py-1 text-gray-600 text-right tabular-nums">{pv.parentSp(p.key)}</td>
+                          </tr>
+                        ))}
+                        <tr className="font-medium">
+                          <td className="py-1 pr-6">Total</td>
+                          <td className="py-1 pr-6 text-right tabular-nums">{pv.grandCount}</td>
+                          <td className="py-1 text-right tabular-nums">{pv.grandSp}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       );
     case 'releases': {
