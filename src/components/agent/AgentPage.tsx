@@ -1061,6 +1061,29 @@ export function AgentPage() {
     showPromptFor('root');
   };
 
+  // Clears the current session's transcript and all flow state, returning to a
+  // blank chat with just the opening prompt. The debounced persist effect saves
+  // the cleared session back to the server.
+  const startOver = () => {
+    const st = initialState();
+    setStep(st.step);
+    setSelectedUserId(st.selectedUserId);
+    setDurationType(st.durationType);
+    setResultPeriodId(st.resultPeriodId);
+    setResultObjectiveIds(st.resultObjectiveIds);
+    setVpTargetId(st.vpTargetId);
+    setVpEachIndex(st.vpEachIndex);
+    setResultPlanId(st.resultPlanId);
+    setPlanChoiceIds(st.planChoiceIds);
+    setDurationGroupBaseIds(st.durationGroupBaseIds);
+    setDurationGroups(st.durationGroups);
+    setDelivSummary('');
+    setDelivNeededBy('');
+    setInput('');
+    setSessionTitle('New chat');
+    setTranscript([rootPromptMsg()]);
+  };
+
   const applyVp = async (ids: string[], v: number) => {
     try {
       for (const id of ids) await updateObjective(id, { valuePoints: v }, userEmail);
@@ -1469,6 +1492,13 @@ export function AgentPage() {
     <div>
       <div className="flex items-center gap-3 mb-4">
         <h1 className="text-xl font-bold text-gray-900">Agent</h1>
+        <button
+          onClick={startOver}
+          className="text-xs font-medium text-gray-600 hover:text-gray-900 border border-gray-300 rounded px-2 py-1"
+          title="Clear this chat and start over"
+        >
+          Start over
+        </button>
         <button
           onClick={() => setShowSessions(v => !v)}
           className="text-xs font-medium text-gray-600 hover:text-gray-900 border border-gray-300 rounded px-2 py-1"
