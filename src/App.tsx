@@ -7,6 +7,7 @@ import { ChecklistPage } from './components/checklist';
 import { ProgressPage } from './components/progress';
 import { PeriodsPage } from './components/periods';
 import { TeamsPage } from './components/teams/TeamsPage';
+import { OrgChartPage } from './components/orgchart';
 import { PlansPage } from './components/plans/PlansPage';
 import { PlanBuilderPage } from './components/plans/PlanBuilderPage';
 import { AgentPage } from './components/agent/AgentPage';
@@ -22,9 +23,9 @@ import { LoginPage, UnauthorizedPage, AuthCallback, AdminInviteAccept } from './
 import { Modal } from './components/common';
 import { useOKRStore } from './store/okrStore';
 
-type View = 'dashboard' | 'objectives' | 'plans' | 'plans-overview' | 'planbuilder' | 'weeklyupdates' | 'agent' | 'views' | 'checklist' | 'progress' | 'updates' | 'logwork' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin' | 'logs';
+type View = 'dashboard' | 'objectives' | 'plans' | 'plans-overview' | 'planbuilder' | 'weeklyupdates' | 'agent' | 'views' | 'checklist' | 'progress' | 'updates' | 'logwork' | 'teams' | 'orgchart' | 'periods' | 'tags' | 'settings' | 'admin' | 'logs';
 
-const ALL_VIEWS: View[] = ['dashboard', 'objectives', 'plans', 'plans-overview', 'planbuilder', 'weeklyupdates', 'agent', 'views', 'checklist', 'progress', 'updates', 'logwork', 'teams', 'periods', 'tags', 'settings', 'admin', 'logs'];
+const ALL_VIEWS: View[] = ['dashboard', 'objectives', 'plans', 'plans-overview', 'planbuilder', 'weeklyupdates', 'agent', 'views', 'checklist', 'progress', 'updates', 'logwork', 'teams', 'orgchart', 'periods', 'tags', 'settings', 'admin', 'logs'];
 const RESERVED_PATHS = new Set(['/auth/callback', '/invite/accept']);
 
 function viewFromPath(pathname: string): View {
@@ -136,6 +137,7 @@ function AppContent() {
       {currentView === 'plans' && <ListsPage onViewChange={setCurrentView} />}
       {currentView === 'logwork' && <LogWorkPage />}
       {currentView === 'teams' && <TeamsPage />}
+      {currentView === 'orgchart' && <OrgChartPage />}
       {currentView === 'periods' && <PeriodsPage />}
       {currentView === 'tags' && (
         <div className="text-center py-12 text-gray-500">
