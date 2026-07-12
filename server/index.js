@@ -1937,6 +1937,76 @@ app.get('/api/jira/release-tickets', requireAuth, async (req, res) => {
   }
 });
 
+// Tickets resolved in the last N days (default 7) in the release/engineering
+// project. Powers the "Weekly" autonomous action, which reports resolved count +
+// summed story points by assignee. Same ticket shape as /release-tickets.
+app.get('/api/jira/resolved-recently', requireAuth, async (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.json({ configured: false });
+  const cfg = getJiraConfig(org.id);
+  if (!cfg || !cfg.baseUrl || !cfg.email || !cfg.apiToken) {
+    return res.json({ configured: false });
+  }
+  const days = Math.max(1, Math.min(90, parseInt((req.query.days || '7').toString(), 10) || 7));
+  const explicitProject = (req.query.project || '').toString().trim();
+  const projectQuery = explicitProject || cfg.releaseProjectKey || JIRA_RELEASE_PROJECT_KEY;
+  const browse = cfg.baseUrl.replace(/\/$/, '');
+  try {
+    const meR = await jiraFetch(cfg, '/rest/api/3/myself');
+    if (meR.status === 401 || meR.status === 403) {
+      return res.status(403).json({
+        error: 'jira_auth_failed',
+        message: `Jira rejected the credentials (${meR.status}). The API token for ${cfg.email} is likely invalid or expired — generate a new one and update it under Admin → Jira.`,
+      });
+    }
+    const { project, projects, tried } = await resolveJiraProject(cfg, projectQuery);
+    if (!project) {
+      const visible = projects
+        .map(p => ({ key: String(p.key), name: String(p.name) }))
+        .sort((a, b) => a.key.localeCompare(b.key));
+      return res.status(404).json({
+        error: `No Jira project matching "${projectQuery}" is visible to the configured account.`,
+        projectNotFound: true,
+        projects: visible,
+        detail: tried.join(' | '),
+      });
+    }
+    const projectKey = project.key;
+    if (explicitProject && cfg.releaseProjectKey !== projectKey) {
+      saveJiraConfig(org.id, { releaseProjectKey: projectKey });
+    }
+
+    const spField = await resolveStoryPointsFieldId(cfg);
+    const jql = `project = "${projectKey}" AND resolutiondate >= -${days}d ORDER BY resolutiondate DESC`;
+    console.log(`[jira] resolved-recently project=${projectKey} days=${days} storyPointsField=${spField || 'none'} JQL: ${jql}`);
+    const fields = ['summary', 'status', 'assignee', 'issuetype', 'fixVersions', 'priority', 'resolutiondate', ...(spField ? [spField] : [])];
+    let data;
+    let r = await jiraFetch(cfg, '/rest/api/3/search/jql', { method: 'POST', body: JSON.stringify({ jql, fields, maxResults: 200 }) });
+    if (r.ok) {
+      data = await r.json();
+    } else {
+      r = await jiraFetch(cfg, `/rest/api/3/search?jql=${encodeURIComponent(jql)}&fields=${fields.join(',')}&maxResults=200`);
+      if (!r.ok) { const t = await r.text().catch(() => ''); return res.status(r.status).json({ error: `Jira search: ${r.status} ${t.slice(0, 300)}`, jql }); }
+      data = await r.json();
+    }
+    const tickets = (data.issues || []).map((it) => ({
+      key: it.key,
+      summary: it.fields?.summary || '',
+      status: it.fields?.status?.name || '',
+      statusCategory: it.fields?.status?.statusCategory?.key || '',
+      assignee: it.fields?.assignee?.displayName || 'Unassigned',
+      type: it.fields?.issuetype?.name || '',
+      url: `${browse}/browse/${it.key}`,
+      fixVersions: (it.fields?.fixVersions || []).map(v => v.name),
+      storyPoints: spField && it.fields?.[spField] != null ? (Number(it.fields[spField]) || 0) : 0,
+      resolved: it.fields?.resolutiondate || null,
+    }));
+    res.json({ configured: true, tickets, days, browse, project: projectKey, jql });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
 app.put('/api/admin/plan-stages', requireOrgAdminOrSuperAdmin, (req, res) => {
   const org = getOrganizationByDomain(req.user.domain);
   if (!org) return res.status(403).json({ error: 'No organization found' });
