@@ -8,7 +8,7 @@ import type { List, Objective, User, WorkflowStatus } from '../../types';
 const API_URL = import.meta.env.VITE_API_URL || '';
 const SESSIONS_URL = `${API_URL}/api/users/me/agent-sessions`;
 
-type Step = 'root' | 'treeBrowse' | 'durationGroupPick' | 'planMembershipPick' | 'user' | 'durationType' | 'planFilter' | 'planResults' | 'planSelect' | 'duration' | 'planPick' | 'result' | 'childPlanPick' | 'splitMenu' | 'vpEach' | 'vpPick' | 'itemAction' | 'changeDuration' | 'vpItem' | 'delivSummary' | 'delivDate' | 'delivAssignee' | 'delivParent' | 'reviewArea' | 'jiraProjectPick';
+type Step = 'root' | 'treeBrowse' | 'durationGroupPick' | 'planMembershipPick' | 'user' | 'durationType' | 'planFilter' | 'planResults' | 'planSelect' | 'duration' | 'planPick' | 'result' | 'childPlanPick' | 'splitMenu' | 'vpEach' | 'vpPick' | 'itemAction' | 'changeDuration' | 'vpItem' | 'delivSummary' | 'delivDate' | 'delivAssignee' | 'delivParent' | 'reviewArea' | 'jiraProjectPick' | 'settings' | 'autonomousActions' | 'autonomousEng';
 
 // Serializable chat messages (so sessions can be persisted and resumed).
 type Msg =
@@ -22,6 +22,7 @@ type Msg =
   | { role: 'agent'; kind: 'objlist'; title: string; ids: string[]; code?: string }
   | { role: 'agent'; kind: 'split'; who: string; parentListId: string; childListId: string; parentName: string; childName: string }
   | { role: 'agent'; kind: 'breakdown'; title: string; rows: { name: string; count: number; vp: number }[]; totalCount: number; totalVp: number }
+  | { role: 'agent'; kind: 'resolvedWeekly'; title: string; asOf: string; days: number; rows: { name: string; count: number; sp: number }[]; totalCount: number; totalSp: number }
   | { role: 'agent'; kind: 'deliverable'; summary: string; neededBy: string; assigneeId: string; assigneeName: string; ownerId: string }
   | { role: 'agent'; kind: 'releases'; area: string; sheetTitle: string; asOf: string; groups: { key: string; label: string; items: ReleaseItem[] }[]; recent: ReleaseItem[]; columns: string[]; note?: string; rawHeaders?: string[]; rawRows?: string[][] }
   | { role: 'agent'; kind: 'reauth'; message: string }
@@ -58,8 +59,22 @@ interface AgentSession {
   updatedAt: string;
 }
 
-const ROOT_OPTIONS = ['Set my OKRs', 'Browse Objective Tree', 'Add a deliverable', 'Review Progress'];
+const ROOT_OPTIONS = ['Set my OKRs', 'Browse Objective Tree', 'Add a deliverable', 'Review Progress', 'Settings'];
 const REVIEW_AREAS = ['Engineering'];
+const SETTINGS_OPTIONS = ['Autonomous Actions'];
+const AUTONOMOUS_AREAS = ['Engineering'];
+
+// A Loop / Autonomous Action: an action the agent performs on a cadence, with a
+// fully autonomous execution. `run` is the step routed to when it's invoked.
+interface AutonomousAction { label: string; cadence: string; summary: string; description: string; }
+const ENG_AUTONOMOUS_ACTIONS: AutonomousAction[] = [
+  {
+    label: 'Weekly - Last 7d done, and plan for next 7d',
+    cadence: 'Weekly',
+    summary: 'Last 7d done, and plan for next 7d',
+    description: 'Fetches tickets resolved in the last 7 days and reports the number of tickets resolved by assignee along with the sum of their story points by assignee.',
+  },
+];
 const DURATION_TYPES = [
   { label: 'Quarterly', type: 'quarter' },
   { label: 'Monthly', type: 'month' },
@@ -108,6 +123,9 @@ const PREV: Record<Step, Step> = {
   delivParent: 'delivAssignee',
   reviewArea: 'root',
   jiraProjectPick: 'reviewArea',
+  settings: 'root',
+  autonomousActions: 'settings',
+  autonomousEng: 'autonomousActions',
 };
 
 const VALUE_STEPS: Step[] = ['vpEach', 'vpItem'];
@@ -133,6 +151,8 @@ const splitMsg = (who: string, parentListId: string, childListId: string, parent
   ({ role: 'agent', kind: 'split', who, parentListId, childListId, parentName, childName });
 const breakdownMsg = (title: string, rows: { name: string; count: number; vp: number }[], totalCount: number, totalVp: number): Msg =>
   ({ role: 'agent', kind: 'breakdown', title, rows, totalCount, totalVp });
+const resolvedWeeklyMsg = (title: string, asOf: string, days: number, rows: { name: string; count: number; sp: number }[], totalCount: number, totalSp: number): Msg =>
+  ({ role: 'agent', kind: 'resolvedWeekly', title, asOf, days, rows, totalCount, totalSp });
 const deliverableMsg = (summary: string, neededBy: string, assigneeId: string, assigneeName: string, ownerId: string): Msg =>
   ({ role: 'agent', kind: 'deliverable', summary, neededBy, assigneeId, assigneeName, ownerId });
 
@@ -674,6 +694,40 @@ function renderMsg(m: Msg): React.ReactNode {
           </table>
         </div>
       );
+    case 'resolvedWeekly':
+      return (
+        <div>
+          <p className="mb-1">{m.title}</p>
+          <p className="text-xs text-gray-400 mb-1">Resolved in the last {m.days} days · Story / Bug / Sub-task by assignee · as of {m.asOf}</p>
+          {m.rows.length === 0 ? (
+            <p className="text-gray-500 text-sm">Nothing resolved in the last {m.days} days.</p>
+          ) : (
+            <table className="mt-1 text-sm">
+              <thead>
+                <tr className="text-xs text-gray-400 text-left">
+                  <th className="py-1 pr-6 font-medium">Assignee</th>
+                  <th className="py-1 pr-6 font-medium text-right">Tickets resolved</th>
+                  <th className="py-1 font-medium text-right">Story points</th>
+                </tr>
+              </thead>
+              <tbody>
+                {m.rows.map((r, i) => (
+                  <tr key={i} className="border-b border-gray-100 last:border-0">
+                    <td className="py-1 pr-6 text-gray-800">{r.name}</td>
+                    <td className="py-1 pr-6 text-gray-600 text-right tabular-nums">{r.count}</td>
+                    <td className="py-1 text-gray-600 text-right tabular-nums">{r.sp}</td>
+                  </tr>
+                ))}
+                <tr className="font-medium">
+                  <td className="py-1 pr-6">Total</td>
+                  <td className="py-1 pr-6 text-right tabular-nums">{m.totalCount}</td>
+                  <td className="py-1 text-right tabular-nums">{m.totalSp}</td>
+                </tr>
+              </tbody>
+            </table>
+          )}
+        </div>
+      );
     case 'releases': {
       // Tolerate older persisted messages that predate some of these fields.
       const groups = m.groups ?? [];
@@ -1204,6 +1258,9 @@ export function AgentPage() {
       case 'delivAssignee': return usersSorted.map(u => u.name || u.email);
       case 'delivParent': return [];
       case 'reviewArea': return REVIEW_AREAS;
+      case 'settings': return SETTINGS_OPTIONS;
+      case 'autonomousActions': return AUTONOMOUS_AREAS;
+      case 'autonomousEng': return ENG_AUTONOMOUS_ACTIONS.map(a => a.label);
       case 'jiraProjectPick': return [...jiraProjects.map(p => `${p.key} — ${p.name}`), 'None (skip Jira)'];
       case 'planPick': return planChoiceIds.map(planLabel);
       case 'vpPick': return resultObjectiveIds.map(itemLabel);
@@ -1460,6 +1517,9 @@ export function AgentPage() {
 
   // ---- Review Progress ----
   const reviewAreaPrompt = () => menuMsg('Which area would you like to review? Type the number:', REVIEW_AREAS);
+  const settingsPrompt = () => menuMsg('Settings — type the number of an option:', SETTINGS_OPTIONS);
+  const autonomousActionsPrompt = () => menuMsg('Autonomous Actions — pick an area. Type the number:', AUTONOMOUS_AREAS);
+  const autonomousEngPrompt = () => menuMsg('Engineering autonomous actions — type the number to run one:', ENG_AUTONOMOUS_ACTIONS.map(a => `${a.label} (${a.cadence})`));
 
   // Return to the area menu (Engineering, …) after a review finishes.
   const backToArea = () => { setStep('reviewArea'); appendAgent(reviewAreaPrompt()); };
@@ -1521,6 +1581,45 @@ export function AgentPage() {
     } catch (err) {
       appendAgent(textMsg(`Couldn't reach the server: ${err instanceof Error ? err.message : String(err)}`, 'error'));
       backToArea();
+    }
+  };
+
+  // Back to the Engineering autonomous-actions menu after an action runs.
+  const backToAutonomousEng = () => { setStep('autonomousEng'); appendAgent(autonomousEngPrompt()); };
+
+  // The "Weekly" autonomous action: fetch tickets resolved in the last 7 days and
+  // report resolved count + summed story points by assignee (Story/Bug/Sub-task).
+  const runWeeklyResolved = async () => {
+    appendAgent(textMsg('Fetching tickets resolved in the last 7 days…'));
+    try {
+      const res = await fetch(`${API_URL}/api/jira/resolved-recently?days=7`, { credentials: 'include' });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({} as { error?: string; message?: string; detail?: string }));
+        appendAgent(textMsg(`Couldn't load resolved tickets: ${d?.message || d?.error || `error ${res.status}`}`, 'error'));
+        if (d?.detail) appendAgent(textMsg(`Jira project lookup: ${d.detail}`));
+        backToAutonomousEng();
+        return;
+      }
+      const data = await res.json() as { configured: boolean; tickets?: JiraTicket[]; days?: number };
+      if (!data.configured) {
+        appendAgent(textMsg('Jira isn\'t configured for your organization yet — an admin can set it up under Admin → Jira.', 'error'));
+        backToAutonomousEng();
+        return;
+      }
+      const days = data.days || 7;
+      const workItems = (data.tickets || []).filter(isWorkItem);
+      const { rows, total } = countAndSpByAssignee(workItems);
+      const asOf = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+      appendAgent(resolvedWeeklyMsg(
+        'Weekly — resolved in the last 7 days',
+        asOf, days,
+        rows.map(([name, v]) => ({ name, count: v.count, sp: v.sp })),
+        total.count, total.sp,
+      ));
+      backToAutonomousEng();
+    } catch (err) {
+      appendAgent(textMsg(`Couldn't reach the server: ${err instanceof Error ? err.message : String(err)}`, 'error'));
+      backToAutonomousEng();
     }
   };
 
@@ -1651,6 +1750,9 @@ export function AgentPage() {
       case 'vpEach': appendAgent(vpEachPrompt(vpEachIndex)); break;
       case 'vpItem': appendAgent(vpItemPrompt(objTitle(vpTargetId))); break;
       case 'reviewArea': appendAgent(reviewAreaPrompt()); break;
+      case 'settings': appendAgent(settingsPrompt()); break;
+      case 'autonomousActions': appendAgent(autonomousActionsPrompt()); break;
+      case 'autonomousEng': appendAgent(autonomousEngPrompt()); break;
       case 'jiraProjectPick': appendAgent(jiraProjectPrompt(jiraProjects)); break;
     }
   };
@@ -1937,10 +2039,20 @@ export function AgentPage() {
         if (n === 1) showPromptFor('user');
         else if (n === 2) { setStep('treeBrowse'); appendAgent(treeBrowsePrompt()); }
         else if (n === 3) { setDelivSummary(''); setDelivNeededBy(''); setStep('delivSummary'); appendAgent(delivSummaryPrompt()); }
-        else { setStep('reviewArea'); appendAgent(reviewAreaPrompt()); }
+        else if (n === 4) { setStep('reviewArea'); appendAgent(reviewAreaPrompt()); }
+        else { setStep('settings'); appendAgent(settingsPrompt()); }
         break;
       case 'reviewArea':
         if (n === 1) reviewEngineering(); // shows its own follow-up prompt when done
+        break;
+      case 'settings':
+        if (n === 1) { setStep('autonomousActions'); appendAgent(autonomousActionsPrompt()); } // Autonomous Actions
+        break;
+      case 'autonomousActions':
+        if (n === 1) { setStep('autonomousEng'); appendAgent(autonomousEngPrompt()); } // Engineering
+        break;
+      case 'autonomousEng':
+        if (n === 1) runWeeklyResolved(); // shows its own follow-up prompt when done
         break;
       case 'jiraProjectPick':
         if (n <= jiraProjects.length) {
