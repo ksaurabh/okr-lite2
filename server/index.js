@@ -160,6 +160,84 @@ function getUsersByOrganization(orgId) {
   return users.filter(u => u.organizationId === orgId);
 }
 
+// The manager email from a Directory user's relations (projection=full).
+function directoryManagerEmail(d) {
+  const rel = (d.relations || []).find(r => (r.type || '').toLowerCase() === 'manager');
+  return rel?.value ? String(rel.value).toLowerCase() : undefined;
+}
+
+// The department from a Directory user's organizations (primary, else first).
+function directoryDepartment(d) {
+  const orgs = Array.isArray(d.organizations) ? d.organizations : [];
+  const org = orgs.find(o => o.primary) || orgs[0];
+  return org?.department ? String(org.department) : undefined;
+}
+
+// Resolve each org user's managerId from their managerEmail (in place). Returns
+// the number of users linked to a manager that exists in the system.
+function resolveManagerIds(users, organizationId) {
+  const idByEmail = new Map(users.filter(u => u.organizationId === organizationId).map(u => [u.email?.toLowerCase(), u.id]));
+  let linked = 0;
+  for (const u of users) {
+    if (u.organizationId !== organizationId) continue;
+    if (u.managerEmail) {
+      const mid = idByEmail.get(u.managerEmail);
+      u.managerId = mid || undefined; // clear if the manager isn't a known user
+      if (mid) linked++;
+    }
+  }
+  return linked;
+}
+
+// Create/update user records from Google Workspace Directory entries in a single
+// read/write pass. Unlike upsertUser this does NOT set lastLoginAt (these users
+// haven't signed in) and stamps directorySyncedAt. Captures each user's manager
+// (from directory relations) and resolves managerId. Returns { added, updated, linked }.
+function syncWorkspaceUsers(organizationId, domain, directoryUsers) {
+  const users = getUsers();
+  const byEmail = new Map(users.map(u => [u.email?.toLowerCase(), u]));
+  const now = new Date().toISOString();
+  let added = 0, updated = 0;
+  for (const d of directoryUsers) {
+    const email = (d.primaryEmail || '').toLowerCase();
+    if (!email) continue;
+    const name = d.name?.fullName || d.name?.givenName || email;
+    const picture = d.thumbnailPhotoUrl || undefined;
+    const managerEmail = directoryManagerEmail(d);
+    const department = directoryDepartment(d);
+    const existing = byEmail.get(email);
+    if (existing) {
+      if (!existing.nameOverride && name) existing.name = name;
+      if (picture) existing.picture = picture;
+      if (!existing.organizationId) existing.organizationId = organizationId;
+      if (managerEmail !== undefined) existing.managerEmail = managerEmail;
+      if (department !== undefined) existing.department = department;
+      existing.directorySyncedAt = now;
+      updated++;
+    } else {
+      const u = {
+        id: `user-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        email,
+        name,
+        picture,
+        domain,
+        organizationId,
+        role: 'user',
+        createdAt: now,
+        directorySyncedAt: now,
+        managerEmail,
+        department,
+      };
+      users.push(u);
+      byEmail.set(email, u);
+      added++;
+    }
+  }
+  const linked = resolveManagerIds(users, organizationId);
+  saveUsers(users);
+  return { added, updated, linked };
+}
+
 function updateUserRole(email, role) {
   const users = getUsers();
   const userIndex = users.findIndex(u => u.email === email);
@@ -473,11 +551,18 @@ passport.use(new GoogleStrategy({
 
 // Auth routes
 app.get('/auth/google', passport.authenticate('google', {
-  scope: ['profile', 'email', 'https://www.googleapis.com/auth/spreadsheets.readonly'],
+  scope: [
+    'profile',
+    'email',
+    'https://www.googleapis.com/auth/spreadsheets.readonly',
+    // Admin-only: read the Workspace directory for the user sync AND write back
+    // manager/department edits. Non-admins are granted the scope but Google's
+    // Directory API still refuses their token.
+    'https://www.googleapis.com/auth/admin.directory.user',
+  ],
   // Request offline access so we receive a refresh token on first consent.
-  // prompt=consent forces the consent screen so a newly-added scope
-  // (spreadsheets.readonly) is actually granted rather than silently skipped
-  // for users who already authorized profile/email.
+  // prompt=consent forces the consent screen so a newly-added scope is actually
+  // granted rather than silently skipped for users who already authorized.
   accessType: 'offline',
   prompt: 'consent',
 }));
@@ -1706,6 +1791,42 @@ app.get('/api/plan-stages', requireAuth, (req, res) => {
   res.json({ stages: org ? getPlanStages(org.id) : [...DEFAULT_PLAN_STAGES] });
 });
 
+// ---- Departments (org-level defined list, used for autocomplete) ----
+function getDepartments(orgId) {
+  const data = getOKRData();
+  const list = data.departments && data.departments[orgId];
+  return Array.isArray(list) ? list : [];
+}
+function saveDepartments(orgId, list) {
+  const data = getOKRData();
+  data.departments = data.departments || {};
+  data.departments[orgId] = list;
+  saveOKRData(data);
+  return data.departments[orgId];
+}
+
+// The selectable department list: the defined list merged with any already in
+// use on users (so directory-synced departments are always selectable).
+app.get('/api/departments', requireAuth, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.json({ departments: [], defined: [] });
+  const defined = getDepartments(org.id);
+  const inUse = [...new Set(getUsersByOrganization(org.id).map(u => u.department).filter(Boolean))];
+  const departments = [...new Set([...defined, ...inUse])].sort((a, b) => a.localeCompare(b));
+  res.json({ departments, defined });
+});
+
+app.put('/api/admin/departments', requireOrgAdminOrSuperAdmin, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.status(403).json({ error: 'No organization found' });
+  const { departments } = req.body || {};
+  if (!Array.isArray(departments)) return res.status(400).json({ error: 'departments must be an array' });
+  const clean = [];
+  for (const d of departments) { const v = String(d).trim(); if (v && !clean.includes(v)) clean.push(v); }
+  saveDepartments(org.id, clean);
+  res.json({ departments: getDepartments(org.id) });
+});
+
 // ============ Review Progress: Release Calendar (Google Sheet) ============
 
 // The "Release Calendar" spreadsheet, read on the signed-in user's behalf via
@@ -1831,6 +1952,205 @@ app.get('/api/release-calendar', requireAuth, async (req, res) => {
   } catch (e) {
     console.error('[release-calendar] unexpected error:', e);
     res.status(502).json({ error: 'sheet_fetch_failed', message: String(e?.message || e) });
+  }
+});
+
+// Sync the org's user list with the Google Workspace directory, using the
+// signed-in admin's token. Admin-only (the Directory API also refuses a
+// non-admin token, so this is defence in depth).
+app.post('/api/admin/sync-workspace-users', requireOrgAdminOrSuperAdmin, async (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.status(403).json({ error: 'No organization found for your account.' });
+
+  const g = req.realUser?.google || req.user?.google;
+  const token = await getGoogleAccessToken(req);
+  const reauth = (message) => res.status(403).json({ error: 'google_reauth_required', message });
+  if (!token) return reauth('Reconnect your Google account (sign out and back in) to grant Workspace directory access.');
+  if (g?.scope && !g.scope.includes('admin.directory')) {
+    return reauth('Your Google sign-in did not include Workspace directory access. Sign out and back in to grant it.');
+  }
+
+  const authHeader = { Authorization: `Bearer ${token}` };
+  try {
+    const directoryUsers = [];
+    let pageToken = '';
+    for (let i = 0; i < 100; i++) { // page cap (~50k users)
+      const params = new URLSearchParams({ customer: 'my_customer', maxResults: '500', orderBy: 'email', viewType: 'admin_view', projection: 'full' });
+      if (pageToken) params.set('pageToken', pageToken);
+      const r = await fetch(`https://admin.googleapis.com/admin/directory/v1/users?${params.toString()}`, { headers: authHeader });
+      if (r.status === 401) return reauth('Reconnect your Google account to grant Workspace directory access.');
+      if (r.status === 403) {
+        const detail = googleErrorDetail(await r.text().catch(() => ''));
+        return res.status(403).json({ error: 'not_workspace_admin', message: 'Google refused the directory listing. Syncing users requires a Google Workspace admin account.', detail });
+      }
+      if (!r.ok) {
+        const detail = googleErrorDetail(await r.text().catch(() => ''));
+        return res.status(502).json({ error: 'directory_fetch_failed', status: r.status, detail });
+      }
+      const d = await r.json();
+      directoryUsers.push(...(d.users || []));
+      pageToken = d.nextPageToken || '';
+      if (!pageToken) break;
+    }
+
+    // Only sync active (non-suspended) accounts in this org's domain.
+    const domain = org.domain;
+    const active = directoryUsers.filter(u => !u.suspended);
+    const inDomain = active.filter(u => (u.primaryEmail || '').split('@')[1]?.toLowerCase() === domain);
+    const { added, updated, linked } = syncWorkspaceUsers(org.id, domain, inDomain);
+    console.log(`[workspace-sync] ${req.user.email}: ${directoryUsers.length} in directory, synced ${inDomain.length} (${added} added, ${updated} updated, ${linked} linked to a manager)`);
+
+    res.json({
+      ok: true,
+      totalDirectory: directoryUsers.length,
+      synced: inDomain.length,
+      added,
+      updated,
+      linked,
+      skippedSuspended: directoryUsers.length - active.length,
+      skippedOtherDomain: active.length - inDomain.length,
+      domain,
+    });
+  } catch (e) {
+    console.error('[workspace-sync] error:', e);
+    res.status(502).json({ error: 'directory_fetch_failed', message: String(e?.message || e) });
+  }
+});
+
+// ---- Reporting structure (manager relationships) export/import ----
+
+// Minimal RFC-4180-ish CSV parser (handles quoted fields, commas, newlines).
+function parseCsv(text) {
+  const rows = [];
+  let row = [], field = '', inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else inQ = false; }
+      else field += c;
+    } else if (c === '"') inQ = true;
+    else if (c === ',') { row.push(field); field = ''; }
+    else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+    else if (c === '\r') { /* ignore */ }
+    else field += c;
+  }
+  if (field !== '' || row.length) { row.push(field); rows.push(row); }
+  return rows;
+}
+const csvEsc = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+
+// Export the org's reporting structure as CSV.
+app.get('/api/admin/reporting-structure', requireOrgAdminOrSuperAdmin, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.status(403).json({ error: 'No organization found' });
+  const users = getUsersByOrganization(org.id).slice().sort((a, b) => (a.email || '').localeCompare(b.email || ''));
+  const byId = new Map(users.map(u => [u.id, u]));
+  const rows = [['email', 'name', 'manager_email', 'manager_name']];
+  for (const u of users) {
+    const mgr = u.managerId ? byId.get(u.managerId) : null;
+    rows.push([u.email || '', u.name || '', u.managerEmail || mgr?.email || '', mgr?.name || '']);
+  }
+  const csv = rows.map(r => r.map(csvEsc).join(',')).join('\n');
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="reporting-structure-${org.domain}.csv"`);
+  res.send(csv);
+});
+
+// Import a reporting structure from CSV (columns: email, manager_email).
+app.post('/api/admin/reporting-structure', requireOrgAdminOrSuperAdmin, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.status(403).json({ error: 'No organization found' });
+  const { csv } = req.body || {};
+  if (typeof csv !== 'string' || !csv.trim()) return res.status(400).json({ error: 'Provide CSV content in { csv }.' });
+
+  const rows = parseCsv(csv).filter(r => r.some(c => (c || '').trim() !== ''));
+  if (rows.length < 2) return res.status(400).json({ error: 'CSV has no data rows.' });
+  const header = rows[0].map(h => h.trim().toLowerCase());
+  const emailIdx = header.indexOf('email');
+  const mgrIdx = header.findIndex(h => h === 'manager_email' || h === 'manager');
+  if (emailIdx < 0 || mgrIdx < 0) return res.status(400).json({ error: 'CSV must have "email" and "manager_email" column headers.' });
+
+  const users = getUsers();
+  const byEmail = new Map(users.map(u => [u.email?.toLowerCase(), u]));
+  let updated = 0;
+  const unmatched = new Set(), unknownManagers = new Set();
+  for (const r of rows.slice(1)) {
+    const email = (r[emailIdx] || '').trim().toLowerCase();
+    const mgrEmail = (r[mgrIdx] || '').trim().toLowerCase();
+    if (!email) continue;
+    const u = byEmail.get(email);
+    if (!u || u.organizationId !== org.id) { unmatched.add(email); continue; }
+    u.managerEmail = mgrEmail || undefined;
+    updated++;
+    if (mgrEmail && !byEmail.get(mgrEmail)) unknownManagers.add(mgrEmail);
+  }
+  const linked = resolveManagerIds(users, org.id);
+  saveUsers(users);
+  res.json({ ok: true, updated, linked, unmatched: [...unmatched].slice(0, 50), unknownManagers: [...unknownManagers].slice(0, 50) });
+});
+
+// Update a user's manager and/or department, writing the change back to the
+// Google Workspace directory (and mirroring it locally). Admin-only.
+app.patch('/api/admin/workspace-user', requireOrgAdminOrSuperAdmin, async (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.status(403).json({ error: 'No organization found' });
+  const email = (req.body?.email || '').trim().toLowerCase();
+  const { managerEmail, department } = req.body || {};
+  if (!email) return res.status(400).json({ error: 'email is required' });
+  if (managerEmail === undefined && department === undefined) return res.status(400).json({ error: 'Nothing to update' });
+
+  const g = req.realUser?.google || req.user?.google;
+  const token = await getGoogleAccessToken(req);
+  const reauth = (m) => res.status(403).json({ error: 'google_reauth_required', message: m });
+  if (!token) return reauth('Reconnect your Google account (sign out and back in) to grant Workspace directory access.');
+  if (g?.scope && !g.scope.includes('admin.directory')) {
+    return reauth('Your Google sign-in did not include Workspace directory write access. Sign out and back in to grant it.');
+  }
+  const bearer = { Authorization: `Bearer ${token}` };
+  const userUrl = `https://admin.googleapis.com/admin/directory/v1/users/${encodeURIComponent(email)}`;
+  try {
+    // Read current relations/organizations so a PATCH doesn't clobber other entries.
+    const gr = await fetch(`${userUrl}?projection=full`, { headers: bearer });
+    if (gr.status === 401) return reauth('Reconnect your Google account to grant Workspace directory access.');
+    if (gr.status === 403) return res.status(403).json({ error: 'not_workspace_admin', message: 'Editing users requires a Google Workspace admin account with write access.', detail: googleErrorDetail(await gr.text().catch(() => '')) });
+    if (gr.status === 404) return res.status(404).json({ error: 'user_not_found', message: `${email} was not found in the Workspace directory.` });
+    if (!gr.ok) return res.status(502).json({ error: 'directory_fetch_failed', detail: googleErrorDetail(await gr.text().catch(() => '')) });
+    const cur = await gr.json();
+
+    const patch = {};
+    let normalizedManager;
+    if (managerEmail !== undefined) {
+      normalizedManager = (managerEmail || '').trim().toLowerCase();
+      const rels = (cur.relations || []).filter(r => (r.type || '').toLowerCase() !== 'manager');
+      if (normalizedManager) rels.push({ type: 'manager', value: normalizedManager });
+      patch.relations = rels;
+    }
+    if (department !== undefined) {
+      const orgs = Array.isArray(cur.organizations) && cur.organizations.length ? cur.organizations.map(o => ({ ...o })) : [{ primary: true }];
+      let idx = orgs.findIndex(o => o.primary);
+      if (idx < 0) idx = 0;
+      if (department) orgs[idx].department = department; else delete orgs[idx].department;
+      patch.organizations = orgs;
+    }
+
+    const pr = await fetch(userUrl, { method: 'PATCH', headers: { ...bearer, 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
+    if (pr.status === 403) return res.status(403).json({ error: 'not_workspace_admin', message: 'Google refused the update. Requires a Workspace admin with write access.', detail: googleErrorDetail(await pr.text().catch(() => '')) });
+    if (!pr.ok) return res.status(502).json({ error: 'directory_update_failed', status: pr.status, detail: googleErrorDetail(await pr.text().catch(() => '')) });
+
+    // Mirror locally.
+    const users = getUsers();
+    const u = users.find(x => x.email?.toLowerCase() === email && x.organizationId === org.id);
+    if (u) {
+      if (managerEmail !== undefined) u.managerEmail = normalizedManager || undefined;
+      if (department !== undefined) u.department = department || undefined;
+      resolveManagerIds(users, org.id);
+      saveUsers(users);
+    }
+    console.log(`[workspace-edit] ${req.user.email} updated ${email}: ${JSON.stringify({ managerEmail, department })}`);
+    res.json({ ok: true, email, managerEmail: normalizedManager, department, managerId: u?.managerId });
+  } catch (e) {
+    console.error('[workspace-edit] error:', e);
+    res.status(502).json({ error: 'directory_update_failed', message: String(e?.message || e) });
   }
 });
 
