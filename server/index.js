@@ -1792,17 +1792,30 @@ app.get('/api/plan-stages', requireAuth, (req, res) => {
 });
 
 // ---- Departments (org-level defined list, used for autocomplete) ----
+// A defined department is { name, parentName } where parentName is the name of its
+// parent department (or null for a top-level department). Older data stored a plain
+// string per department; those normalize to a top-level department.
+function normalizeDepartment(d) {
+  if (typeof d === 'string') { const name = d.trim(); return name ? { name, parentName: null } : null; }
+  if (d && typeof d === 'object' && d.name != null) {
+    const name = String(d.name).trim();
+    if (!name) return null;
+    const parentName = d.parentName != null && String(d.parentName).trim() ? String(d.parentName).trim() : null;
+    return { name, parentName };
+  }
+  return null;
+}
 function getDepartments(orgId) {
   const data = getOKRData();
   const list = data.departments && data.departments[orgId];
-  return Array.isArray(list) ? list : [];
+  return (Array.isArray(list) ? list : []).map(normalizeDepartment).filter(Boolean);
 }
 function saveDepartments(orgId, list) {
   const data = getOKRData();
   data.departments = data.departments || {};
   data.departments[orgId] = list;
   saveOKRData(data);
-  return data.departments[orgId];
+  return getDepartments(orgId);
 }
 
 // The selectable department list: the defined list merged with any already in
@@ -1812,7 +1825,7 @@ app.get('/api/departments', requireAuth, (req, res) => {
   if (!org) return res.json({ departments: [], defined: [] });
   const defined = getDepartments(org.id);
   const inUse = [...new Set(getUsersByOrganization(org.id).map(u => u.department).filter(Boolean))];
-  const departments = [...new Set([...defined, ...inUse])].sort((a, b) => a.localeCompare(b));
+  const departments = [...new Set([...defined.map(d => d.name), ...inUse])].sort((a, b) => a.localeCompare(b));
   res.json({ departments, defined });
 });
 
@@ -1821,8 +1834,33 @@ app.put('/api/admin/departments', requireOrgAdminOrSuperAdmin, (req, res) => {
   if (!org) return res.status(403).json({ error: 'No organization found' });
   const { departments } = req.body || {};
   if (!Array.isArray(departments)) return res.status(400).json({ error: 'departments must be an array' });
+  // Normalize + dedupe by name (case-insensitive; first occurrence wins).
   const clean = [];
-  for (const d of departments) { const v = String(d).trim(); if (v && !clean.includes(v)) clean.push(v); }
+  const byLower = new Map();
+  for (const raw of departments) {
+    const d = normalizeDepartment(raw);
+    if (!d || byLower.has(d.name.toLowerCase())) continue;
+    const entry = { name: d.name, parentName: d.parentName };
+    byLower.set(entry.name.toLowerCase(), entry);
+    clean.push(entry);
+  }
+  // Resolve each parent to a canonical existing name; drop parents that don't
+  // exist or point at self.
+  for (const entry of clean) {
+    const parent = entry.parentName ? byLower.get(entry.parentName.toLowerCase()) : null;
+    entry.parentName = parent && parent.name.toLowerCase() !== entry.name.toLowerCase() ? parent.name : null;
+  }
+  // Break cycles: walk ancestors, cutting the parent link that closes a loop.
+  for (const entry of clean) {
+    const seen = new Set([entry.name.toLowerCase()]);
+    let cur = entry.parentName;
+    while (cur) {
+      const lower = cur.toLowerCase();
+      if (seen.has(lower)) { entry.parentName = null; break; }
+      seen.add(lower);
+      cur = byLower.get(lower)?.parentName || null;
+    }
+  }
   saveDepartments(org.id, clean);
   res.json({ departments: getDepartments(org.id) });
 });
