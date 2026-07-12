@@ -8,7 +8,7 @@ import type { List, Objective, User, WorkflowStatus } from '../../types';
 const API_URL = import.meta.env.VITE_API_URL || '';
 const SESSIONS_URL = `${API_URL}/api/users/me/agent-sessions`;
 
-type Step = 'root' | 'treeBrowse' | 'durationGroupPick' | 'planMembershipPick' | 'user' | 'durationType' | 'planFilter' | 'planResults' | 'planSelect' | 'duration' | 'planPick' | 'result' | 'childPlanPick' | 'splitMenu' | 'vpEach' | 'vpPick' | 'itemAction' | 'changeDuration' | 'vpItem' | 'delivSummary' | 'delivDate' | 'delivAssignee' | 'delivParent';
+type Step = 'root' | 'treeBrowse' | 'durationGroupPick' | 'planMembershipPick' | 'user' | 'durationType' | 'planFilter' | 'planResults' | 'planSelect' | 'duration' | 'planPick' | 'result' | 'childPlanPick' | 'splitMenu' | 'vpEach' | 'vpPick' | 'itemAction' | 'changeDuration' | 'vpItem' | 'delivSummary' | 'delivDate' | 'delivAssignee' | 'delivParent' | 'reviewArea';
 
 // Serializable chat messages (so sessions can be persisted and resumed).
 type Msg =
@@ -22,7 +22,13 @@ type Msg =
   | { role: 'agent'; kind: 'objlist'; title: string; ids: string[]; code?: string }
   | { role: 'agent'; kind: 'split'; who: string; parentListId: string; childListId: string; parentName: string; childName: string }
   | { role: 'agent'; kind: 'breakdown'; title: string; rows: { name: string; count: number; vp: number }[]; totalCount: number; totalVp: number }
-  | { role: 'agent'; kind: 'deliverable'; summary: string; neededBy: string; assigneeId: string; assigneeName: string; ownerId: string };
+  | { role: 'agent'; kind: 'deliverable'; summary: string; neededBy: string; assigneeId: string; assigneeName: string; ownerId: string }
+  | { role: 'agent'; kind: 'releases'; area: string; sheetTitle: string; asOf: string; groups: { key: string; label: string; items: ReleaseItem[] }[]; recent: ReleaseItem[]; columns: string[]; note?: string; rawHeaders?: string[]; rawRows?: string[][] }
+  | { role: 'agent'; kind: 'reauth'; message: string };
+
+// One classified row from the Release Calendar. `fields` holds the values for the
+// detected display columns (name/status/start/prod); `why` explains the bucket.
+interface ReleaseItem { name: string; fields: Record<string, string>; why: string; }
 
 interface SessionState {
   step: Step;
@@ -48,7 +54,8 @@ interface AgentSession {
   updatedAt: string;
 }
 
-const ROOT_OPTIONS = ['Set my OKRs', 'Browse Objective Tree', 'Add a deliverable'];
+const ROOT_OPTIONS = ['Set my OKRs', 'Browse Objective Tree', 'Add a deliverable', 'Review Progress'];
+const REVIEW_AREAS = ['Engineering'];
 const DURATION_TYPES = [
   { label: 'Quarterly', type: 'quarter' },
   { label: 'Monthly', type: 'month' },
@@ -95,6 +102,7 @@ const PREV: Record<Step, Step> = {
   delivDate: 'delivSummary',
   delivAssignee: 'delivDate',
   delivParent: 'delivAssignee',
+  reviewArea: 'root',
 };
 
 const VALUE_STEPS: Step[] = ['vpEach', 'vpItem'];
@@ -122,6 +130,156 @@ const breakdownMsg = (title: string, rows: { name: string; count: number; vp: nu
   ({ role: 'agent', kind: 'breakdown', title, rows, totalCount, totalVp });
 const deliverableMsg = (summary: string, neededBy: string, assigneeId: string, assigneeName: string, ownerId: string): Msg =>
   ({ role: 'agent', kind: 'deliverable', summary, neededBy, assigneeId, assigneeName, ownerId });
+
+// ---- Release Calendar parsing (Review Progress) ----
+
+// Parse a spreadsheet cell into a local date (midnight), or null. Handles the
+// common formatted shapes Sheets returns: ISO (2026-07-15), US (7/15/2026),
+// and month-name ("Jul 15, 2026" / "15 Jul 2026").
+function parseSheetDate(raw?: string): Date | null {
+  const s = String(raw ?? '').trim();
+  if (!s) return null;
+  // Year-first with -, ., or / separators: 2025-11-24, 2025.11.24, 2025/11/24
+  let m = s.match(/^(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})$/);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+  // Day-first dotted (European): 24.11.2025 => 24 Nov 2025
+  m = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (m) return new Date(+m[3], +m[2] - 1, +m[1]);
+  // US month-first: 11/24/2025 or 11-24-25
+  m = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
+  if (m) { const y = +m[3] < 100 ? 2000 + +m[3] : +m[3]; return new Date(y, +m[1] - 1, +m[2]); }
+  const t = Date.parse(s); // "Jul 15, 2026", "15 Jul 2026", etc.
+  if (!isNaN(t)) { const d = new Date(t); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+  return null;
+}
+
+const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+const addDays = (d: Date, n: number) => { const x = startOfDay(d); x.setDate(x.getDate() + n); return x; };
+const fmtShort = (d: Date | null) => d ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+
+// Classify the Release Calendar. Columns are pipeline stages (… Dev … Pre-Prod,
+// Prod) and each cell is the date a release reached that stage. Per the sheet's
+// convention: Dev = when the release starts, Prod = when it reaches production
+// (the finish line). Buckets: in progress now, shipped in the last 30 days
+// (by Prod), and starting in the next 30 days (by Dev).
+function classifyReleases(headers: string[], rows: string[][], today: Date) {
+  const norm = (h: string) => String(h ?? '').toLowerCase().trim();
+  const exact = (name: string) => headers.findIndex(h => norm(h) === name);
+
+  let nameIdx = headers.findIndex(h => /version|release|feature/i.test(String(h ?? '')));
+  if (nameIdx < 0) nameIdx = 0;
+  const branchIdx = headers.findIndex(h => /branch/i.test(String(h ?? '')));
+  // Prod is matched exactly so it doesn't collide with "Pre-Prod".
+  const prodIdx = exact('prod') >= 0 ? exact('prod') : exact('production');
+  const devIdx = exact('dev');
+
+  const t0 = startOfDay(today);
+  const past30 = addDays(t0, -30);
+  const next30 = addDays(t0, 30);
+  const cellOf = (row: string[], i: number) => (i >= 0 ? String(row[i] ?? '').trim() : '');
+
+  // Stage/date columns (cells mostly parse as dates), used to describe where a
+  // release currently sits. Excludes the name and branch columns.
+  const dateIdxs = headers.map((_, i) => i).filter(i => {
+    if (i === nameIdx || i === branchIdx) return false;
+    let dated = 0, nonEmpty = 0;
+    for (const r of rows) { const v = cellOf(r, i); if (v) { nonEmpty++; if (parseSheetDate(v)) dated++; } }
+    return nonEmpty > 0 && dated >= Math.ceil(nonEmpty / 2);
+  });
+
+  // Rightmost stage already reached (date ≤ today), and the next planned stage.
+  const currentStage = (row: string[]) => {
+    let last: { name: string; d: Date } | null = null;
+    for (const i of dateIdxs) { const d = parseSheetDate(cellOf(row, i)); if (d && d <= t0) last = { name: headers[i], d }; }
+    return last;
+  };
+  const nextStage = (row: string[]) => {
+    for (const i of dateIdxs) { const d = parseSheetDate(cellOf(row, i)); if (d && d > t0) return { name: headers[i], d }; }
+    return null;
+  };
+  const stageDatesOf = (row: string[]) => dateIdxs.map(i => parseSheetDate(cellOf(row, i))).filter((d): d is Date => !!d);
+
+  const columns: string[] = [];
+  const pushCol = (label?: string) => { if (label && !columns.includes(label)) columns.push(label); };
+  pushCol(headers[nameIdx]);
+  if (branchIdx >= 0) pushCol(headers[branchIdx]);
+  if (devIdx >= 0) pushCol(headers[devIdx]);
+  if (prodIdx >= 0) pushCol(headers[prodIdx]);
+
+  const fieldsOf = (row: string[]): Record<string, string> => {
+    const f: Record<string, string> = {};
+    f[headers[nameIdx]] = cellOf(row, nameIdx) || '(untitled)';
+    if (branchIdx >= 0) f[headers[branchIdx]] = cellOf(row, branchIdx);
+    if (devIdx >= 0) f[headers[devIdx]] = cellOf(row, devIdx);
+    if (prodIdx >= 0) f[headers[prodIdx]] = cellOf(row, prodIdx);
+    return f;
+  };
+
+  const groups = {
+    in_progress: { key: 'in_progress', label: 'In progress now', items: [] as ReleaseItem[] },
+    completed: { key: 'completed', label: 'Just shipped (Prod in the last 30 days)', items: [] as ReleaseItem[] },
+    upcoming: { key: 'upcoming', label: 'Starting in the next 30 days (Dev)', items: [] as ReleaseItem[] },
+  };
+
+  for (const row of rows) {
+    const dev = devIdx >= 0 ? parseSheetDate(cellOf(row, devIdx)) : null;
+    const prod = prodIdx >= 0 ? parseSheetDate(cellOf(row, prodIdx)) : null;
+    const name = cellOf(row, nameIdx) || '(untitled)';
+    const fields = fieldsOf(row);
+
+    const stageDates = stageDatesOf(row);
+    const maxStage = stageDates.length ? new Date(Math.max(...stageDates.map(d => d.getTime()))) : null;
+    const hasFuture = stageDates.some(d => d > t0);
+    const recentlyActive = !!maxStage && maxStage >= past30;
+
+    const justShipped = !!prod && prod <= t0 && prod >= past30;
+    const shippedLongAgo = !!prod && prod < past30;
+    // In progress: started Dev, not yet in Prod, and still active (a future
+    // milestone, or activity within the last 30 days) — so long-dead rows with a
+    // Dev date but no Prod don't linger here forever.
+    const inProgress = !justShipped && !shippedLongAgo && !!dev && dev <= t0 && (!prod || prod > t0) && (hasFuture || recentlyActive);
+    const aboutToStart = !justShipped && !shippedLongAgo && !inProgress && !!dev && dev > t0 && dev <= next30;
+
+    // Priority: in progress > just shipped > about to start (each row shown once).
+    if (inProgress) {
+      const nxt = nextStage(row);
+      const cur = currentStage(row);
+      let why = nxt ? `Next: ${nxt.name} ${fmtShort(nxt.d)}` : (cur ? `Reached ${cur.name} ${fmtShort(cur.d)}` : `Dev ${fmtShort(dev)}`);
+      if (prod && prod > t0) why += ` · Prod due ${fmtShort(prod)}`;
+      groups.in_progress.items.push({ name, fields, why });
+    } else if (justShipped) {
+      groups.completed.items.push({ name, fields, why: `Shipped to Prod ${fmtShort(prod)}` });
+    } else if (aboutToStart) {
+      groups.upcoming.items.push({ name, fields, why: `Dev starts ${fmtShort(dev)}` });
+    }
+  }
+
+  // "Last 3 releases": most recently shipped by Prod date — shown as context when
+  // nothing is in the three focus windows.
+  let recent: ReleaseItem[] = [];
+  if (prodIdx >= 0) {
+    recent = rows
+      .map(row => ({ row, d: parseSheetDate(cellOf(row, prodIdx)) }))
+      .filter((x): x is { row: string[]; d: Date } => !!x.d && x.d <= t0)
+      .sort((a, b) => b.d.getTime() - a.d.getTime())
+      .slice(0, 3)
+      .map(({ row, d }) => ({ name: cellOf(row, nameIdx) || '(untitled)', fields: fieldsOf(row), why: `Shipped ${fmtShort(d)}` }));
+  }
+
+  const detected = devIdx >= 0 || prodIdx >= 0;
+  const orderedGroups = [groups.in_progress, groups.completed, groups.upcoming].filter(g => g.items.length > 0);
+  return { columns, groups: orderedGroups, recent, detected, counts: {
+    in_progress: groups.in_progress.items.length,
+    completed: groups.completed.items.length,
+    upcoming: groups.upcoming.items.length,
+  } };
+}
+
+const releasesMsg = (
+  area: string, sheetTitle: string, asOf: string,
+  groups: { key: string; label: string; items: ReleaseItem[] }[], recent: ReleaseItem[],
+  columns: string[], note?: string, rawHeaders?: string[], rawRows?: string[][],
+): Msg => ({ role: 'agent', kind: 'releases', area, sheetTitle, asOf, groups, recent, columns, note, rawHeaders, rawRows });
 
 // Side-by-side parent/child plan view. Reuses the exact /plans split (ListsPage in
 // embedded mode) so the agent view is identical to the Plans page.
@@ -420,6 +578,74 @@ function renderMsg(m: Msg): React.ReactNode {
           </table>
         </div>
       );
+    case 'releases': {
+      // Tolerate older persisted messages that predate some of these fields.
+      const groups = m.groups ?? [];
+      const recent = m.recent ?? [];
+      const cols = m.columns ?? [];
+      const total = groups.reduce((s, g) => s + (g.items?.length ?? 0), 0);
+      const groupTable = (key: string, label: string, items: ReleaseItem[]) => (
+        <div key={key} className="mt-2">
+          <p className="text-sm font-medium text-gray-700">{label} ({items.length})</p>
+          <div className="overflow-x-auto">
+            <table className="mt-1 text-sm">
+              <thead>
+                <tr className="text-xs text-gray-400 text-left">
+                  {cols.map((c, i) => <th key={i} className="py-1 pr-6 font-medium">{c}</th>)}
+                  <th className="py-1 font-medium">Why</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((it, i) => (
+                  <tr key={i} className="border-b border-gray-100 last:border-0">
+                    {cols.map((c, ci) => (
+                      <td key={ci} className={`py-1 pr-6 ${ci === 0 ? 'text-gray-800 font-medium' : 'text-gray-600'}`}>{it.fields[c] || ''}</td>
+                    ))}
+                    <td className="py-1 text-gray-500">{it.why}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+      return (
+        <div>
+          <p className="mb-1">
+            {m.area} · <span className="font-medium">{m.sheetTitle || 'Release Calendar'}</span>
+            {' '}— {total} {total === 1 ? 'release' : 'releases'} in focus
+            <span className="text-gray-400 text-xs ml-2">as of {m.asOf}</span>
+          </p>
+          {m.note && <p className="text-amber-600 text-xs mb-1">{m.note}</p>}
+          {total === 0 && !m.note && (
+            <p className="text-gray-500">Nothing in progress, recently shipped, or due in the next 30 days.</p>
+          )}
+          {groups.map(g => groupTable(g.key, g.label, g.items ?? []))}
+          {/* Fallback context when nothing is in focus: the most recent releases. */}
+          {total === 0 && !m.note && recent.length > 0 &&
+            groupTable('recent', `Last ${recent.length} release${recent.length === 1 ? '' : 's'}`, recent)}
+          {/* When column detection failed, show the raw sheet so nothing is hidden. */}
+          {m.note && m.rawHeaders && m.rawRows && (
+            <div className="overflow-x-auto mt-2">
+              <table className="text-sm">
+                <thead>
+                  <tr className="text-xs text-gray-400 text-left">
+                    {m.rawHeaders.map((h, i) => <th key={i} className="py-1 pr-6 font-medium">{h}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {m.rawRows.slice(0, 25).map((r, ri) => (
+                    <tr key={ri} className="border-b border-gray-100 last:border-0">
+                      {m.rawHeaders!.map((_, ci) => <td key={ci} className="py-1 pr-6 text-gray-600">{r[ci] || ''}</td>)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      );
+    }
     default:
       return null;
   }
@@ -562,7 +788,7 @@ class MsgBoundary extends Component<{ children: React.ReactNode }, { failed: boo
 }
 
 export function AgentPage() {
-  const { user, organization } = useAuth();
+  const { user, organization, login } = useAuth();
   const userEmail = user?.email || '';
   const orgId = organization?.id || '';
 
@@ -709,6 +935,7 @@ export function AgentPage() {
       case 'splitMenu': return ['Show breakdown by assignee', 'Show unassigned items in the child plan', 'Go up to the plan'];
       case 'delivAssignee': return usersSorted.map(u => u.name || u.email);
       case 'delivParent': return [];
+      case 'reviewArea': return REVIEW_AREAS;
       case 'planPick': return planChoiceIds.map(planLabel);
       case 'vpPick': return resultObjectiveIds.map(itemLabel);
       case 'itemAction': return ITEM_ACTIONS;
@@ -962,6 +1189,59 @@ export function AgentPage() {
     appendAgent(rootPromptMsg());
   };
 
+  // ---- Review Progress ----
+  const reviewAreaPrompt = () => menuMsg('Which area would you like to review? Type the number:', REVIEW_AREAS);
+
+  // Engineering review: pull the Release Calendar sheet and show what's in
+  // progress, just shipped (Prod within 30 days), or due in the next 30 days.
+  const reviewEngineering = async () => {
+    appendAgent(textMsg('Fetching the Release Calendar…'));
+    try {
+      const res = await fetch(`${API_URL}/api/release-calendar`, { credentials: 'include' });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}) as Record<string, string>);
+        if (d?.error === 'google_reauth_required') {
+          // Not signed out — the session is valid but Google denied the read.
+          // Offer an explicit reconnect (see the 'reauth' render branch), and
+          // surface Google's own message when present so the cause is visible.
+          const extra = d.detail ? ` (Google said: ${d.detail})` : '';
+          appendAgent({ role: 'agent', kind: 'reauth', message: (d.message || 'Reconnect your Google account to read the Release Calendar.') + extra });
+          return;
+        }
+        if (d?.error === 'sheet_not_found') {
+          appendAgent(textMsg(d.message || 'The Release Calendar was not found or is not shared with your Google account.', 'error'));
+          return;
+        }
+        const detail = d?.detail ? ` — ${d.detail}` : (d?.message ? ` — ${d.message}` : '');
+        appendAgent(textMsg(`Couldn't load the Release Calendar (error ${res.status})${detail}.`, 'error'));
+        return;
+      }
+      const data = await res.json() as { sheetTitle: string; tab: string; headers: string[]; rows: string[][] };
+      const headers = data.headers || [];
+      const rows = data.rows || [];
+      if (headers.length === 0 || rows.length === 0) {
+        appendAgent(textMsg('The Release Calendar appears to be empty.', 'error'));
+        return;
+      }
+      const today = new Date();
+      const { columns, groups, recent, detected, counts } = classifyReleases(headers, rows, today);
+      const asOf = today.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+      const note = detected
+        ? undefined
+        : "I couldn't confidently find a Prod/date/status column, so I'm showing the sheet as-is below — tell me the column names and I'll refine the filter.";
+      appendAgent(releasesMsg(
+        'Engineering', data.sheetTitle || 'Release Calendar', asOf,
+        groups, recent, columns.length ? columns : headers.slice(0, 4), note,
+        detected ? undefined : headers, detected ? undefined : rows,
+      ));
+      if (detected) {
+        appendAgent(textMsg(`In progress: ${counts.in_progress} · Just completed: ${counts.completed} · Upcoming: ${counts.upcoming}.`));
+      }
+    } catch (err) {
+      appendAgent(textMsg(`Couldn't reach the server: ${err instanceof Error ? err.message : String(err)}`, 'error'));
+    }
+  };
+
   const showPlanItems = (plan: List, code: string = answeredCodeRef.current) => {
     const u = usersSorted.find(x => x.id === selectedUserId);
     const userName = u?.name || u?.email || 'that user';
@@ -1047,6 +1327,7 @@ export function AgentPage() {
       case 'changeDuration': appendAgent(changeDurationPrompt()); break;
       case 'vpEach': appendAgent(vpEachPrompt(vpEachIndex)); break;
       case 'vpItem': appendAgent(vpItemPrompt(objTitle(vpTargetId))); break;
+      case 'reviewArea': appendAgent(reviewAreaPrompt()); break;
     }
   };
 
@@ -1331,7 +1612,11 @@ export function AgentPage() {
       case 'root':
         if (n === 1) showPromptFor('user');
         else if (n === 2) { setStep('treeBrowse'); appendAgent(treeBrowsePrompt()); }
-        else { setDelivSummary(''); setDelivNeededBy(''); setStep('delivSummary'); appendAgent(delivSummaryPrompt()); }
+        else if (n === 3) { setDelivSummary(''); setDelivNeededBy(''); setStep('delivSummary'); appendAgent(delivSummaryPrompt()); }
+        else { setStep('reviewArea'); appendAgent(reviewAreaPrompt()); }
+        break;
+      case 'reviewArea':
+        if (n === 1) { reviewEngineering(); appendAgent(reviewAreaPrompt()); }
         break;
       case 'treeBrowse':
         if (n === 1) { showTopInitiatives(false); appendAgent(treeBrowsePrompt()); }
@@ -1561,6 +1846,23 @@ export function AgentPage() {
             {(() => {
               const lastDelivIdx = transcript.reduce((acc, mm, idx) => (mm.role === 'agent' && mm.kind === 'deliverable' ? idx : acc), -1);
               return transcript.map((m, i) => {
+                // Reconnect prompt — needs a live callback to start the OAuth flow.
+                if (m.role === 'agent' && m.kind === 'reauth') {
+                  return (
+                    <div key={i} className="flex justify-start">
+                      <div className="max-w-[85%] rounded-lg px-3 py-2 text-sm bg-amber-50 border border-amber-200 text-amber-900">
+                        <p className="mb-2">{m.message}</p>
+                        <button
+                          onClick={login}
+                          className="text-xs font-medium bg-amber-600 text-white rounded px-3 py-1.5 hover:bg-amber-700"
+                        >
+                          Reconnect Google
+                        </button>
+                        <p className="text-[11px] text-amber-700 mt-2">You'll return here after granting access — then pick Engineering again.</p>
+                      </div>
+                    </div>
+                  );
+                }
                 // The deliverable picker is interactive and rendered with live callbacks.
                 if (m.role === 'agent' && m.kind === 'deliverable') {
                   return (
