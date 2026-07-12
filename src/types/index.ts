@@ -190,6 +190,9 @@ export interface User {
   role: 'admin' | 'user';
   createdAt: string;
   lastLoginAt: string;
+  managerEmail?: string;   // reporting: this user's manager (email)
+  managerId?: string;      // resolved id of the manager's user record
+  department?: string;     // from Google Workspace directory
 }
 
 // Plan view saved filter

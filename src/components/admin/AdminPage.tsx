@@ -4,11 +4,24 @@ import { Modal } from '../common/Modal';
 import { useOKRStore, type BackupData, type BackupUser, type BackupOrganization, type OKRStore } from '../../store/okrStore';
 import { useAuth } from '../../context/AuthContext';
 import { OrganizationManagement } from './OrganizationManagement';
+import { WorkspaceUsersTable } from './WorkspaceUsersTable';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
+interface SyncResult { synced: number; added: number; updated: number; linked: number; totalDirectory: number; skippedSuspended: number; skippedOtherDomain: number; domain: string; }
+interface ReportImportResult { updated: number; linked: number; unmatched: string[]; unknownManagers: string[]; }
+
 export function AdminPage() {
-  const { isSuperAdmin } = useAuth();
+  const { isSuperAdmin, login } = useAuth();
+  // Google Workspace user sync
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncNeedsReauth, setSyncNeedsReauth] = useState(false);
+  // Reporting-structure import
+  const [reportResult, setReportResult] = useState<ReportImportResult | null>(null);
+  const [reportError, setReportError] = useState<string | null>(null);
+  const reportFileRef = useRef<HTMLInputElement>(null);
   const [newDomain, setNewDomain] = useState('');
   const [allowedDomains, setAllowedDomains] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -96,6 +109,73 @@ export function AdminPage() {
     };
     fetchLastBackup();
   }, []);
+
+  const syncWorkspace = async () => {
+    setSyncing(true);
+    setSyncError(null);
+    setSyncResult(null);
+    setSyncNeedsReauth(false);
+    try {
+      const res = await fetch(`${API_URL}/api/admin/sync-workspace-users`, { method: 'POST', credentials: 'include' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (data?.error === 'google_reauth_required') setSyncNeedsReauth(true);
+        const detail = data?.detail ? ` (${data.detail})` : '';
+        setSyncError(`${data?.message || data?.error || `Error ${res.status}`}${detail}`);
+        return;
+      }
+      setSyncResult(data as SyncResult);
+      // Refresh the visible user count.
+      try {
+        const ures = await fetch(`${API_URL}/api/users`, { credentials: 'include' });
+        if (ures.ok) { const ud = await ures.json(); setUsersCount(ud.users?.length || 0); }
+      } catch { /* ignore */ }
+    } catch (err) {
+      setSyncError(`Couldn't reach the server: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const exportReporting = async () => {
+    setReportError(null);
+    try {
+      const res = await fetch(`${API_URL}/api/admin/reporting-structure`, { credentials: 'include' });
+      if (!res.ok) { setReportError(`Export failed (${res.status}).`); return; }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'reporting-structure.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setReportError(`Couldn't export: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const importReporting = async (file: File) => {
+    setReportError(null);
+    setReportResult(null);
+    try {
+      const csv = await file.text();
+      const res = await fetch(`${API_URL}/api/admin/reporting-structure`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ csv }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setReportError(data?.error || `Import failed (${res.status}).`); return; }
+      setReportResult(data as ReportImportResult);
+    } catch (err) {
+      setReportError(`Couldn't import: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      if (reportFileRef.current) reportFileRef.current.value = '';
+    }
+  };
 
   const handleAddDomain = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -223,7 +303,7 @@ export function AdminPage() {
         setPendingImportData(data);
         setShowImportConfirm(true);
         setImportError(null);
-      } catch (err) {
+      } catch {
         setImportError('Invalid backup file. Please select a valid OKR backup JSON file.');
       }
     };
@@ -350,6 +430,74 @@ export function AdminPage() {
           <OrganizationManagement />
         </div>
       )}
+
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Google Workspace</h2>
+        <p className="text-sm text-gray-600 mb-4">
+          Sync your user list with the Google Workspace directory. This adds everyone in your
+          domain as users (so you can assign OKRs before they sign in) and updates names for
+          existing ones. Requires a Workspace admin account — it runs with your signed-in Google token.
+        </p>
+        <div className="flex items-center gap-3">
+          <Button onClick={syncWorkspace} disabled={syncing}>
+            {syncing ? 'Syncing…' : 'Sync users with Google Workspace'}
+          </Button>
+          {usersCount > 0 && <span className="text-sm text-gray-500">{usersCount} users currently</span>}
+        </div>
+
+        {syncResult && (
+          <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
+            Synced <span className="font-medium">{syncResult.synced}</span> users from <span className="font-medium">{syncResult.domain}</span>
+            {' '}— {syncResult.added} added, {syncResult.updated} updated, {syncResult.linked} linked to a manager
+            {(syncResult.skippedSuspended > 0 || syncResult.skippedOtherDomain > 0) && (
+              <span className="text-green-700">
+                {' '}(skipped {syncResult.skippedSuspended} suspended
+                {syncResult.skippedOtherDomain > 0 ? `, ${syncResult.skippedOtherDomain} in other domains` : ''})
+              </span>
+            )}.
+          </div>
+        )}
+
+        {syncError && (
+          <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+            {syncError}
+            {syncNeedsReauth && (
+              <div className="mt-2">
+                <button onClick={login} className="text-xs font-medium bg-red-600 text-white rounded px-3 py-1.5 hover:bg-red-700">
+                  Reconnect Google
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="mt-6 pt-6 border-t border-gray-100">
+          <h3 className="font-medium text-gray-900 mb-1">Reporting structure</h3>
+          <p className="text-sm text-gray-600 mb-3">
+            Export the manager relationships as CSV (columns: <code className="text-xs">email, name, manager_email, manager_name</code>),
+            edit it, and import it back. Import matches on <code className="text-xs">email</code> and <code className="text-xs">manager_email</code>; other columns are ignored.
+          </p>
+          <div className="flex items-center gap-3">
+            <Button variant="secondary" onClick={exportReporting}>Export CSV</Button>
+            <Button variant="secondary" onClick={() => reportFileRef.current?.click()}>Import CSV</Button>
+            <input ref={reportFileRef} type="file" accept=".csv,text/csv" className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) importReporting(f); }} />
+          </div>
+
+          {reportResult && (
+            <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
+              Updated {reportResult.updated} users, {reportResult.linked} linked to a manager.
+              {reportResult.unmatched.length > 0 && <div className="text-green-700 mt-1">Unmatched emails (not users): {reportResult.unmatched.join(', ')}</div>}
+              {reportResult.unknownManagers.length > 0 && <div className="text-green-700 mt-1">Manager emails not found as users: {reportResult.unknownManagers.join(', ')}</div>}
+            </div>
+          )}
+          {reportError && (
+            <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{reportError}</div>
+          )}
+        </div>
+
+        <WorkspaceUsersTable />
+      </div>
 
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Allowed Domains</h2>
