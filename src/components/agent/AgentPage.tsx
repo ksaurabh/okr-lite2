@@ -25,14 +25,14 @@ type Msg =
   | { role: 'agent'; kind: 'deliverable'; summary: string; neededBy: string; assigneeId: string; assigneeName: string; ownerId: string }
   | { role: 'agent'; kind: 'releases'; area: string; sheetTitle: string; asOf: string; groups: { key: string; label: string; items: ReleaseItem[] }[]; recent: ReleaseItem[]; columns: string[]; note?: string; rawHeaders?: string[]; rawRows?: string[][] }
   | { role: 'agent'; kind: 'reauth'; message: string }
-  | { role: 'agent'; kind: 'jira'; groups: { version: string; tickets: JiraTicket[] }[]; unknown: string[]; project?: string; jql?: string };
+  | { role: 'agent'; kind: 'jira'; groups: { version: string; tickets: JiraTicket[] }[]; unknown: string[]; project?: string; jql?: string; asOf?: number };
 
 // One classified row from the Release Calendar. `fields` holds the values for the
 // detected display columns (name/status/start/prod); `why` explains the bucket.
 interface ReleaseItem { name: string; fields: Record<string, string>; why: string; }
 
 // A Jira issue in a release (fixVersion), as returned by /api/jira/release-tickets.
-interface JiraTicket { key: string; summary: string; status: string; statusCategory: string; assignee: string; type: string; url: string; fixVersions: string[]; storyPoints: number; }
+interface JiraTicket { key: string; summary: string; status: string; statusCategory: string; assignee: string; type: string; url: string; fixVersions: string[]; storyPoints: number; resolved: string | null; }
 
 interface SessionState {
   step: Step;
@@ -285,8 +285,28 @@ const releasesMsg = (
   columns: string[], note?: string, rawHeaders?: string[], rawRows?: string[][],
 ): Msg => ({ role: 'agent', kind: 'releases', area, sheetTitle, asOf, groups, recent, columns, note, rawHeaders, rawRows });
 
-const jiraMsg = (groups: { version: string; tickets: JiraTicket[] }[], unknown: string[], project?: string, jql?: string): Msg =>
-  ({ role: 'agent', kind: 'jira', groups, unknown, project, jql });
+const jiraMsg = (groups: { version: string; tickets: JiraTicket[] }[], unknown: string[], project?: string, jql?: string, asOf?: number): Msg =>
+  ({ role: 'agent', kind: 'jira', groups, unknown, project, jql, asOf });
+
+// Story/Bug/Sub-task types (the work items counted in the weekly resolved view).
+const isWorkItem = (t: JiraTicket) => /^(story|bug|sub[-\s]?task)$/i.test(t.type || '');
+
+// Count + summed story points by assignee for a set of tickets.
+function countAndSpByAssignee(tickets: JiraTicket[]) {
+  const map = new Map<string, { count: number; sp: number }>();
+  for (const t of tickets) {
+    const who = t.assignee || 'Unassigned';
+    const prev = map.get(who) || { count: 0, sp: 0 };
+    map.set(who, { count: prev.count + 1, sp: prev.sp + (t.storyPoints || 0) });
+  }
+  const rows = [...map.entries()].sort((a, b) => {
+    if (a[0] === 'Unassigned') return 1;
+    if (b[0] === 'Unassigned') return -1;
+    return b[1].count - a[1].count || a[0].localeCompare(b[0]);
+  });
+  const total = { count: tickets.length, sp: tickets.reduce((n, t) => n + (t.storyPoints || 0), 0) };
+  return { rows, total };
+}
 
 // Pivot a release's tickets into a status (rows) × type (columns) count matrix.
 // Statuses are ordered by workflow category (To Do → In Progress → Done).
@@ -738,12 +758,16 @@ function renderMsg(m: Msg): React.ReactNode {
               No matching Jira fix version for: {m.unknown.join(', ')} — skipped.
             </p>
           )}
-          {m.groups.map(g => {
+          {(() => { const asOf = m.asOf || Date.now(); const weekAgo = asOf - 7 * 24 * 60 * 60 * 1000;
+          return m.groups.map(g => {
             const epics = g.tickets.filter(isEpic);
             const nonEpics = g.tickets.filter(t => !isEpic(t));
             const p = pivotByStatusType(g.tickets);
             const a = pivotByAssigneeType(nonEpics); // epics excluded from count/SP by assignee
             const ep = epicsByAssignee(epics);
+            // Story/Bug/Sub-task resolved within the last 7 days.
+            const recent = g.tickets.filter(t => isWorkItem(t) && t.resolved && Date.parse(t.resolved) >= weekAgo);
+            const rr = countAndSpByAssignee(recent);
             return (
               <div key={g.version} className="mt-3">
                 <p className="text-sm font-medium text-gray-700">{g.version} ({g.tickets.length})</p>
@@ -840,11 +864,43 @@ function renderMsg(m: Msg): React.ReactNode {
                         </table>
                       </div>
                     )}
+
+                    <p className="text-xs text-gray-400 mt-2">Resolved in the last 7 days · Story / Bug / Sub-task by assignee</p>
+                    {recent.length === 0 ? (
+                      <p className="text-gray-500 text-sm">Nothing resolved in the last 7 days.</p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="mt-0.5 text-sm border-collapse">
+                          <thead>
+                            <tr className="text-xs text-gray-500">
+                              <th className="py-1 pr-6 font-medium text-left">Assignee</th>
+                              <th className="py-1 pr-6 font-medium text-right">Tickets</th>
+                              <th className="py-1 font-medium text-right">Story points</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {rr.rows.map(([who, v]) => (
+                              <tr key={who} className="border-t border-gray-100">
+                                <td className="py-1 pr-6 text-gray-800 whitespace-nowrap">{who}</td>
+                                <td className="py-1 pr-6 text-right tabular-nums text-gray-700">{v.count}</td>
+                                <td className="py-1 text-right tabular-nums text-gray-700">{v.sp}</td>
+                              </tr>
+                            ))}
+                            <tr className="border-t border-gray-300 font-medium">
+                              <td className="py-1 pr-6 text-right">Total</td>
+                              <td className="py-1 pr-6 text-right tabular-nums">{rr.total.count}</td>
+                              <td className="py-1 text-right tabular-nums">{rr.total.sp}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </>
                 )}
               </div>
             );
-          })}
+          });
+          })()}
         </div>
       );
     }
@@ -1496,7 +1552,7 @@ export function AgentPage() {
       if (!data.configured) {
         appendAgent(textMsg('Jira isn\'t configured for your organization yet — an admin can set it up under Admin → Jira.', 'error'));
       } else {
-        appendAgent(jiraMsg(data.groups || [], data.unknown || [], data.project, data.jql));
+        appendAgent(jiraMsg(data.groups || [], data.unknown || [], data.project, data.jql, Date.now()));
       }
       backToArea();
     } catch (err) {
