@@ -23,8 +23,12 @@ export function WorkspaceUsersTable() {
   const [definedDepartments, setDefinedDepartments] = useState<Department[]>([]);
   const [newDept, setNewDept] = useState('');
   const [newDeptParent, setNewDeptParent] = useState('');
+  // Emails excluded from the reporting structure (lowercase).
+  const [excludedEmails, setExcludedEmails] = useState<string[]>([]);
 
-  const userEmails = useMemo(() => users.map(u => u.email), [users]);
+  const isExcluded = useCallback((email: string) => excludedEmails.includes(email.toLowerCase()), [excludedEmails]);
+  // Managers can only be users that are part of the reporting structure.
+  const userEmails = useMemo(() => users.map(u => u.email).filter(e => !isExcluded(e)), [users, isExcluded]);
 
   // Defined departments flattened into display order with a nesting depth, so the
   // hierarchy renders as an indented tree. Departments whose parent is missing are
@@ -62,6 +66,30 @@ export function WorkspaceUsersTable() {
       setDefinedDepartments(data.defined || []);
     } catch { /* ignore */ }
   }, []);
+
+  const loadExcludedEmails = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/excluded-emails`, { credentials: 'include' });
+      if (!res.ok) return;
+      const data = await res.json();
+      setExcludedEmails(data.excludedEmails || []);
+    } catch { /* ignore */ }
+  }, []);
+
+  const saveExcludedEmails = async (next: string[]) => {
+    const clean = [...new Set(next.map(e => e.trim().toLowerCase()).filter(Boolean))];
+    setExcludedEmails(clean);
+    try {
+      const res = await fetch(`${API_URL}/api/admin/excluded-emails`, {
+        method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ excludedEmails: clean }),
+      });
+      // The manager tree changes server-side, so reload users to reflect cleared links.
+      if (res.ok) { await loadExcludedEmails(); await load(); }
+    } catch { /* ignore */ }
+  };
+  const excludeEmail = (email: string) => saveExcludedEmails([...excludedEmails, email]);
+  const includeEmail = (email: string) => saveExcludedEmails(excludedEmails.filter(e => e !== email.toLowerCase()));
 
   const saveDefinedDepartments = async (next: Department[]) => {
     setDefinedDepartments(next);
@@ -111,7 +139,7 @@ export function WorkspaceUsersTable() {
     }
   }, []);
 
-  useEffect(() => { load(); loadDepartments(); }, [load, loadDepartments]);
+  useEffect(() => { load(); loadDepartments(); loadExcludedEmails(); }, [load, loadDepartments, loadExcludedEmails]);
 
   const isDirty = (u: User) => {
     const d = drafts[u.email];
@@ -159,12 +187,16 @@ export function WorkspaceUsersTable() {
     }
   };
 
+  // Excluded emails are dropped from the reporting-structure table.
   const visible = users.filter(u => {
+    if (isExcluded(u.email)) return false;
     if (!filter.trim()) return true;
     const q = filter.toLowerCase();
     return u.email.toLowerCase().includes(q) || (u.name || '').toLowerCase().includes(q) ||
       (drafts[u.email]?.managerEmail || '').toLowerCase().includes(q) || (drafts[u.email]?.department || '').toLowerCase().includes(q);
   });
+  // Names to show for excluded chips (fall back to the raw email).
+  const nameByEmail = useMemo(() => new Map(users.map(u => [u.email.toLowerCase(), u.name])), [users]);
 
   return (
     <div className="mt-6 pt-6 border-t border-gray-100">
@@ -211,6 +243,22 @@ export function WorkspaceUsersTable() {
             ))}
           </select>
           <button onClick={addDepartment} disabled={!newDept.trim()} className="text-sm font-medium px-3 py-1.5 rounded-lg bg-gray-200 text-gray-800 hover:bg-gray-300 disabled:opacity-40">Add</button>
+        </div>
+      </div>
+
+      <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+        <div className="text-sm font-medium text-gray-800 mb-1">Excluded from reporting</div>
+        <p className="text-xs text-gray-500 mb-2">
+          Excluded emails are left out of the reporting structure — hidden from the table below, not selectable as a manager, and skipped on Workspace sync. Use the “Exclude” button on a row to add one.
+        </p>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {excludedEmails.length === 0 && <span className="text-xs text-gray-400">None excluded.</span>}
+          {[...excludedEmails].sort((a, b) => a.localeCompare(b)).map(email => (
+            <span key={email} className="inline-flex items-center gap-1 text-xs bg-white border border-gray-300 rounded-full pl-2.5 pr-1 py-0.5 text-gray-700" title={nameByEmail.get(email) || email}>
+              {email}
+              <button onClick={() => includeEmail(email)} title="Re-include in reporting" className="text-gray-400 hover:text-green-600 rounded-full w-4 h-4 leading-none">×</button>
+            </span>
+          ))}
         </div>
       </div>
 
@@ -266,6 +314,10 @@ export function WorkspaceUsersTable() {
                       </button>
                       {st?.state === 'saved' && <span className="ml-2 text-xs text-green-600">{st.msg}</span>}
                       {st?.state === 'error' && <span className="ml-2 text-xs text-red-600" title={st.msg}>Failed</span>}
+                      <button onClick={() => excludeEmail(u.email)} title="Exclude from the reporting structure"
+                        className="ml-2 text-xs font-medium px-3 py-1 rounded bg-gray-100 text-gray-600 hover:bg-red-50 hover:text-red-600">
+                        Exclude
+                      </button>
                     </td>
                   </tr>
                 );
