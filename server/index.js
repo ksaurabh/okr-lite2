@@ -960,10 +960,56 @@ async function jiraFetch(cfg, path, init = {}) {
       'Authorization': jiraAuthHeader(cfg),
       'Accept': 'application/json',
       'Content-Type': 'application/json',
+      // Prefer English error messages (Jira otherwise localizes to the token
+      // account's profile language).
+      'Accept-Language': 'en-US,en;q=0.9',
       ...(init.headers || {}),
     },
   });
   return res;
+}
+
+// List every Jira project the configured account can see (paginated), with
+// fallbacks for older/self-hosted instances. Returns { projects, tried } where
+// `tried` records each endpoint + HTTP status for diagnostics.
+async function listAllJiraProjects(cfg) {
+  const out = [];
+  const tried = [];
+  let startAt = 0;
+  for (let i = 0; i < 40; i++) {
+    const path = `/rest/api/3/project/search?maxResults=50&startAt=${startAt}`;
+    const r = await jiraFetch(cfg, path);
+    if (!r.ok) { tried.push(`${path} → ${r.status}`); break; }
+    const d = await r.json().catch(() => null);
+    if (!d) { tried.push(`${path} → bad-json`); break; }
+    const vals = d.values || [];
+    if (startAt === 0) tried.push(`${path} → 200 (${d.total ?? vals.length} total)`);
+    out.push(...vals);
+    if (d.isLast || vals.length === 0) break;
+    startAt += vals.length;
+  }
+  if (out.length === 0) {
+    for (const path of ['/rest/api/3/project', '/rest/api/2/project']) {
+      const r = await jiraFetch(cfg, path);
+      tried.push(`${path} → ${r.status}`);
+      if (r.ok) { const d = await r.json().catch(() => []); if (Array.isArray(d) && d.length) { out.push(...d); break; } }
+    }
+  }
+  return { projects: out, tried };
+}
+
+// Resolve a Jira project by key OR name (the spreadsheet/user may give either).
+// Returns { project, projects, tried } — `projects` is the full visible list and
+// `tried` the diagnostics, for a helpful error when nothing matched.
+async function resolveJiraProject(cfg, keyOrName) {
+  const { projects, tried } = await listAllJiraProjects(cfg);
+  const want = String(keyOrName).trim().toLowerCase();
+  const project =
+    projects.find(p => String(p.key).toLowerCase() === want) ||
+    projects.find(p => String(p.name).toLowerCase() === want) ||
+    projects.find(p => String(p.name).toLowerCase().includes(want)) ||
+    null;
+  return { project, projects, tried };
 }
 
 app.get('/api/admin/jira-config', requireOrgAdminOrSuperAdmin, (req, res) => {
@@ -1767,6 +1813,106 @@ app.get('/api/release-calendar', requireAuth, async (req, res) => {
   } catch (e) {
     console.error('[release-calendar] unexpected error:', e);
     res.status(502).json({ error: 'sheet_fetch_failed', message: String(e?.message || e) });
+  }
+});
+
+// Jira tickets for a set of releases (by Fix Version name). Used by Review
+// Progress to list the tickets in the releases that are currently in progress.
+// The Jira project whose issues carry the release fixVersions (e.g. M27). This
+// is the "DEV" project by default and can differ from the org's configured
+// projectKey (which is used for epic creation). Override with env if needed.
+const JIRA_RELEASE_PROJECT_KEY = process.env.JIRA_RELEASE_PROJECT_KEY || 'DEV';
+
+app.get('/api/jira/release-tickets', requireAuth, async (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.json({ configured: false });
+  const cfg = getJiraConfig(org.id);
+  // Only the credentials are required here; the release project is DEV, not the
+  // config's projectKey.
+  if (!cfg || !cfg.baseUrl || !cfg.email || !cfg.apiToken) {
+    return res.json({ configured: false });
+  }
+  // Project to use: an explicit ?project= (from the picker, persisted), else a
+  // saved choice, else the DEV default.
+  const explicitProject = (req.query.project || '').toString().trim();
+  const projectQuery = explicitProject || cfg.releaseProjectKey || JIRA_RELEASE_PROJECT_KEY;
+  const wanted = (req.query.versions || '').toString().split(',').map(s => s.trim()).filter(Boolean);
+  if (wanted.length === 0) return res.json({ configured: true, groups: [], unknown: [] });
+  const browse = cfg.baseUrl.replace(/\/$/, '');
+  try {
+    // Verify the credentials first. Jira Cloud returns empty lists / 404s to an
+    // unauthenticated caller instead of a clear 401, so a bad token otherwise
+    // looks like "no projects found". /myself is the reliable auth check.
+    const meR = await jiraFetch(cfg, '/rest/api/3/myself');
+    if (meR.status === 401 || meR.status === 403) {
+      // 403 (not 401) so the app's global "401 = signed out" interceptor doesn't fire.
+      return res.status(403).json({
+        error: 'jira_auth_failed',
+        message: `Jira rejected the credentials (${meR.status}). The API token for ${cfg.email} is likely invalid or expired — generate a new one and update it under Admin → Jira.`,
+      });
+    }
+
+    // Resolve the project by key OR name (the sheet/user may give either).
+    const { project, projects, tried } = await resolveJiraProject(cfg, projectQuery);
+    if (!project) {
+      const visible = projects
+        .map(p => ({ key: String(p.key), name: String(p.name) }))
+        .sort((a, b) => a.key.localeCompare(b.key));
+      console.error(`[jira] project "${projectQuery}" not found. ${visible.length} visible. Tried: ${tried.join(' | ')}`);
+      return res.status(404).json({
+        error: `No Jira project matching "${projectQuery}" is visible to the configured account.`,
+        projectNotFound: true,
+        projects: visible,
+        detail: tried.join(' | '),
+      });
+    }
+    const projectKey = project.key;
+    // Remember an explicitly chosen project so we don't ask again.
+    if (explicitProject && cfg.releaseProjectKey !== projectKey) {
+      saveJiraConfig(org.id, { releaseProjectKey: projectKey });
+    }
+
+    // Resolve version names -> ids in the project so an unknown name doesn't make
+    // the whole JQL query fail (fixVersion = "missing" is a 400 in Jira).
+    const vr = await jiraFetch(cfg, `/rest/api/3/project/${encodeURIComponent(project.id)}/versions`);
+    if (!vr.ok) { const t = await vr.text().catch(() => ''); return res.status(vr.status).json({ error: `Jira versions: ${vr.status} ${t.slice(0, 300)}`, project: projectKey }); }
+    const allVersions = await vr.json();
+    const byName = new Map((Array.isArray(allVersions) ? allVersions : []).map(v => [String(v.name).trim().toLowerCase(), v]));
+    const known = wanted.map(name => ({ name, v: byName.get(name.toLowerCase()) })).filter(x => x.v);
+    const unknown = wanted.filter(name => !byName.get(name.toLowerCase()));
+    if (known.length === 0) return res.json({ configured: true, groups: [], unknown, browse, project: projectKey });
+
+    const jql = `project = "${projectKey}" AND fixVersion in (${known.map(x => x.v.id).join(',')}) ORDER BY status ASC, key ASC`;
+    console.log(`[jira] project=${projectKey} JQL: ${jql}`);
+    const fields = ['summary', 'status', 'assignee', 'issuetype', 'fixVersions', 'priority'];
+    let data;
+    let r = await jiraFetch(cfg, '/rest/api/3/search/jql', { method: 'POST', body: JSON.stringify({ jql, fields, maxResults: 200 }) });
+    if (r.ok) {
+      data = await r.json();
+    } else {
+      r = await jiraFetch(cfg, `/rest/api/3/search?jql=${encodeURIComponent(jql)}&fields=${fields.join(',')}&maxResults=200`);
+      if (!r.ok) { const t = await r.text().catch(() => ''); return res.status(r.status).json({ error: `Jira search: ${r.status} ${t.slice(0, 300)}`, jql }); }
+      data = await r.json();
+    }
+    const toTicket = (it) => ({
+      key: it.key,
+      summary: it.fields?.summary || '',
+      status: it.fields?.status?.name || '',
+      statusCategory: it.fields?.status?.statusCategory?.key || '',
+      assignee: it.fields?.assignee?.displayName || 'Unassigned',
+      type: it.fields?.issuetype?.name || '',
+      url: `${browse}/browse/${it.key}`,
+      fixVersions: (it.fields?.fixVersions || []).map(v => v.name),
+    });
+    const tickets = (data.issues || []).map(toTicket);
+    // Group by requested version (an issue may carry more than one fix version).
+    const groups = known.map(({ name, v }) => ({
+      version: name,
+      tickets: tickets.filter(t => t.fixVersions.includes(v.name)),
+    }));
+    res.json({ configured: true, groups, unknown, browse, project: projectKey, jql });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
   }
 });
 
