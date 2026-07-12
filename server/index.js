@@ -1927,27 +1927,32 @@ app.put('/api/admin/excluded-emails', requireOrgAdminOrSuperAdmin, (req, res) =>
 // Export "Users & reporting" as JSON: each user's manager/department, the defined
 // department hierarchy, and the emails excluded from the reporting structure.
 app.get('/api/admin/users-reporting/export', requireOrgAdminOrSuperAdmin, (req, res) => {
-  const org = getOrganizationByDomain(req.user.domain);
-  if (!org) return res.status(403).json({ error: 'No organization found' });
-  const users = getUsersByOrganization(org.id).slice().sort((a, b) => (a.email || '').localeCompare(b.email || ''));
-  const byId = new Map(users.map(u => [u.id, u]));
-  const payload = {
-    type: 'okr-users-reporting',
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    domain: org.domain,
-    departments: getDepartments(org.id),
-    excludedEmails: getExcludedEmails(org.id),
-    users: users.map(u => ({
-      email: u.email || '',
-      name: u.name || '',
-      managerEmail: u.managerEmail || (u.managerId ? byId.get(u.managerId)?.email : '') || '',
-      department: u.department || '',
-    })),
-  };
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename="users-reporting-${org.domain}.json"`);
-  res.send(JSON.stringify(payload, null, 2));
+  try {
+    const org = getOrganizationByDomain(req.user.domain);
+    if (!org) return res.status(403).json({ error: 'No organization found' });
+    const users = getUsersByOrganization(org.id).slice().sort((a, b) => (a.email || '').localeCompare(b.email || ''));
+    const byId = new Map(users.map(u => [u.id, u]));
+    const payload = {
+      type: 'okr-users-reporting',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      domain: org.domain,
+      departments: getDepartments(org.id),
+      excludedEmails: getExcludedEmails(org.id),
+      users: users.map(u => ({
+        email: u.email || '',
+        name: u.name || '',
+        managerEmail: u.managerEmail || (u.managerId ? byId.get(u.managerId)?.email : '') || '',
+        department: u.department || '',
+      })),
+    };
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="users-reporting-${org.domain}.json"`);
+    res.send(JSON.stringify(payload, null, 2));
+  } catch (e) {
+    console.error('[users-reporting/export] error:', e);
+    res.status(500).json({ error: `Export failed: ${String(e?.message || e)}` });
+  }
 });
 
 // Import "Users & reporting" from an exported JSON. Applies the department

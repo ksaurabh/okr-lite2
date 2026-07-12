@@ -177,7 +177,12 @@ export function WorkspaceUsersTable() {
     setPorterError(null);
     try {
       const res = await fetch(`${API_URL}/api/admin/users-reporting/export`, { credentials: 'include' });
-      if (!res.ok) { setPorterError(`Export failed (${res.status}).`); return; }
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        const hint = res.status === 404 ? ' — the server may need a restart to pick up this endpoint' : '';
+        setPorterError(`Export failed (${res.status})${hint}${body ? `: ${body.slice(0, 200)}` : ''}.`);
+        return;
+      }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
