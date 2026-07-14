@@ -17,6 +17,33 @@ interface User {
   lastLoginAt: string;
 }
 
+// Saved field mappings: project key -> Jira field name -> field id.
+type FieldMapByProject = Record<string, Record<string, string>>;
+
+// One field on the site that could answer to the name we asked about, and what
+// it holds on the inspected issue.
+interface FieldCandidate {
+  id: string;
+  name: string;
+  match: 'exact' | 'alias' | 'partial' | 'mapped';
+  type: string;
+  custom: string;
+  onIssue: boolean;
+  hasValue: boolean;
+  valueText: string;
+  isPicked: boolean;
+  isMapped: boolean;
+}
+
+interface FieldDebug {
+  issue: { key: string; summary: string; type: string; projectKey: string; url: string };
+  name: string;
+  pickedFieldId: string | null;
+  pickedFrom: 'mapping' | 'name-match' | 'none';
+  mappedFieldId: string | null;
+  candidates: FieldCandidate[];
+}
+
 export function SettingsPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,6 +81,54 @@ export function SettingsPage() {
   const [periodFieldSearch, setPeriodFieldSearch] = useState('');
   const [periodFieldMenuOpen, setPeriodFieldMenuOpen] = useState(false);
   const [creatingPeriodField, setCreatingPeriodField] = useState(false);
+  // Field mapping: pin a Jira field name to a field id per project, so a site
+  // with several same-named fields reads the right one. See FieldDebug below.
+  const [fieldMap, setFieldMap] = useState<FieldMapByProject>({});
+  const [fdIssue, setFdIssue] = useState('');
+  const [fdName, setFdName] = useState('Story Points');
+  const [fdLoading, setFdLoading] = useState(false);
+  const [fdResult, setFdResult] = useState<FieldDebug | null>(null);
+  const [fdSavingId, setFdSavingId] = useState<string | null>(null);
+
+  const inspectField = async () => {
+    const issue = fdIssue.trim();
+    const name = fdName.trim();
+    if (!issue || !name) return;
+    setFdLoading(true); setJiraError(null); setFdResult(null);
+    try {
+      const qs = `issue=${encodeURIComponent(issue)}&name=${encodeURIComponent(name)}`;
+      const res = await fetch(`${API_URL}/api/admin/jira/field-debug?${qs}`, { credentials: 'include' });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      setFdResult(data);
+    } catch (err) {
+      setJiraError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setFdLoading(false);
+    }
+  };
+
+  // fieldId '' clears the mapping for (project, name) and falls back to name matching.
+  const saveFieldMapping = async (project: string, name: string, fieldId: string) => {
+    setFdSavingId(fieldId || `clear:${project}:${name}`); setJiraError(null);
+    try {
+      const res = await fetch(`${API_URL}/api/admin/jira/field-map`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project, name, fieldId }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      setFieldMap(data.fieldMapByProject || {});
+      // Re-inspect so the "reads" line reflects the mapping we just saved.
+      if (fdResult && fdResult.issue.projectKey === project && fdResult.name === name) await inspectField();
+    } catch (err) {
+      setJiraError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setFdSavingId(null);
+    }
+  };
 
   const loadEpicFields = async () => {
     setJiraLoadingFields(true); setJiraError(null);
@@ -169,6 +244,7 @@ export function SettingsPage() {
         setJiraHasToken(!!cfg.hasToken);
         setPeriodFieldKey(cfg.periodFieldKey || '');
         setPeriodValueMap(cfg.periodValueMap || {});
+        setFieldMap(cfg.fieldMapByProject || {});
       }
     } catch { /* ignore */ }
   }, []);
@@ -1104,6 +1180,155 @@ export function SettingsPage() {
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-gray-200 pt-3">
+                <div className="text-xs font-semibold text-gray-700">Field mapping</div>
+                <p className="text-[11px] text-gray-400 mb-2">
+                  Jira's field list is site-wide, so several custom fields can share one name — a site can hold three fields called "Story Points", each on a different project's screens. Without a mapping the app reads whichever Jira lists first, which may be empty on this project's issues. Inspect a real ticket to see what each candidate actually holds, then pin the right field for that project.
+                </p>
+                <div className="flex items-end gap-2">
+                  <div className="w-40">
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Issue key</label>
+                    <input
+                      type="text"
+                      value={fdIssue}
+                      onChange={(e) => setFdIssue(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') inspectField(); }}
+                      placeholder="DEV-12207"
+                      className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Field name</label>
+                    <input
+                      type="text"
+                      value={fdName}
+                      onChange={(e) => setFdName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') inspectField(); }}
+                      placeholder="Story Points"
+                      className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm"
+                    />
+                  </div>
+                  <button
+                    onClick={inspectField}
+                    disabled={fdLoading || !fdIssue.trim() || !fdName.trim()}
+                    className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    {fdLoading ? 'Inspecting…' : 'Inspect'}
+                  </button>
+                </div>
+
+                {fdResult && (() => {
+                  const picked = fdResult.candidates.find(c => c.isPicked) || null;
+                  const project = fdResult.issue.projectKey;
+                  // The pick is suspect when it reads nothing but another candidate holds a value.
+                  const suspect = !!picked && !picked.hasValue && fdResult.candidates.some(c => !c.isPicked && c.hasValue);
+                  return (
+                    <div className="mt-3 border border-gray-200 rounded">
+                      <div className="px-2 py-2 bg-gray-50 border-b border-gray-200 text-xs">
+                        <a href={fdResult.issue.url} target="_blank" rel="noreferrer" className="font-medium text-blue-700 hover:underline">{fdResult.issue.key}</a>
+                        <span className="text-gray-700"> {fdResult.issue.summary}</span>
+                        <span className="text-gray-400"> · {fdResult.issue.type} · project <span className="font-mono">{project}</span></span>
+                      </div>
+                      <div className={`px-2 py-2 text-xs border-b border-gray-200 ${suspect ? 'bg-amber-50 text-amber-900' : 'text-gray-700'}`}>
+                        {picked ? (
+                          <>
+                            Reads <span className="font-mono font-medium">{picked.id}</span> ({picked.name}) — {fdResult.pickedFrom === 'mapping' ? 'your saved mapping' : 'first name match, no mapping saved'} — value on this issue: <span className="font-medium">{picked.valueText}</span>.
+                            {suspect && <> This field is empty here while another candidate below has a value, so <span className="font-medium">{fdResult.name}</span> is likely showing as 0 across {project}. Pin the right field below.</>}
+                          </>
+                        ) : (
+                          <>No field on this site matches "{fdResult.name}" — the app reads nothing and shows 0.</>
+                        )}
+                      </div>
+                      <table className="min-w-full text-xs">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="text-left px-2 py-1 font-medium text-gray-500 uppercase tracking-wider">Field id</th>
+                            <th className="text-left px-2 py-1 font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                            <th className="text-left px-2 py-1 font-medium text-gray-500 uppercase tracking-wider">Match</th>
+                            <th className="text-left px-2 py-1 font-medium text-gray-500 uppercase tracking-wider">Value on {fdResult.issue.key}</th>
+                            <th className="text-right px-2 py-1 font-medium text-gray-500 uppercase tracking-wider">Use for {project}</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {fdResult.candidates.map(c => (
+                            <tr key={c.id} className={c.isPicked ? 'bg-blue-50' : 'hover:bg-gray-50'}>
+                              <td className="px-2 py-1 font-mono text-gray-700">{c.id}</td>
+                              <td className="px-2 py-1 text-gray-800">
+                                {c.name}
+                                {c.isPicked && <span className="ml-1 text-[10px] text-blue-700 font-medium">(in use)</span>}
+                                {c.custom && <span className="ml-1 text-gray-400">· {c.custom}</span>}
+                              </td>
+                              <td className="px-2 py-1 text-gray-500">{c.match}</td>
+                              <td className={`px-2 py-1 ${c.hasValue ? 'text-gray-900 font-medium' : 'text-gray-400'}`}>{c.valueText}</td>
+                              <td className="px-2 py-1 text-right">
+                                {c.isMapped ? (
+                                  <button
+                                    onClick={() => saveFieldMapping(project, fdResult.name, '')}
+                                    disabled={fdSavingId !== null}
+                                    className="px-2 py-0.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
+                                    title="Remove the mapping and fall back to matching by name"
+                                  >
+                                    Mapped — clear
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => saveFieldMapping(project, fdResult.name, c.id)}
+                                    disabled={fdSavingId !== null}
+                                    className="px-2 py-0.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
+                                  >
+                                    {fdSavingId === c.id ? 'Saving…' : 'Use this'}
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })()}
+
+                {Object.keys(fieldMap).length > 0 && (
+                  <div className="mt-3">
+                    <div className="text-xs font-medium text-gray-600 mb-1">Saved mappings</div>
+                    <div className="border border-gray-200 rounded">
+                      <table className="min-w-full text-xs">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="text-left px-2 py-1 font-medium text-gray-500 uppercase tracking-wider">Project</th>
+                            <th className="text-left px-2 py-1 font-medium text-gray-500 uppercase tracking-wider">Field name</th>
+                            <th className="text-left px-2 py-1 font-medium text-gray-500 uppercase tracking-wider">Field id</th>
+                            <th className="text-right px-2 py-1"></th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {Object.entries(fieldMap).flatMap(([project, names]) =>
+                            Object.entries(names).map(([name, id]) => (
+                              <tr key={`${project}:${name}`} className="hover:bg-gray-50">
+                                <td className="px-2 py-1 font-mono text-gray-700">{project}</td>
+                                <td className="px-2 py-1 text-gray-800">{name}</td>
+                                <td className="px-2 py-1 font-mono text-gray-700">{id}</td>
+                                <td className="px-2 py-1 text-right">
+                                  <button
+                                    onClick={() => saveFieldMapping(project, name, '')}
+                                    disabled={fdSavingId !== null}
+                                    className="text-gray-400 hover:text-red-600 disabled:opacity-50"
+                                    title="Clear this mapping"
+                                  >
+                                    ✕
+                                  </button>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                    <p className="text-[11px] text-gray-400 mt-1">Used wherever the app reads that field for that project — story points in the Agent's release and weekly views.</p>
                   </div>
                 )}
               </div>

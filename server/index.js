@@ -1119,23 +1119,59 @@ async function listAllJiraProjects(cfg) {
   return { projects: out, tried };
 }
 
-// Resolve the "Story Points" custom field id for this instance (cached per site).
-const STORY_POINTS_FIELD_CACHE = new Map(); // baseUrl -> fieldId | null
-async function resolveStoryPointsFieldId(cfg) {
+// ---- Jira field resolution ----
+// Jira's field list is site-wide, so a site can hold several custom fields with
+// the same name ("Story Points" three times over, say), each attached to a
+// different project's screens. Matching on name alone picks whichever one the
+// API lists first, which may not be the one a given project's issues actually
+// store values in — and reading an unattached field silently yields 0. So an
+// admin-set per-project mapping (Settings → Jira → Field mapping) wins, and the
+// name match is only the fallback for projects with no mapping.
+const FIELD_LIST_CACHE = new Map(); // baseUrl -> field[]
+async function listJiraFields(cfg, { refresh = false } = {}) {
   const key = cfg.baseUrl || '';
-  if (STORY_POINTS_FIELD_CACHE.has(key)) return STORY_POINTS_FIELD_CACHE.get(key);
-  let id = null;
+  if (!refresh && FIELD_LIST_CACHE.has(key)) return FIELD_LIST_CACHE.get(key);
   const r = await jiraFetch(cfg, '/rest/api/3/field');
-  if (r.ok) {
-    const fields = await r.json().catch(() => []);
-    const arr = Array.isArray(fields) ? fields : [];
-    const find = (re) => arr.find(f => re.test(String(f.name || '')));
-    const f = find(/^story points$/i) || find(/^story point estimate$/i) || find(/story point/i);
-    id = f ? f.id : null;
-  }
-  STORY_POINTS_FIELD_CACHE.set(key, id);
-  return id;
+  const data = r.ok ? await r.json().catch(() => []) : [];
+  const fields = Array.isArray(data) ? data : [];
+  FIELD_LIST_CACHE.set(key, fields);
+  return fields;
 }
+
+// Every field that could answer to `name`, best guess first: exact name match,
+// then a known alias, then anything containing the name. `match` explains which.
+function rankFieldCandidates(fields, name, aliases = []) {
+  const want = String(name).trim().toLowerCase();
+  if (!want) return [];
+  const nameOf = (f) => String(f.name || '').trim().toLowerCase();
+  const out = [];
+  const taken = new Set();
+  const take = (f, match) => { if (!taken.has(f.id)) { taken.add(f.id); out.push({ ...f, match }); } };
+  for (const f of fields) if (nameOf(f) === want) take(f, 'exact');
+  for (const a of aliases) for (const f of fields) if (nameOf(f) === String(a).trim().toLowerCase()) take(f, 'alias');
+  for (const f of fields) if (nameOf(f).includes(want)) take(f, 'partial');
+  return out;
+}
+
+const STORY_POINTS_FIELD = 'Story Points';
+const STORY_POINTS_ALIASES = ['Story point estimate'];
+
+// The admin's explicit choice of field id for `name` in `projectKey`, if any.
+function mappedFieldId(cfg, projectKey, name) {
+  const forProject = (cfg.fieldMapByProject || {})[String(projectKey || '').toUpperCase()] || {};
+  const id = forProject[name];
+  return typeof id === 'string' && id ? id : null;
+}
+
+async function resolveProjectFieldId(cfg, projectKey, name, aliases = []) {
+  const mapped = mappedFieldId(cfg, projectKey, name);
+  if (mapped) return mapped;
+  const [best] = rankFieldCandidates(await listJiraFields(cfg), name, aliases);
+  return best ? best.id : null;
+}
+
+const resolveStoryPointsFieldId = (cfg, projectKey) =>
+  resolveProjectFieldId(cfg, projectKey, STORY_POINTS_FIELD, STORY_POINTS_ALIASES);
 
 // Resolve a Jira project by key OR name (the spreadsheet/user may give either).
 // Returns { project, projects, tried } — `projects` is the full visible list and
@@ -1174,7 +1210,7 @@ app.get('/api/admin/jira-config/export', requireOrgAdminOrSuperAdmin, (req, res)
 app.put('/api/admin/jira-config', requireOrgAdminOrSuperAdmin, async (req, res) => {
   const org = getOrganizationByDomain(req.user.domain);
   if (!org) return res.status(403).json({ error: 'No organization found' });
-  const { baseUrl, email, apiToken, projectKey, epicIssueTypeId, periodFieldKey, periodValueMap } = req.body || {};
+  const { baseUrl, email, apiToken, projectKey, epicIssueTypeId, periodFieldKey, periodValueMap, fieldMapByProject } = req.body || {};
   const existing = getJiraConfig(org.id) || {};
   const next = { ...existing };
   if (typeof baseUrl === 'string') next.baseUrl = baseUrl.trim();
@@ -1184,6 +1220,7 @@ app.put('/api/admin/jira-config', requireOrgAdminOrSuperAdmin, async (req, res) 
   if (typeof epicIssueTypeId === 'string') next.epicIssueTypeId = epicIssueTypeId.trim();
   if (typeof periodFieldKey === 'string') next.periodFieldKey = periodFieldKey.trim() || undefined;
   if (periodValueMap && typeof periodValueMap === 'object') next.periodValueMap = periodValueMap;
+  if (fieldMapByProject && typeof fieldMapByProject === 'object') next.fieldMapByProject = fieldMapByProject;
   saveJiraConfig(org.id, next);
   const { apiToken: _drop, ...safe } = next;
   void _drop;
@@ -1219,6 +1256,117 @@ app.get('/api/admin/jira/projects', requireOrgAdminOrSuperAdmin, async (req, res
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
+});
+
+// Explain how a field name resolves for one real issue: every field on the site
+// whose name could answer to it, which one the code reads today (and why), and
+// what each would actually return for that issue. This is how an admin tells two
+// same-named "Story Points" fields apart before mapping one.
+app.get('/api/admin/jira/field-debug', requireOrgAdminOrSuperAdmin, async (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.status(403).json({ error: 'No organization found' });
+  const cfg = getJiraConfig(org.id);
+  if (!cfg || !cfg.baseUrl || !cfg.email || !cfg.apiToken) {
+    return res.status(400).json({ error: 'Jira not configured' });
+  }
+  const issueKey = (req.query.issue || '').toString().trim();
+  const name = (req.query.name || STORY_POINTS_FIELD).toString().trim();
+  if (!issueKey) return res.status(400).json({ error: 'An issue key is required (e.g. DEV-12207).' });
+  if (!name) return res.status(400).json({ error: 'A field name is required (e.g. Story Points).' });
+
+  try {
+    const ir = await jiraFetch(cfg, `/rest/api/3/issue/${encodeURIComponent(issueKey)}?fields=*all`);
+    if (!ir.ok) {
+      const t = await ir.text().catch(() => '');
+      const msg = ir.status === 404
+        ? `Jira has no issue ${issueKey} visible to ${cfg.email}.`
+        : `Jira: ${ir.status} ${t.slice(0, 200)}`;
+      return res.status(ir.status === 404 ? 404 : 502).json({ error: msg });
+    }
+    const issue = await ir.json();
+    const projectKey = issue.fields?.project?.key || issueKey.split('-')[0];
+
+    // Aliases only make sense for the field we special-case in code.
+    const aliases = name.toLowerCase() === STORY_POINTS_FIELD.toLowerCase() ? STORY_POINTS_ALIASES : [];
+    const ranked = rankFieldCandidates(await listJiraFields(cfg, { refresh: true }), name, aliases);
+    const mapped = mappedFieldId(cfg, projectKey, name);
+    const pickedId = mapped || (ranked[0] ? ranked[0].id : null);
+
+    const candidates = ranked.map(f => {
+      const present = Object.prototype.hasOwnProperty.call(issue.fields || {}, f.id);
+      const value = present ? issue.fields[f.id] : undefined;
+      return {
+        id: f.id,
+        name: f.name,
+        match: f.match,
+        type: f.schema?.type || (f.custom ? 'custom' : ''),
+        custom: f.schema?.custom ? String(f.schema.custom).split(':').pop() : '',
+        // "Not on this issue" (the field isn't on the project's screens) is a very
+        // different failure from "on the issue but empty" — both read as 0 today.
+        onIssue: present,
+        hasValue: present && value !== null && value !== undefined,
+        value: value === undefined ? null : value,
+        valueText: !present ? '(not on this issue)'
+          : value === null ? '(empty)'
+          : typeof value === 'object' ? JSON.stringify(value).slice(0, 120)
+          : String(value),
+        isPicked: f.id === pickedId,
+        isMapped: f.id === mapped,
+      };
+    });
+    // A mapped field id that no longer matches the name still needs to be shown.
+    if (mapped && !candidates.some(c => c.id === mapped)) {
+      const present = Object.prototype.hasOwnProperty.call(issue.fields || {}, mapped);
+      candidates.unshift({
+        id: mapped, name: '(mapped field — name no longer matches)', match: 'mapped', type: '', custom: '',
+        onIssue: present,
+        hasValue: present && issue.fields[mapped] != null,
+        value: present ? issue.fields[mapped] : null,
+        valueText: !present ? '(not on this issue)' : String(issue.fields[mapped] ?? '(empty)'),
+        isPicked: true, isMapped: true,
+      });
+    }
+
+    res.json({
+      issue: {
+        key: issue.key,
+        summary: issue.fields?.summary || '',
+        type: issue.fields?.issuetype?.name || '',
+        projectKey,
+        url: `${cfg.baseUrl.replace(/\/$/, '')}/browse/${issue.key}`,
+      },
+      name,
+      pickedFieldId: pickedId,
+      pickedFrom: mapped ? 'mapping' : (pickedId ? 'name-match' : 'none'),
+      mappedFieldId: mapped,
+      candidates,
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+// Pin a field name to a field id for one project. Sending an empty fieldId drops
+// the mapping and falls back to matching by name.
+app.put('/api/admin/jira/field-map', requireOrgAdminOrSuperAdmin, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.status(403).json({ error: 'No organization found' });
+  const cfg = getJiraConfig(org.id);
+  if (!cfg) return res.status(400).json({ error: 'Jira not configured' });
+  const project = (req.body?.project || '').toString().trim().toUpperCase();
+  const name = (req.body?.name || '').toString().trim();
+  const fieldId = (req.body?.fieldId || '').toString().trim();
+  if (!project || !name) return res.status(400).json({ error: 'project and name are required' });
+
+  const map = { ...(cfg.fieldMapByProject || {}) };
+  const forProject = { ...(map[project] || {}) };
+  if (fieldId) forProject[name] = fieldId;
+  else delete forProject[name];
+  if (Object.keys(forProject).length) map[project] = forProject;
+  else delete map[project];
+
+  saveJiraConfig(org.id, { fieldMapByProject: map });
+  res.json({ fieldMapByProject: map });
 });
 
 app.post('/api/admin/jira/create-period-field', requireOrgAdminOrSuperAdmin, async (req, res) => {
@@ -2393,7 +2541,7 @@ app.get('/api/jira/release-tickets', requireAuth, async (req, res) => {
     const unknown = wanted.filter(name => !byName.get(name.toLowerCase()));
     if (known.length === 0) return res.json({ configured: true, groups: [], unknown, browse, project: projectKey });
 
-    const spField = await resolveStoryPointsFieldId(cfg);
+    const spField = await resolveStoryPointsFieldId(cfg, projectKey);
     const jql = `project = "${projectKey}" AND fixVersion in (${known.map(x => x.v.id).join(',')}) ORDER BY status ASC, key ASC`;
     console.log(`[jira] project=${projectKey} storyPointsField=${spField || 'none'} JQL: ${jql}`);
     const fields = ['summary', 'status', 'assignee', 'issuetype', 'fixVersions', 'priority', 'resolutiondate', ...(spField ? [spField] : [])];
@@ -2424,7 +2572,7 @@ app.get('/api/jira/release-tickets', requireAuth, async (req, res) => {
       version: name,
       tickets: tickets.filter(t => t.fixVersions.includes(v.name)),
     }));
-    res.json({ configured: true, groups, unknown, browse, project: projectKey, jql });
+    res.json({ configured: true, groups, unknown, browse, project: projectKey, jql, storyPointsField: spField || null });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
@@ -2469,7 +2617,7 @@ app.get('/api/jira/resolved-recently', requireAuth, async (req, res) => {
       saveJiraConfig(org.id, { releaseProjectKey: projectKey });
     }
 
-    const spField = await resolveStoryPointsFieldId(cfg);
+    const spField = await resolveStoryPointsFieldId(cfg, projectKey);
     const jql = `project = "${projectKey}" AND resolutiondate >= -${days}d ORDER BY resolutiondate DESC`;
     console.log(`[jira] resolved-recently project=${projectKey} days=${days} storyPointsField=${spField || 'none'} JQL: ${jql}`);
     const fields = ['summary', 'status', 'assignee', 'issuetype', 'fixVersions', 'priority', 'resolutiondate', 'parent', ...(spField ? [spField] : [])];
@@ -2515,7 +2663,7 @@ app.get('/api/jira/resolved-recently', requireAuth, async (req, res) => {
     }
     for (const t of tickets) t.parentFixVersions = t.parentKey ? (parentFix.get(t.parentKey) || []) : [];
 
-    res.json({ configured: true, tickets, days, browse, project: projectKey, jql });
+    res.json({ configured: true, tickets, days, browse, project: projectKey, jql, storyPointsField: spField || null });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }

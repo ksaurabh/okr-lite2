@@ -383,12 +383,16 @@ function countAndSpByAssignee(tickets: JiraTicket[]) {
   return { rows, total };
 }
 
-// Pivot a release's tickets into a status (rows) × type (columns) count matrix.
+// Story points are floats in Jira, so sums like 0.1 + 0.2 need rounding before display.
+const fmtSp = (n: number) => Number(n.toFixed(2));
+
+// Pivot a release's tickets into a status (rows) × type (columns) matrix of
+// ticket count + summed story points.
 // Statuses are ordered by workflow category (To Do → In Progress → Done).
 function pivotByStatusType(tickets: JiraTicket[]) {
   const typeSet = new Set<string>();
   const statuses = new Map<string, { name: string; category: string }>();
-  const counts = new Map<string, Map<string, number>>(); // status -> type -> n
+  const counts = new Map<string, Map<string, { count: number; sp: number }>>(); // status -> type -> {count,sp}
   for (const t of tickets) {
     const type = t.type || '—';
     const status = t.status || '—';
@@ -396,15 +400,17 @@ function pivotByStatusType(tickets: JiraTicket[]) {
     if (!statuses.has(status)) statuses.set(status, { name: status, category: t.statusCategory || '' });
     if (!counts.has(status)) counts.set(status, new Map());
     const row = counts.get(status)!;
-    row.set(type, (row.get(type) || 0) + 1);
+    const prev = row.get(type) || { count: 0, sp: 0 };
+    row.set(type, { count: prev.count + 1, sp: prev.sp + (t.storyPoints || 0) });
   }
   const catRank = (c: string) => (c === 'new' ? 0 : c === 'indeterminate' ? 1 : c === 'done' ? 2 : 3);
   const rows = [...statuses.values()].sort((a, b) => catRank(a.category) - catRank(b.category) || a.name.localeCompare(b.name));
   const types = [...typeSet].sort((a, b) => a.localeCompare(b));
-  const cell = (status: string, type: string) => counts.get(status)?.get(type) || 0;
-  const rowTotal = (status: string) => types.reduce((n, ty) => n + cell(status, ty), 0);
-  const colTotal = (type: string) => rows.reduce((n, s) => n + cell(s.name, type), 0);
-  return { rows, types, cell, rowTotal, colTotal, total: tickets.length };
+  const cell = (status: string, type: string) => counts.get(status)?.get(type) || { count: 0, sp: 0 };
+  const rowTotal = (status: string) => types.reduce((acc, ty) => { const c = cell(status, ty); return { count: acc.count + c.count, sp: acc.sp + c.sp }; }, { count: 0, sp: 0 });
+  const colTotal = (type: string) => rows.reduce((acc, s) => { const c = cell(s.name, type); return { count: acc.count + c.count, sp: acc.sp + c.sp }; }, { count: 0, sp: 0 });
+  const grand = { count: tickets.length, sp: tickets.reduce((n, t) => n + (t.storyPoints || 0), 0) };
+  return { rows, types, cell, rowTotal, colTotal, grand };
 }
 
 const isEpic = (t: JiraTicket) => /^epic$/i.test(t.type || '');
@@ -963,35 +969,39 @@ function renderMsg(m: Msg): React.ReactNode {
                   <p className="text-gray-500 text-sm">No tickets in this release.</p>
                 ) : (
                   <>
-                    <p className="text-xs text-gray-400 mt-1">Tickets by status × type</p>
-                    <div className="overflow-x-auto">
-                      <table className="mt-0.5 text-sm border-collapse">
-                        <thead>
-                          <tr className="text-xs text-gray-500">
-                            <th className="py-1 pr-4 font-medium text-left">Status \ Type</th>
-                            {p.types.map(ty => <th key={ty} className="py-1 px-3 font-medium text-right">{ty}</th>)}
-                            <th className="py-1 pl-3 font-medium text-right border-l border-gray-200">Total</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {p.rows.map(s => (
-                            <tr key={s.name} className="border-t border-gray-100">
-                              <td className="py-1 pr-4 text-gray-800 whitespace-nowrap">{s.name}</td>
-                              {p.types.map(ty => {
-                                const n = p.cell(s.name, ty);
-                                return <td key={ty} className={`py-1 px-3 text-right tabular-nums ${n ? 'text-gray-700' : 'text-gray-300'}`}>{n || '·'}</td>;
-                              })}
-                              <td className="py-1 pl-3 text-right tabular-nums font-medium border-l border-gray-200">{p.rowTotal(s.name)}</td>
-                            </tr>
-                          ))}
-                          <tr className="border-t border-gray-300 font-medium">
-                            <td className="py-1 pr-4 text-right">Total</td>
-                            {p.types.map(ty => <td key={ty} className="py-1 px-3 text-right tabular-nums">{p.colTotal(ty)}</td>)}
-                            <td className="py-1 pl-3 text-right tabular-nums border-l border-gray-200">{p.total}</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
+                    {(['count', 'sp'] as const).map(metric => (
+                      <div key={metric}>
+                        <p className="text-xs text-gray-400 mt-1">{metric === 'count' ? 'Tickets' : 'Story points'} by status × type</p>
+                        <div className="overflow-x-auto">
+                          <table className="mt-0.5 text-sm border-collapse">
+                            <thead>
+                              <tr className="text-xs text-gray-500">
+                                <th className="py-1 pr-4 font-medium text-left">Status \ Type</th>
+                                {p.types.map(ty => <th key={ty} className="py-1 px-3 font-medium text-right">{ty}</th>)}
+                                <th className="py-1 pl-3 font-medium text-right border-l border-gray-200">Total</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {p.rows.map(s => (
+                                <tr key={s.name} className="border-t border-gray-100">
+                                  <td className="py-1 pr-4 text-gray-800 whitespace-nowrap">{s.name}</td>
+                                  {p.types.map(ty => {
+                                    const n = fmtSp(p.cell(s.name, ty)[metric]);
+                                    return <td key={ty} className={`py-1 px-3 text-right tabular-nums ${n ? 'text-gray-700' : 'text-gray-300'}`}>{n || '·'}</td>;
+                                  })}
+                                  <td className="py-1 pl-3 text-right tabular-nums font-medium border-l border-gray-200">{fmtSp(p.rowTotal(s.name)[metric])}</td>
+                                </tr>
+                              ))}
+                              <tr className="border-t border-gray-300 font-medium">
+                                <td className="py-1 pr-4 text-right">Total</td>
+                                {p.types.map(ty => <td key={ty} className="py-1 px-3 text-right tabular-nums">{fmtSp(p.colTotal(ty)[metric])}</td>)}
+                                <td className="py-1 pl-3 text-right tabular-nums border-l border-gray-200">{fmtSp(p.grand[metric])}</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ))}
 
                     {(['count', 'sp'] as const).map(metric => (
                       <div key={metric}>
