@@ -1975,6 +1975,297 @@ app.get('/api/plan-stages', requireAuth, (req, res) => {
   res.json({ stages: org ? getPlanStages(org.id) : [...DEFAULT_PLAN_STAGES] });
 });
 
+// ---- Weekly engineering check (per-organization, configurable in Settings) ----
+// Attainment for the engineering org: each member's story points resolved in the
+// window against an expected-per-person target, flagging anyone below a
+// percentage of it. Membership comes from the org chart — the root department
+// and everything under it — so the check follows the org chart, not a hand-kept
+// list. Members can be individually opted out (on leave, non-delivery role).
+// Two targets: story points expected per person per week (a floor — falling below
+// a percentage of it is flagged), and the maximum size a single ticket should be
+// (a ceiling — any ticket over it is counted, since oversized tickets mean work
+// that wasn't broken down). Each has an org-wide default that any member can
+// override, so the values here are only the fallback.
+const WEEKLY_CHECK_DEFAULTS = { rootDepartment: 'Software Engineering', expectedSp: 32, maxTicketSize: 16, thresholdPct: 80 };
+
+const posNum = (v, fallback) => (Number.isFinite(v) && v >= 0 ? v : fallback);
+
+// The ticket-size setting was briefly an average (`expectedAvgTicketSize`) before
+// it became a ceiling. Values saved under the old key are read as the ceiling, so
+// no one's configured number is silently dropped.
+const ticketSizeOf = (o) => (Number.isFinite(o?.maxTicketSize) ? o.maxTicketSize : o?.expectedAvgTicketSize);
+
+function getWeeklyCheck(orgId) {
+  const data = getOKRData();
+  const cfg = (data.weeklyCheck && data.weeklyCheck[orgId]) || {};
+  return {
+    rootDepartment: typeof cfg.rootDepartment === 'string' && cfg.rootDepartment ? cfg.rootDepartment : WEEKLY_CHECK_DEFAULTS.rootDepartment,
+    expectedSp: posNum(cfg.expectedSp, WEEKLY_CHECK_DEFAULTS.expectedSp),
+    maxTicketSize: posNum(ticketSizeOf(cfg), WEEKLY_CHECK_DEFAULTS.maxTicketSize),
+    thresholdPct: posNum(cfg.thresholdPct, WEEKLY_CHECK_DEFAULTS.thresholdPct),
+    members: (cfg.members && typeof cfg.members === 'object') ? cfg.members : {},
+  };
+}
+function saveWeeklyCheck(orgId, patch) {
+  const data = getOKRData();
+  data.weeklyCheck = data.weeklyCheck || {};
+  data.weeklyCheck[orgId] = { ...getWeeklyCheck(orgId), ...patch };
+  saveOKRData(data);
+  return getWeeklyCheck(orgId);
+}
+
+// The root department plus every department beneath it, by name.
+function departmentSubtree(orgId, rootName) {
+  const all = getDepartments(orgId);
+  const root = all.find(d => d.name.toLowerCase() === String(rootName || '').toLowerCase());
+  if (!root) return [];
+  const names = [root.name];
+  for (let i = 0; i < names.length; i++) {
+    for (const d of all) {
+      if (d.parentName && d.parentName.toLowerCase() === names[i].toLowerCase() && !names.includes(d.name)) names.push(d.name);
+    }
+  }
+  return names;
+}
+
+const displayNameOf = (u) => String(u.nameOverride || u.name || '').trim();
+const normName = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+// Jira Cloud hides user emails, so a person can only be linked to a Jira account
+// by display name — and the names are often short forms ("Shivang" for "Shivang
+// Nagaria", "Kushal Goswami" for "Kushal Kumar Goswami"). Match on the first and
+// last name token, treating a single-token Jira name as a first-name-only match.
+// Anything ambiguous (two members named Shubham) stays unmatched on purpose, for
+// an admin to resolve with an explicit mapping in Settings.
+function jiraNameMatches(jiraName, memberName) {
+  const j = normName(jiraName), m = normName(memberName);
+  if (!j || !m) return false;
+  if (j === m) return true;
+  const jt = j.split(' '), mt = m.split(' ');
+  if (jt[0] !== mt[0]) return false;
+  if (jt.length === 1 || mt.length === 1) return true;
+  return jt[jt.length - 1] === mt[mt.length - 1];
+}
+
+// Everyone in the engineering org chart, with their weekly-check settings and the
+// Jira account they resolve to. `jiraAccountId` is an admin override; without one
+// we fall back to name matching against the assignees seen in the window.
+function weeklyCheckMembers(orgId, cfg = getWeeklyCheck(orgId)) {
+  const depts = departmentSubtree(orgId, cfg.rootDepartment).map(normName);
+  const org = getOrganizations().find(o => o.id === orgId);
+  return getUsers()
+    .filter(u => u.organizationId === orgId || (org && u.domain === org.domain))
+    .filter(u => depts.includes(normName(u.department)))
+    .map(u => {
+      const saved = cfg.members[u.id] || {};
+      // A null override means "use the org default" — kept distinct from 0, which is
+      // a deliberate target of zero.
+      const override = (v) => (Number.isFinite(v) && v >= 0 ? v : null);
+      const expectedSp = override(saved.expectedSp);
+      const maxTicketSize = override(ticketSizeOf(saved));
+      return {
+        userId: u.id,
+        name: displayNameOf(u),
+        email: u.email,
+        department: u.department || '',
+        // Opt-in by default: a new hire lands in the check without a settings visit.
+        included: saved.included !== false,
+        jiraAccountId: saved.jiraAccountId || null,
+        jiraName: saved.jiraName || null,
+        expectedSp,                                            // null = inherit
+        maxTicketSize,                                         // null = inherit
+        effectiveExpectedSp: expectedSp ?? cfg.expectedSp,
+        effectiveMaxTicketSize: maxTicketSize ?? cfg.maxTicketSize,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// Attainment per member for the tickets resolved in the window. `tickets` carry
+// assignee display names and account ids; expected scales with the window length
+// so a 14-day report expects twice a 7-day one.
+function weeklyAttainment(orgId, tickets, days) {
+  const cfg = getWeeklyCheck(orgId);
+  const members = weeklyCheckMembers(orgId, cfg);
+
+  const claimed = new Set(); // assignee keys attributed to a member
+  const rows = members.filter(m => m.included).map(m => {
+    const mine = tickets.filter(t => {
+      const key = t.assigneeId || t.assignee;
+      if (!key) return false;
+      const hit = m.jiraAccountId
+        ? t.assigneeId === m.jiraAccountId
+        : jiraNameMatches(t.assignee, m.jiraName || m.name);
+      if (hit) claimed.add(key);
+      return hit;
+    });
+    const sp = mine.reduce((n, t) => n + (t.storyPoints || 0), 0);
+    // Story points scale with the window; the ticket-size ceiling doesn't — it's a
+    // property of a single ticket, not of how long we looked.
+    const expectedSp = m.effectiveExpectedSp * (days / 7);
+    const maxSize = m.effectiveMaxTicketSize;
+    // Epics are already out of `tickets` — they're containers, not work items, and
+    // would trip the ceiling by design.
+    const oversized = maxSize > 0 ? mine.filter(t => (t.storyPoints || 0) > maxSize) : [];
+    return {
+      userId: m.userId,
+      name: m.name,
+      department: m.department,
+      jiraName: mine[0]?.assignee || m.jiraName || null,
+      count: mine.length,
+      sp: Number(sp.toFixed(2)),
+      expectedSp: Number(expectedSp.toFixed(2)),
+      customExpectedSp: m.expectedSp != null,
+      pct: expectedSp > 0 ? Math.round((sp / expectedSp) * 100) : null,
+      below: expectedSp > 0 && (sp / expectedSp) * 100 < cfg.thresholdPct,
+      // Ticket-size violations ride along here but are reported separately — the
+      // attainment table is about story points delivered, nothing else.
+      maxTicketSize: maxSize,
+      customMaxTicketSize: m.maxTicketSize != null,
+      oversized: oversized
+        .sort((a, b) => (b.storyPoints || 0) - (a.storyPoints || 0))
+        .map(t => ({ key: t.key, summary: t.summary, sp: t.storyPoints || 0, url: t.url, type: t.type })),
+    };
+  }).sort((a, b) => b.sp - a.sp || a.name.localeCompare(b.name));
+
+  // Resolved work by someone the check doesn't cover — someone outside the
+  // engineering org chart (SOC, say), an excluded member, or an engineer whose
+  // Jira name didn't match. Surfaced because it's the only evidence of a failed
+  // name match: a member showing 0 points is indistinguishable from one who
+  // simply shipped nothing, but their unmatched points show up here.
+  const unattributed = [];
+  const seen = new Map();
+  for (const t of tickets) {
+    const key = t.assigneeId || t.assignee;
+    if (!key || claimed.has(key)) continue;
+    const e = seen.get(key) || { assignee: t.assignee || 'Unassigned', count: 0, sp: 0 };
+    e.count += 1; e.sp += t.storyPoints || 0;
+    seen.set(key, e);
+  }
+  for (const e of seen.values()) unattributed.push({ ...e, sp: Number(e.sp.toFixed(2)) });
+  unattributed.sort((a, b) => b.sp - a.sp);
+
+  // Ticket-size violations are their own report: who closed tickets bigger than
+  // the ceiling, how many, and which ones. Epics are already excluded upstream.
+  const oversizedByMember = rows
+    .filter(r => r.oversized.length > 0)
+    .map(r => ({
+      userId: r.userId,
+      name: r.name,
+      department: r.department,
+      maxTicketSize: r.maxTicketSize,
+      customMaxTicketSize: r.customMaxTicketSize,
+      count: r.oversized.length,
+      tickets: r.oversized,
+    }))
+    .sort((a, b) => b.count - a.count || b.tickets[0].sp - a.tickets[0].sp || a.name.localeCompare(b.name));
+
+  return {
+    expectedSp: cfg.expectedSp,                                     // org default, per 7 days
+    expectedForWindow: Number((cfg.expectedSp * (days / 7)).toFixed(2)),
+    maxTicketSize: cfg.maxTicketSize,                               // org default
+    thresholdPct: cfg.thresholdPct,
+    rootDepartment: cfg.rootDepartment,
+    days,
+    // Story points only — ticket size is reported separately.
+    rows: rows.map(({ maxTicketSize: _mts, customMaxTicketSize: _cmts, oversized: _o, ...sp }) => sp),
+    below: rows.filter(r => r.below).map(r => r.name),
+    oversized: {
+      maxTicketSize: cfg.maxTicketSize,
+      ticketCount: oversizedByMember.reduce((n, m) => n + m.count, 0),
+      engineerCount: oversizedByMember.length,
+      members: oversizedByMember,
+    },
+    excluded: members.filter(m => !m.included).map(m => m.name),
+    unattributed,
+  };
+}
+
+const weeklyCheckConfig = (cfg) => ({
+  rootDepartment: cfg.rootDepartment,
+  expectedSp: cfg.expectedSp,
+  maxTicketSize: cfg.maxTicketSize,
+  thresholdPct: cfg.thresholdPct,
+});
+
+app.get('/api/admin/weekly-check', requireOrgAdminOrSuperAdmin, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.status(403).json({ error: 'No organization found' });
+  const cfg = getWeeklyCheck(org.id);
+  res.json({
+    config: weeklyCheckConfig(cfg),
+    members: weeklyCheckMembers(org.id, cfg),
+    departments: departmentSubtree(org.id, cfg.rootDepartment),
+  });
+});
+
+app.put('/api/admin/weekly-check', requireOrgAdminOrSuperAdmin, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.status(403).json({ error: 'No organization found' });
+  const { expectedSp, maxTicketSize, thresholdPct, rootDepartment } = req.body || {};
+  const patch = {};
+  for (const [key, raw] of [['expectedSp', expectedSp], ['maxTicketSize', maxTicketSize], ['thresholdPct', thresholdPct]]) {
+    if (raw == null) continue;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 0) return res.status(400).json({ error: `${key} must be a number ≥ 0` });
+    patch[key] = n;
+  }
+  if (typeof rootDepartment === 'string' && rootDepartment.trim()) patch.rootDepartment = rootDepartment.trim();
+  const cfg = saveWeeklyCheck(org.id, patch);
+  res.json({ config: weeklyCheckConfig(cfg), members: weeklyCheckMembers(org.id, cfg) });
+});
+
+// Per-member settings: opt out of the weekly check, and/or pin the Jira account
+// when the name match can't find them.
+app.put('/api/admin/weekly-check/member', requireOrgAdminOrSuperAdmin, (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.status(403).json({ error: 'No organization found' });
+  const { userId, included, jiraAccountId, jiraName, expectedSp, maxTicketSize } = req.body || {};
+  if (!userId) return res.status(400).json({ error: 'userId is required' });
+  const cfg = getWeeklyCheck(org.id);
+  if (!weeklyCheckMembers(org.id, cfg).some(m => m.userId === userId)) {
+    return res.status(404).json({ error: 'That user is not in the engineering org chart.' });
+  }
+  const members = { ...cfg.members };
+  const entry = { ...(members[userId] || {}) };
+  if (typeof included === 'boolean') entry.included = included;
+  if (jiraAccountId !== undefined) entry.jiraAccountId = jiraAccountId ? String(jiraAccountId) : null;
+  if (jiraName !== undefined) entry.jiraName = jiraName ? String(jiraName) : null;
+  // null clears the override and the member falls back to the org default.
+  for (const [key, raw] of [['expectedSp', expectedSp], ['maxTicketSize', maxTicketSize]]) {
+    if (raw === undefined) continue;
+    // Writing the ticket size retires the legacy key, so clearing the override
+    // isn't quietly undone by a stale `expectedAvgTicketSize` still sitting there.
+    if (key === 'maxTicketSize') delete entry.expectedAvgTicketSize;
+    if (raw === null || raw === '') { entry[key] = null; continue; }
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 0) return res.status(400).json({ error: `${key} must be a number ≥ 0, or null to use the team default` });
+    entry[key] = n;
+  }
+  members[userId] = entry;
+  const saved = saveWeeklyCheck(org.id, { members });
+  res.json({ members: weeklyCheckMembers(org.id, saved) });
+});
+
+// Jira accounts to choose from when pinning a member's Jira identity.
+app.get('/api/admin/jira/users', requireOrgAdminOrSuperAdmin, async (req, res) => {
+  const org = getOrganizationByDomain(req.user.domain);
+  if (!org) return res.status(403).json({ error: 'No organization found' });
+  const cfg = getJiraConfig(org.id);
+  if (!cfg || !cfg.baseUrl || !cfg.email || !cfg.apiToken) return res.status(400).json({ error: 'Jira not configured' });
+  const query = (req.query.query || '').toString().trim();
+  try {
+    const r = await jiraFetch(cfg, `/rest/api/3/user/search?query=${encodeURIComponent(query)}&maxResults=50`);
+    if (!r.ok) { const t = await r.text().catch(() => ''); return res.status(r.status).json({ error: `Jira: ${r.status} ${t.slice(0, 200)}` }); }
+    const users = (await r.json().catch(() => []))
+      .filter(u => u.accountType === 'atlassian' && u.active)
+      .map(u => ({ accountId: u.accountId, displayName: u.displayName }));
+    res.json({ users });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
 // ---- Departments (org-level defined list, used for autocomplete) ----
 // A defined department is { name, parentName } where parentName is the name of its
 // parent department (or null for a top-level department). Older data stored a plain
@@ -2636,6 +2927,7 @@ app.get('/api/jira/resolved-recently', requireAuth, async (req, res) => {
       status: it.fields?.status?.name || '',
       statusCategory: it.fields?.status?.statusCategory?.key || '',
       assignee: it.fields?.assignee?.displayName || 'Unassigned',
+      assigneeId: it.fields?.assignee?.accountId || null,
       type: it.fields?.issuetype?.name || '',
       url: `${browse}/browse/${it.key}`,
       fixVersions: (it.fields?.fixVersions || []).map(v => v.name),
@@ -2663,7 +2955,14 @@ app.get('/api/jira/resolved-recently', requireAuth, async (req, res) => {
     }
     for (const t of tickets) t.parentFixVersions = t.parentKey ? (parentFix.get(t.parentKey) || []) : [];
 
-    res.json({ configured: true, tickets, days, browse, project: projectKey, jql, storyPointsField: spField || null });
+    // Attainment is measured on delivery work only — epics are containers and
+    // carry no points, matching the by-assignee tables in the report.
+    const workItems = tickets.filter(t => !/^epic$/i.test(t.type || ''));
+    res.json({
+      configured: true, tickets, days, browse, project: projectKey, jql,
+      storyPointsField: spField || null,
+      attainment: weeklyAttainment(org.id, workItems, days),
+    });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }

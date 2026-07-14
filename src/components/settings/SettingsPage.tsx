@@ -44,6 +44,23 @@ interface FieldDebug {
   candidates: FieldCandidate[];
 }
 
+// One member of the engineering org chart, with their weekly-check settings.
+interface WeeklyMember {
+  userId: string;
+  name: string;
+  email: string;
+  department: string;
+  included: boolean;
+  jiraAccountId: string | null;
+  jiraName: string | null;
+  expectedSp: number | null;              // null = inherit the team default
+  maxTicketSize: number | null;           // null = inherit the team default
+  effectiveExpectedSp: number;
+  effectiveMaxTicketSize: number;
+}
+
+interface WeeklyConfig { rootDepartment: string; expectedSp: number; maxTicketSize: number; thresholdPct: number; }
+
 export function SettingsPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -89,6 +106,98 @@ export function SettingsPage() {
   const [fdLoading, setFdLoading] = useState(false);
   const [fdResult, setFdResult] = useState<FieldDebug | null>(null);
   const [fdSavingId, setFdSavingId] = useState<string | null>(null);
+
+  // Weekly engineering check: expected story points per person, the flag threshold,
+  // and per-member include/exclude + Jira identity.
+  const [wcOpen, setWcOpen] = useState(true);
+  const [wcConfig, setWcConfig] = useState<WeeklyConfig | null>(null);
+  const [wcMembers, setWcMembers] = useState<WeeklyMember[]>([]);
+  const [wcDepartments, setWcDepartments] = useState<string[]>([]);
+  const [wcExpected, setWcExpected] = useState('');
+  const [wcMaxSize, setWcMaxSize] = useState('');
+  const [wcThreshold, setWcThreshold] = useState('');
+  const wcRef = useRef<HTMLDivElement>(null);
+  const [wcSaving, setWcSaving] = useState(false);
+  const [wcSaved, setWcSaved] = useState(false);
+  const [wcError, setWcError] = useState<string | null>(null);
+  const [wcJiraUsers, setWcJiraUsers] = useState<Array<{ accountId: string; displayName: string }>>([]);
+  const [wcPickerFor, setWcPickerFor] = useState<string | null>(null);
+  const [wcPickerSearch, setWcPickerSearch] = useState('');
+
+  const loadWeeklyCheck = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/admin/weekly-check`, { credentials: 'include' });
+      if (!res.ok) return;
+      const d = await res.json();
+      setWcConfig(d.config);
+      setWcMembers(d.members || []);
+      setWcDepartments(d.departments || []);
+      setWcExpected(String(d.config?.expectedSp ?? ''));
+      setWcMaxSize(String(d.config?.maxTicketSize ?? ''));
+      setWcThreshold(String(d.config?.thresholdPct ?? ''));
+    } catch { /* ignore */ }
+  }, []);
+
+  // Arriving from the report's "set expectations" link (/settings#weekly-check):
+  // open this section and scroll to it.
+  useEffect(() => {
+    if (window.location.hash !== '#weekly-check') return;
+    setWcOpen(true);
+    const t = setTimeout(() => wcRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+    return () => clearTimeout(t);
+  }, [wcMembers.length]);
+
+  const saveWeeklyConfig = async (patch: { expectedSp?: number; maxTicketSize?: number; thresholdPct?: number }) => {
+    setWcSaving(true); setWcError(null); setWcSaved(false);
+    try {
+      const res = await fetch(`${API_URL}/api/admin/weekly-check`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      });
+      const d = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(d?.error || `HTTP ${res.status}`);
+      setWcConfig(d.config);
+      setWcMembers(d.members || []);
+      setWcSaved(true);
+      setTimeout(() => setWcSaved(false), 2000);
+    } catch (err) {
+      setWcError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setWcSaving(false);
+    }
+  };
+
+  const saveWeeklyMember = async (userId: string, patch: { included?: boolean; jiraAccountId?: string | null; jiraName?: string | null; expectedSp?: number | null; maxTicketSize?: number | null }) => {
+    setWcError(null);
+    try {
+      const res = await fetch(`${API_URL}/api/admin/weekly-check/member`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, ...patch }),
+      });
+      const d = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(d?.error || `HTTP ${res.status}`);
+      setWcMembers(d.members || []);
+    } catch (err) {
+      setWcError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  // Jira accounts for the "link this person to Jira" picker.
+  const searchJiraUsers = async (query: string) => {
+    try {
+      const res = await fetch(`${API_URL}/api/admin/jira/users?query=${encodeURIComponent(query)}`, { credentials: 'include' });
+      const d = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(d?.error || `HTTP ${res.status}`);
+      setWcJiraUsers(d.users || []);
+    } catch (err) {
+      setWcError(err instanceof Error ? err.message : String(err));
+      setWcJiraUsers([]);
+    }
+  };
 
   const inspectField = async () => {
     const issue = fdIssue.trim();
@@ -252,7 +361,8 @@ export function SettingsPage() {
   useEffect(() => {
     if (!(isSuperAdmin || isOrgAdmin)) return;
     refreshJiraConfig();
-  }, [isSuperAdmin, isOrgAdmin, refreshJiraConfig]);
+    loadWeeklyCheck();
+  }, [isSuperAdmin, isOrgAdmin, refreshJiraConfig, loadWeeklyCheck]);
 
   // Download the org's Jira integration settings as a JSON file.
   const handleDownloadJira = async () => {
@@ -1335,6 +1445,202 @@ export function SettingsPage() {
 
               {jiraError && (
                 <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded p-2 whitespace-pre-wrap">{jiraError}</div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {(isSuperAdmin || isOrgAdmin) && (
+        <div id="weekly-check" ref={wcRef} className="bg-white rounded-lg shadow-sm border border-gray-200 scroll-mt-4">
+          <button
+            onClick={() => setWcOpen(!wcOpen)}
+            className="w-full p-4 flex items-center justify-between hover:bg-gray-50"
+          >
+            <h2 className="text-base font-semibold text-gray-900">Weekly engineering check</h2>
+            <svg className={`w-4 h-4 text-gray-400 transition-transform ${wcOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {wcOpen && (
+            <div className="p-4 border-t border-gray-200 space-y-3">
+              <p className="text-xs text-gray-500">
+                The Agent's weekly report shows each engineer's resolved story points against an expected target, and flags anyone below a percentage of it.
+                {wcConfig && wcDepartments.length > 0 && (
+                  <> Members come from the org chart — <span className="font-medium text-gray-700">{wcConfig.rootDepartment}</span> and everything under it ({wcDepartments.slice(1).join(', ') || 'no sub-departments'}) — currently {wcMembers.length} {wcMembers.length === 1 ? 'person' : 'people'}.</>
+                )}
+              </p>
+
+              <div className="text-xs font-semibold text-gray-700">Team defaults</div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Story points expected last 7d per person</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={wcExpected}
+                    onChange={(e) => setWcExpected(e.target.value)}
+                    onBlur={() => { const n = Number(wcExpected); if (Number.isFinite(n) && n >= 0 && n !== wcConfig?.expectedSp) saveWeeklyConfig({ expectedSp: n }); }}
+                    className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm"
+                  />
+                  <p className="text-[11px] text-gray-400 mt-1">Scaled to the report window — a 14-day report expects twice this.</p>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Max ticket size</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={wcMaxSize}
+                    onChange={(e) => setWcMaxSize(e.target.value)}
+                    onBlur={() => { const n = Number(wcMaxSize); if (Number.isFinite(n) && n >= 0 && n !== wcConfig?.maxTicketSize) saveWeeklyConfig({ maxTicketSize: n }); }}
+                    className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm"
+                  />
+                  <p className="text-[11px] text-gray-400 mt-1">A ceiling, not a target: any resolved ticket worth more than this is counted in the oversized-tickets report. Epics don't count.</p>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Flag anyone below this % of expected story points</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={wcThreshold}
+                    onChange={(e) => setWcThreshold(e.target.value)}
+                    onBlur={() => { const n = Number(wcThreshold); if (Number.isFinite(n) && n >= 0 && n !== wcConfig?.thresholdPct) saveWeeklyConfig({ thresholdPct: n }); }}
+                    className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm"
+                  />
+                  <p className="text-[11px] text-gray-400 mt-1">
+                    {wcConfig ? `Below ${(wcConfig.expectedSp * wcConfig.thresholdPct / 100).toFixed(1)} points in 7 days gets flagged. The max ticket size has no threshold — one ticket over it counts.` : ''}
+                    {wcSaving ? ' Saving…' : wcSaved ? ' Saved.' : ''}
+                  </p>
+                </div>
+              </div>
+
+              {wcMembers.length === 0 ? (
+                <p className="text-xs text-gray-400">No one in the org chart has a department under {wcConfig?.rootDepartment || 'Software Engineering'} yet.</p>
+              ) : (
+                <div className="border border-gray-200 rounded max-h-96 overflow-y-auto">
+                  <table className="min-w-full text-xs">
+                    <thead className="bg-gray-50 sticky top-0">
+                      <tr>
+                        <th className="text-left px-2 py-1 font-medium text-gray-500 uppercase tracking-wider">Engineer</th>
+                        <th className="text-left px-2 py-1 font-medium text-gray-500 uppercase tracking-wider">Department</th>
+                        <th className="text-left px-2 py-1 font-medium text-gray-500 uppercase tracking-wider">Jira account</th>
+                        <th className="text-right px-2 py-1 font-medium text-gray-500 uppercase tracking-wider" title="Story points expected per 7 days. Blank uses the team default.">Points / 7d</th>
+                        <th className="text-right px-2 py-1 font-medium text-gray-500 uppercase tracking-wider" title="Any resolved ticket worth more than this is counted as oversized. Blank uses the team default.">Max ticket size</th>
+                        <th className="text-center px-2 py-1 font-medium text-gray-500 uppercase tracking-wider">In weekly check</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {wcMembers.map(m => (
+                        <tr key={m.userId} className={`hover:bg-gray-50 ${m.included ? '' : 'opacity-50'}`}>
+                          <td className="px-2 py-1 text-gray-800">{m.name}</td>
+                          <td className="px-2 py-1 text-gray-500">{m.department}</td>
+                          <td className="px-2 py-1">
+                            {m.jiraAccountId ? (
+                              <span className="text-gray-800">
+                                {m.jiraName || m.jiraAccountId}
+                                <button
+                                  onClick={() => saveWeeklyMember(m.userId, { jiraAccountId: null, jiraName: null })}
+                                  className="ml-1.5 text-gray-400 hover:text-red-600"
+                                  title="Unpin — go back to matching by name"
+                                >
+                                  ✕
+                                </button>
+                              </span>
+                            ) : wcPickerFor === m.userId ? (
+                              <div className="relative">
+                                <input
+                                  autoFocus
+                                  type="text"
+                                  value={wcPickerSearch}
+                                  onChange={(e) => { setWcPickerSearch(e.target.value); searchJiraUsers(e.target.value); }}
+                                  onBlur={() => setTimeout(() => setWcPickerFor(null), 150)}
+                                  placeholder="Search Jira users…"
+                                  className="w-40 border border-gray-300 rounded px-2 py-0.5 text-xs"
+                                />
+                                {wcJiraUsers.length > 0 && (
+                                  <div className="absolute left-0 top-full mt-1 z-30 w-56 bg-white border border-gray-200 rounded shadow-lg max-h-48 overflow-y-auto">
+                                    {wcJiraUsers.map(j => (
+                                      <button
+                                        key={j.accountId}
+                                        type="button"
+                                        onClick={() => {
+                                          saveWeeklyMember(m.userId, { jiraAccountId: j.accountId, jiraName: j.displayName });
+                                          setWcPickerFor(null); setWcPickerSearch(''); setWcJiraUsers([]);
+                                        }}
+                                        className="w-full text-left px-2 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+                                      >
+                                        {j.displayName}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => { setWcPickerFor(m.userId); setWcPickerSearch(m.name.split(' ')[0]); searchJiraUsers(m.name.split(' ')[0]); }}
+                                className="text-gray-400 hover:text-blue-600"
+                                title="Pin this person's Jira account. Without a pin they're matched by display name."
+                              >
+                                matched by name — pin
+                              </button>
+                            )}
+                          </td>
+                          {/* Blank = inherit the team default; the placeholder shows what that is. */}
+                          <td className="px-2 py-1 text-right">
+                            <input
+                              type="number"
+                              min="0"
+                              step="any"
+                              defaultValue={m.expectedSp ?? ''}
+                              placeholder={String(wcConfig?.expectedSp ?? '')}
+                              onBlur={(e) => {
+                                const raw = e.target.value.trim();
+                                const next = raw === '' ? null : Number(raw);
+                                if (next !== null && (!Number.isFinite(next) || next < 0)) { e.target.value = String(m.expectedSp ?? ''); return; }
+                                if (next !== m.expectedSp) saveWeeklyMember(m.userId, { expectedSp: next });
+                              }}
+                              className={`w-16 border border-gray-300 rounded px-1 py-0.5 text-xs text-right ${m.expectedSp == null ? 'text-gray-400' : 'text-gray-900 font-medium'}`}
+                            />
+                          </td>
+                          <td className="px-2 py-1 text-right">
+                            <input
+                              type="number"
+                              min="0"
+                              step="any"
+                              defaultValue={m.maxTicketSize ?? ''}
+                              placeholder={String(wcConfig?.maxTicketSize ?? '')}
+                              onBlur={(e) => {
+                                const raw = e.target.value.trim();
+                                const next = raw === '' ? null : Number(raw);
+                                if (next !== null && (!Number.isFinite(next) || next < 0)) { e.target.value = String(m.maxTicketSize ?? ''); return; }
+                                if (next !== m.maxTicketSize) saveWeeklyMember(m.userId, { maxTicketSize: next });
+                              }}
+                              className={`w-16 border border-gray-300 rounded px-1 py-0.5 text-xs text-right ${m.maxTicketSize == null ? 'text-gray-400' : 'text-gray-900 font-medium'}`}
+                            />
+                          </td>
+                          <td className="px-2 py-1 text-center">
+                            <input
+                              type="checkbox"
+                              checked={m.included}
+                              onChange={(e) => saveWeeklyMember(m.userId, { included: e.target.checked })}
+                              className="rounded border-gray-300"
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <p className="text-[11px] text-gray-400">
+                Leave a target blank to use the team default. Jira hides user emails, so people are linked to Jira by display name — pin an account for anyone whose Jira name differs too much to match (or is ambiguous).
+              </p>
+
+              {wcError && (
+                <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded p-2 whitespace-pre-wrap">{wcError}</div>
               )}
             </div>
           )}

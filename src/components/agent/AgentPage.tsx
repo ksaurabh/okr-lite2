@@ -22,7 +22,7 @@ type Msg =
   | { role: 'agent'; kind: 'objlist'; title: string; ids: string[]; code?: string }
   | { role: 'agent'; kind: 'split'; who: string; parentListId: string; childListId: string; parentName: string; childName: string }
   | { role: 'agent'; kind: 'breakdown'; title: string; rows: { name: string; count: number; vp: number }[]; totalCount: number; totalVp: number }
-  | { role: 'agent'; kind: 'resolvedWeekly'; title: string; asOf: string; days: number; rows: { name: string; count: number; sp: number }[]; totalCount: number; totalSp: number; parentRows: ParentGroupRow[] }
+  | { role: 'agent'; kind: 'resolvedWeekly'; title: string; asOf: string; days: number; rows: { name: string; count: number; sp: number }[]; totalCount: number; totalSp: number; parentRows: ParentGroupRow[]; attainment?: Attainment }
   | { role: 'agent'; kind: 'deliverable'; summary: string; neededBy: string; assigneeId: string; assigneeName: string; ownerId: string }
   | { role: 'agent'; kind: 'releases'; area: string; sheetTitle: string; asOf: string; groups: { key: string; label: string; items: ReleaseItem[] }[]; recent: ReleaseItem[]; columns: string[]; note?: string; rawHeaders?: string[]; rawRows?: string[][] }
   | { role: 'agent'; kind: 'reauth'; message: string }
@@ -36,6 +36,74 @@ interface ReleaseItem { name: string; fields: Record<string, string>; why: strin
 interface JiraTicket { key: string; summary: string; status: string; statusCategory: string; assignee: string; type: string; url: string; fixVersions: string[]; storyPoints: number; resolved: string | null; parentKey?: string | null; parentSummary?: string | null; parentFixVersions?: string[]; }
 // One (assignee, parent) group in the weekly resolved breakdown.
 interface ParentGroupRow { assignee: string; parentKey: string; parentSummary: string; parentUrl: string; parentFixVersions: string[]; count: number; sp: number; }
+
+// Story points delivered vs expected for each member of the engineering org chart,
+// as computed by /api/jira/resolved-recently. Everyone in the check appears, including
+// those who resolved nothing — that's the point of the attainment view.
+interface AttainmentRow {
+  userId: string; name: string; department: string; jiraName: string | null;
+  count: number; sp: number;
+  expectedSp: number;          // this person's target, scaled to the window
+  customExpectedSp: boolean;   // true when they override the team default
+  pct: number | null;
+  below: boolean;
+}
+// Tickets closed above the max-ticket-size ceiling, reported apart from attainment.
+interface OversizedTicket { key: string; summary: string; sp: number; url: string; type: string; }
+interface OversizedMember {
+  userId: string; name: string; department: string;
+  maxTicketSize: number; customMaxTicketSize: boolean;
+  count: number; tickets: OversizedTicket[];
+}
+interface Attainment {
+  expectedSp: number;          // team default, per person per 7 days
+  expectedForWindow: number;   // team default scaled to this report's window
+  maxTicketSize: number;
+  thresholdPct: number;
+  rootDepartment: string;
+  days: number;
+  rows: AttainmentRow[];
+  below: string[];
+  oversized: { maxTicketSize: number; ticketCount: number; engineerCount: number; members: OversizedMember[] };
+  excluded: string[];
+  unattributed: { assignee: string; count: number; sp: number }[];
+}
+
+// Jump straight to the weekly-check settings. Routing is path-based, so push the
+// path and let App's popstate handler switch views; the hash tells SettingsPage
+// which section to open and scroll to.
+const goToWeeklyCheckSettings = () => {
+  window.history.pushState({}, '', '/settings#weekly-check');
+  window.dispatchEvent(new PopStateEvent('popstate'));
+};
+
+// Quote every field: names carry commas, and Excel reads a bare leading "-" or "="
+// as a formula.
+const csvCell = (v: string | number | null) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+const downloadCsv = (filename: string, header: string[], rows: (string | number | null)[][]) => {
+  const csv = [header, ...rows].map(r => r.map(csvCell).join(',')).join('\r\n');
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
+const downloadAttainmentCsv = (at: Attainment, asOf: string) => downloadCsv(
+  `attainment-${at.rootDepartment.toLowerCase().replace(/\s+/g, '-')}-${at.days}d-${asOf.replace(/[^\w]+/g, '-')}.csv`,
+  ['Engineer', 'Department', 'Tickets resolved', 'Story points', 'Expected story points', 'Custom target', 'Attainment %', `Below ${at.thresholdPct}%`],
+  at.rows.map(r => [
+    r.name,
+    r.department,
+    r.count,
+    r.sp,
+    r.expectedSp,
+    r.customExpectedSp ? 'yes' : '',
+    r.pct == null ? '' : r.pct,
+    r.below ? 'yes' : '',
+  ]),
+);
 
 interface SessionState {
   step: Step;
@@ -74,7 +142,7 @@ const ENG_AUTONOMOUS_ACTIONS: AutonomousAction[] = [
     label: 'Weekly - Last 7d done, and plan for next 7d',
     cadence: 'Weekly',
     summary: 'Last 7d done, and plan for next 7d',
-    description: 'Fetches tickets resolved in the last 7 days and reports the number of tickets resolved by assignee along with the sum of their story points by assignee.',
+    description: 'Fetches tickets resolved in the last 7 days and reports the number of tickets resolved by assignee along with the sum of their story points by assignee, each engineer\'s attainment against the expected story points per person, and any tickets resolved above the max ticket size.',
   },
 ];
 const DURATION_TYPES = [
@@ -153,8 +221,8 @@ const splitMsg = (who: string, parentListId: string, childListId: string, parent
   ({ role: 'agent', kind: 'split', who, parentListId, childListId, parentName, childName });
 const breakdownMsg = (title: string, rows: { name: string; count: number; vp: number }[], totalCount: number, totalVp: number): Msg =>
   ({ role: 'agent', kind: 'breakdown', title, rows, totalCount, totalVp });
-const resolvedWeeklyMsg = (title: string, asOf: string, days: number, rows: { name: string; count: number; sp: number }[], totalCount: number, totalSp: number, parentRows: ParentGroupRow[]): Msg =>
-  ({ role: 'agent', kind: 'resolvedWeekly', title, asOf, days, rows, totalCount, totalSp, parentRows });
+const resolvedWeeklyMsg = (title: string, asOf: string, days: number, rows: { name: string; count: number; sp: number }[], totalCount: number, totalSp: number, parentRows: ParentGroupRow[], attainment?: Attainment): Msg =>
+  ({ role: 'agent', kind: 'resolvedWeekly', title, asOf, days, rows, totalCount, totalSp, parentRows, attainment });
 
 // Group resolved tickets by (assignee, parent issue) with count + summed story
 // points. Tickets without a parent are grouped under "None".
@@ -787,6 +855,126 @@ function renderMsg(m: Msg): React.ReactNode {
               </tbody>
             </table>
           )}
+          {m.attainment && m.attainment.rows.length > 0 && (() => {
+            const at = m.attainment;
+            return (
+              <div className="mt-4">
+                <div className="flex items-baseline gap-3">
+                  <p className="text-sm font-medium text-gray-700">Attainment — {at.rootDepartment}</p>
+                  <button
+                    onClick={() => downloadAttainmentCsv(at, m.asOf)}
+                    className="text-xs text-blue-600 hover:underline"
+                    title="Download this table as a CSV file"
+                  >
+                    Download CSV
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400 mb-1">
+                  {at.rows.length} {at.rows.length === 1 ? 'engineer' : 'engineers'} in the weekly check · team default {at.expectedForWindow} story points each over {at.days} days · flagged below {at.thresholdPct}%
+                </p>
+                <table className="mt-1 text-sm">
+                  <thead>
+                    <tr className="text-xs text-gray-400 text-left">
+                      <th className="py-1 pr-6 font-medium">Engineer</th>
+                      <th className="py-1 pr-6 font-medium">Department</th>
+                      <th className="py-1 pr-6 font-medium text-right">Tickets</th>
+                      <th className="py-1 pr-6 font-medium text-right">Story points</th>
+                      <th className="py-1 pr-6 font-medium text-right">Expected</th>
+                      <th className="py-1 font-medium text-right">Attainment</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {at.rows.map(r => (
+                      <tr key={r.userId} className={`border-b border-gray-100 last:border-0 ${r.below ? 'bg-amber-50' : ''}`}>
+                        <td className="py-1 pr-6 text-gray-800">{r.name}</td>
+                        <td className="py-1 pr-6 text-gray-500 text-xs">{r.department}</td>
+                        <td className="py-1 pr-6 text-gray-600 text-right tabular-nums">{r.count}</td>
+                        <td className="py-1 pr-6 text-gray-600 text-right tabular-nums">{r.sp}</td>
+                        <td className="py-1 pr-6 text-gray-400 text-right tabular-nums" title={r.customExpectedSp ? 'Custom target for this person' : 'Team default'}>
+                          {r.expectedSp}{r.customExpectedSp && <span className="text-blue-500">*</span>}
+                        </td>
+                        <td className={`py-1 text-right tabular-nums font-medium ${r.below ? 'text-amber-700' : 'text-gray-700'}`}>
+                          {r.pct == null ? '—' : `${r.pct}%`}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {at.rows.some(r => r.customExpectedSp) && (
+                  <p className="mt-1 text-[11px] text-gray-400"><span className="text-blue-500">*</span> custom target for that person, not the team default.</p>
+                )}
+                {at.below.length > 0 && (
+                  <p className="mt-2 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded p-2">
+                    <span className="font-medium">Below {at.thresholdPct}% of expected story points ({at.below.length}):</span> {at.below.join(', ')}
+                  </p>
+                )}
+                {at.excluded.length > 0 && (
+                  <p className="mt-1 text-xs text-gray-400">Excluded from the check: {at.excluded.join(', ')}</p>
+                )}
+                {at.unattributed.length > 0 && (
+                  <p className="mt-1 text-xs text-gray-400">
+                    Resolved by Jira accounts not linked to anyone in the check: {at.unattributed.map(u => `${u.assignee} (${u.sp} sp)`).join(', ')}. If one of them is an engineer above, pin their Jira account in settings.
+                  </p>
+                )}
+                <button
+                  onClick={goToWeeklyCheckSettings}
+                  className="mt-2 text-xs text-blue-600 hover:underline"
+                >
+                  Set expected story points and max ticket size (per person) → Settings → Weekly engineering check
+                </button>
+
+                {/* Ticket size is its own report: a ceiling, not a target. */}
+                <div className="mt-4">
+                  <p className="text-sm font-medium text-gray-700">Oversized tickets — {at.rootDepartment}</p>
+                  <p className="text-xs text-gray-400 mb-1">
+                    Tickets resolved above the max ticket size (team default {at.oversized.maxTicketSize} points; epics excluded) in the last {at.days} days.
+                  </p>
+                  {at.oversized.ticketCount === 0 ? (
+                    <p className="text-sm text-gray-500">No ticket exceeded the max size. </p>
+                  ) : (
+                    <>
+                      <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded p-2 mb-1">
+                        <span className="font-medium">{at.oversized.ticketCount} {at.oversized.ticketCount === 1 ? 'ticket' : 'tickets'}</span> over the max size, across {at.oversized.engineerCount} {at.oversized.engineerCount === 1 ? 'engineer' : 'engineers'}.
+                      </p>
+                      <table className="mt-1 text-sm">
+                        <thead>
+                          <tr className="text-xs text-gray-400 text-left">
+                            <th className="py-1 pr-6 font-medium">Engineer</th>
+                            <th className="py-1 pr-6 font-medium text-right">Max size</th>
+                            <th className="py-1 pr-6 font-medium text-right">Tickets over</th>
+                            <th className="py-1 font-medium">Tickets (points)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {at.oversized.members.map(m => (
+                            <tr key={m.userId} className="border-b border-gray-100 last:border-0 align-top">
+                              <td className="py-1 pr-6 text-gray-800">{m.name}</td>
+                              <td className="py-1 pr-6 text-gray-400 text-right tabular-nums" title={m.customMaxTicketSize ? 'Custom max for this person' : 'Team default'}>
+                                {m.maxTicketSize}{m.customMaxTicketSize && <span className="text-blue-500">*</span>}
+                              </td>
+                              <td className="py-1 pr-6 text-amber-700 text-right tabular-nums font-medium">{m.count}</td>
+                              <td className="py-1 text-gray-600">
+                                {m.tickets.map((t, i) => (
+                                  <span key={t.key}>
+                                    {i > 0 && ', '}
+                                    <a href={t.url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline" title={t.summary}>{t.key}</a>
+                                    <span className="text-gray-500"> ({t.sp})</span>
+                                  </span>
+                                ))}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {at.oversized.members.some(m => m.customMaxTicketSize) && (
+                        <p className="mt-1 text-[11px] text-gray-400"><span className="text-blue-500">*</span> custom max for that person, not the team default.</p>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
           {(m.parentRows?.length ?? 0) > 0 && (() => {
             const pv = pivotParents(m.parentRows);
             const parentCell = (p: { key: string; summary: string; url: string; fixVersions: string[] }) =>
@@ -1744,7 +1932,7 @@ export function AgentPage() {
         backToAutonomousEng();
         return;
       }
-      const data = await res.json() as { configured: boolean; tickets?: JiraTicket[]; days?: number; browse?: string };
+      const data = await res.json() as { configured: boolean; tickets?: JiraTicket[]; days?: number; browse?: string; attainment?: Attainment };
       if (!data.configured) {
         appendAgent(textMsg('Jira isn\'t configured for your organization yet — an admin can set it up under Admin → Jira.', 'error'));
         backToAutonomousEng();
@@ -1761,6 +1949,7 @@ export function AgentPage() {
         rows.map(([name, v]) => ({ name, count: v.count, sp: v.sp })),
         total.count, total.sp,
         parentRows,
+        data.attainment,
       ));
       backToAutonomousEng();
     } catch (err) {
