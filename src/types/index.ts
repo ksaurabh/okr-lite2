@@ -58,6 +58,9 @@ export interface Objective {
   nextStep?: string;
   storyPoints?: number;
   valuePoints?: number;
+  // Grading: how much of this objective's value was attained, 0-100 (%). Set when
+  // grading a plan; VP attained = valuePoints * attainment / 100.
+  attainment?: number;
   link?: ObjectiveLink;
   sortOrder?: number;
   progressUpdates?: ProgressUpdate[];

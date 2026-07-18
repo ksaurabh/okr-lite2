@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { ObjectiveFilterPanel } from '../filters/ObjectiveFilterPanel';
 import { CompactObjectiveCard } from '../objectives/CompactObjectiveCard';
 import { AddToPlanBookmark } from '../plans/AddToPlanBookmark';
+import { GradePlanModal } from '../plans/GradePlanModal';
 import { renderGroupedPeriodOptions } from '../../utils/periodOptions';
 import { resolveJiraEpicForObjective } from '../../utils/jiraEpic';
 import { ObjectiveForm } from '../objectives/ObjectiveForm';
@@ -170,6 +171,7 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
   const [treeShowDoneArchived, setTreeShowDoneArchived] = useState(false);
   const [editingPlanName, setEditingPlanName] = useState(false);
   const [planNameDraft, setPlanNameDraft] = useState('');
+  const [gradingPlan, setGradingPlan] = useState(false);
   const togglePlanSelectedObjective = (obj: Objective) => {
     setPlanSelectedObjective(prev => prev?.id === obj.id ? null : obj);
   };
@@ -1503,6 +1505,16 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
                   </svg>
                 </button>
               )}
+              <button
+                onClick={() => setGradingPlan(true)}
+                className="inline-flex items-center gap-1 px-2 py-1 text-xs border border-gray-300 rounded text-gray-700 hover:bg-gray-50"
+                title="Grade this plan — set status and attainment per item, and see VP attained"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Grade this plan
+              </button>
               {(() => {
                 const parent = planFocusEffective.parentId
                   ? (lists.find(l => l.id === planFocusEffective.parentId) || sharedPlans.find(l => l.id === planFocusEffective.parentId))
@@ -3671,6 +3683,14 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
             </div>
           </div>
         </div>
+      )}
+
+      {gradingPlan && planFocusEffective && (
+        <GradePlanModal
+          plan={planFocusEffective}
+          isReadOnly={isReadOnlyList}
+          onClose={() => setGradingPlan(false)}
+        />
       )}
     </div>
   );
