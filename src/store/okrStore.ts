@@ -567,6 +567,9 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     if ('attainment' in updates && normalize(updates.attainment) !== normalize(existingObj.attainment)) {
       changes.push({ field: 'attainment', oldValue: existingObj.attainment, newValue: updates.attainment, oldRaw: existingObj.attainment, newRaw: updates.attainment });
     }
+    if ('attainmentNote' in updates && normalize(updates.attainmentNote) !== normalize(existingObj.attainmentNote)) {
+      changes.push({ field: 'attainmentNote', oldValue: existingObj.attainmentNote || '(empty)', newValue: updates.attainmentNote || '(empty)', oldRaw: existingObj.attainmentNote, newRaw: updates.attainmentNote });
+    }
     if ('isKeyResult' in updates && !!updates.isKeyResult !== !!existingObj.isKeyResult) {
       changes.push({ field: 'isKeyResult', oldValue: existingObj.isKeyResult ? 'Yes' : 'No', newValue: updates.isKeyResult ? 'Yes' : 'No', oldRaw: !!existingObj.isKeyResult, newRaw: !!updates.isKeyResult });
     }

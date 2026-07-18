@@ -61,6 +61,8 @@ export interface Objective {
   // Grading: how much of this objective's value was attained, 0-100 (%). Set when
   // grading a plan; VP attained = valuePoints * attainment / 100.
   attainment?: number;
+  // Grader's comment/explanation for the attainment, shown on the plan report card.
+  attainmentNote?: string;
   link?: ObjectiveLink;
   sortOrder?: number;
   progressUpdates?: ProgressUpdate[];

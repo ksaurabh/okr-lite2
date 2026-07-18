@@ -610,6 +610,23 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
     }
   }, [planFocusListId, lists, sharedPlansEarly, embedded]);
 
+  // Deep link: /plans?plan=<id>&scorecard=1 focuses that plan and opens its
+  // scorecard. Runs once; strips the params so closing the card doesn't reopen it.
+  const scorecardLinkHandled = useRef(false);
+  useEffect(() => {
+    if (embedded || scorecardLinkHandled.current) return;
+    const params = new URLSearchParams(window.location.search);
+    const planId = params.get('plan');
+    if (params.get('scorecard') && planId) {
+      scorecardLinkHandled.current = true;
+      setPlanFocusListId(planId);
+      setGradingPlan(true);
+      params.delete('scorecard'); params.delete('plan');
+      const qs = params.toString();
+      window.history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : ''));
+    }
+  }, [embedded, setPlanFocusListId]);
+
   // Keep the embedded view pinned to the forced plan.
   useEffect(() => {
     if (forcedListId) setSelectedListId(forcedListId);
@@ -1233,6 +1250,16 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
               VP roll-up dots
             </label>
             <button
+              onClick={() => { setShowPlanActionMenu(false); setGradingPlan(true); }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 text-left border-b border-gray-100"
+              title="Grade this plan — status, attainment and comments per item; submit to close"
+            >
+              <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Grade this plan
+            </button>
+            <button
               onClick={() => { setShowPlanActionMenu(false); setShowPlanHistory(true); }}
               className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 text-left"
             >
@@ -1456,6 +1483,25 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
               ← Back to Plans
             </button>
             )}
+            {(() => {
+              // Nudge the owner to grade once the plan's period has ended — unless
+              // it's already Closed (graded/submitted).
+              const period = periods.find(p => p.id === planFocusEffective.periodId);
+              const today = new Date().toLocaleDateString('en-CA'); // local YYYY-MM-DD
+              const expired = !!period?.endDate && period.endDate < today;
+              if (!expired || planFocusEffective.status === 'Closed') return null;
+              return (
+                <div className="mb-2 flex items-center justify-between gap-3 px-3 py-2 rounded border border-amber-300 bg-amber-50 text-amber-900 text-sm">
+                  <span><span className="font-medium">This duration has expired.</span> Grade this plan now.</span>
+                  <button
+                    onClick={() => setGradingPlan(true)}
+                    className="px-2.5 py-1 text-xs font-medium bg-amber-600 text-white rounded hover:bg-amber-700 whitespace-nowrap"
+                  >
+                    Grade this plan
+                  </button>
+                </div>
+              );
+            })()}
             <div className="flex items-center gap-3 flex-wrap">
               {editingPlanName && !isReadOnlyList ? (
                 <input
@@ -1505,16 +1551,6 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
                   </svg>
                 </button>
               )}
-              <button
-                onClick={() => setGradingPlan(true)}
-                className="inline-flex items-center gap-1 px-2 py-1 text-xs border border-gray-300 rounded text-gray-700 hover:bg-gray-50"
-                title="Grade this plan — set status and attainment per item, and see VP attained"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Grade this plan
-              </button>
               {(() => {
                 const parent = planFocusEffective.parentId
                   ? (lists.find(l => l.id === planFocusEffective.parentId) || sharedPlans.find(l => l.id === planFocusEffective.parentId))
