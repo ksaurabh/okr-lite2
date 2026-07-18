@@ -610,23 +610,6 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
     }
   }, [planFocusListId, lists, sharedPlansEarly, embedded]);
 
-  // Deep link: /plans?plan=<id>&scorecard=1 focuses that plan and opens its
-  // scorecard. Runs once; strips the params so closing the card doesn't reopen it.
-  const scorecardLinkHandled = useRef(false);
-  useEffect(() => {
-    if (embedded || scorecardLinkHandled.current) return;
-    const params = new URLSearchParams(window.location.search);
-    const planId = params.get('plan');
-    if (params.get('scorecard') && planId) {
-      scorecardLinkHandled.current = true;
-      setPlanFocusListId(planId);
-      setGradingPlan(true);
-      params.delete('scorecard'); params.delete('plan');
-      const qs = params.toString();
-      window.history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : ''));
-    }
-  }, [embedded, setPlanFocusListId]);
-
   // Keep the embedded view pinned to the forced plan.
   useEffect(() => {
     if (forcedListId) setSelectedListId(forcedListId);
