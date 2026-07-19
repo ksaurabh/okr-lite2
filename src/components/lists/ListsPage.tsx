@@ -2583,6 +2583,16 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
                       walk(planSelectedObjective.id);
                       return pool;
                     })();
+                    // With auto filter on, the tree is scoped to the selected objective.
+                    // With it off, show the entire objective tree (all roots), still
+                    // narrowed by the search box when one is active.
+                    const treeRoots: Objective[] = treeAutoFilter
+                      ? [planSelectedObjective]
+                      : (() => {
+                          const all = orgObjectives.filter(o => !o.parentId)
+                            .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.title.localeCompare(b.title));
+                          return treeFilteredIds ? all.filter(r => treeFilteredIds.has(r.id)) : all;
+                        })();
                     const assigneeCounts = new Map<string, number>();
                     const ownerCounts = new Map<string, number>();
                     const periodCounts = new Map<string, number>();
@@ -2838,7 +2848,7 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
                         };
                         return (
                           <div>
-                            {renderRow(planSelectedObjective, 0)}
+                            {treeRoots.map(r => <Fragment key={r.id}>{renderRow(r, 0)}</Fragment>)}
                           </div>
                         );
                       })() : listPlanTreeView === 'cards' ? (() => {
@@ -2979,7 +2989,7 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
                         };
                         return (
                           <div className="p-2 space-y-1">
-                            {renderCard(planSelectedObjective, 0)}
+                            {treeRoots.map(r => <Fragment key={r.id}>{renderCard(r, 0)}</Fragment>)}
                           </div>
                         );
                       })() : (
@@ -2999,15 +3009,17 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
                                   </div>
                                 ))}
                             </div>
-                            <CompactObjectiveCard
-                              key={planSelectedObjective.id}
-                              objective={planSelectedObjective}
-                              depth={0}
-                              visibleColumnsOverride={listPlanColumns}
-                              quickAddToListId={isReadOnlyList ? undefined : ((planTopLevel ? selectedList.id : planSelectedChildListId) || undefined)}
-                              filteredObjectiveIds={treeFilteredIds || undefined}
-                              kebabActions
-                            />
+                            {treeRoots.map(r => (
+                              <CompactObjectiveCard
+                                key={r.id}
+                                objective={r}
+                                depth={0}
+                                visibleColumnsOverride={listPlanColumns}
+                                quickAddToListId={isReadOnlyList ? undefined : ((planTopLevel ? selectedList.id : planSelectedChildListId) || undefined)}
+                                filteredObjectiveIds={treeFilteredIds || undefined}
+                                kebabActions
+                              />
+                            ))}
                           </div>
                         </div>
                       )}
