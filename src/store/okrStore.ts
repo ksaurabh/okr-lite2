@@ -233,6 +233,7 @@ interface OKRActions {
   setListShared: (listId: string, shared: boolean) => Promise<void>;
   setListLevel: (listId: string, level: import('../types').ObjectiveLevel | '') => Promise<void>;
   setListStatus: (listId: string, status: string) => Promise<void>;
+  saveListScorecard: (listId: string, scorecard: import('../types').PlanScorecard | null) => Promise<void>;
   setListOwner: (listId: string, ownerId: string) => Promise<void>;
   setListPeriod: (listId: string, periodId: string) => Promise<void>;
   deleteList: (listId: string) => Promise<void>;
@@ -2247,6 +2248,28 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       }
     } catch (err) {
       console.error('Failed to update list status:', err);
+    }
+  },
+
+  saveListScorecard: async (listId, scorecard) => {
+    const state = get();
+    set({ lists: state.lists.map(l => l.id === listId
+      ? (scorecard ? { ...l, scorecard } : (() => { const { scorecard: _drop, ...rest } = l as List & { scorecard?: import('../types').PlanScorecard }; void _drop; return rest as List; })())
+      : l
+    ) });
+    try {
+      const response = await fetch(`${API_URL}/api/users/me/lists/${listId}`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scorecard: scorecard ?? null }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.lists) set({ lists: data.lists });
+      }
+    } catch (err) {
+      console.error('Failed to save plan scorecard:', err);
     }
   },
 

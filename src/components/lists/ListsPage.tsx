@@ -15,7 +15,11 @@ import {
   buildObjectiveDescendantLookup,
   filterObjectives,
 } from '../../utils/objectiveFilters';
-import type { List, ListHistoryEntry, Objective, ObjectiveLevel, Period, Team, Tag, User, WorkflowStatus } from '../../types';
+import type { List, ListHistoryEntry, Objective, ObjectiveLevel, Period, PlanScorecard, PlanScorecardItem, Team, Tag, User, WorkflowStatus } from '../../types';
+
+// Preset value-point achievement levels offered in the Final Review, plus the
+// option to type any percent between 0 and 100.
+const SCORE_PRESETS = [0, 10, 20, 40, 70, 100];
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -268,6 +272,11 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
   // Plan Action Menu (top-right kebab) + history pane
   const [showPlanActionMenu, setShowPlanActionMenu] = useState(false);
   const [showPlanHistory, setShowPlanHistory] = useState(false);
+  const [showFinalReview, setShowFinalReview] = useState(false);
+  const [showScorecard, setShowScorecard] = useState(false);
+  const [reviewPercents, setReviewPercents] = useState<Record<string, number>>({});
+  const [reviewStatuses, setReviewStatuses] = useState<Record<string, WorkflowStatus>>({});
+  const [savingReview, setSavingReview] = useState(false);
   const planActionMenuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!showPlanActionMenu) return;
@@ -478,6 +487,7 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
   const [quickAddCardParentId, setQuickAddCardParentId] = useState<string | null>(null);
   const [quickAddCardTitle, setQuickAddCardTitle] = useState('');
   const reorderListItems = useOKRStore((state: OKRStore) => state.reorderListItems);
+  const saveListScorecard = useOKRStore((state: OKRStore) => state.saveListScorecard);
   const setFilterRootObjective = useOKRStore((state: OKRStore) => state.setFilterRootObjective);
   const clearAllFilters = useOKRStore((state: OKRStore) => state.clearAllFilters);
   const updateObjective = useOKRStore((state: OKRStore) => state.updateObjective);
@@ -802,6 +812,82 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
   const sortedItems = selectedList?.items
     ? [...selectedList.items].sort((a, b) => a.order - b.order)
     : [];
+
+  // ---- Final Review / scorecard ----
+  // The plan's live items resolved to objectives, in plan order. Deleted
+  // objectives are dropped so the review only rates items that still exist.
+  const reviewObjectives = sortedItems
+    .map(it => getObjective(it.objectiveId))
+    .filter((o): o is Objective => !!o);
+
+  const clampPct = (n: number) => Math.max(0, Math.min(100, Math.round(n)));
+
+  // Roll up the current in-modal ratings into Total VP, VP Achieved, and %.
+  const reviewTotals = (() => {
+    let totalVp = 0;
+    let vpAchieved = 0;
+    for (const o of reviewObjectives) {
+      const vp = o.valuePoints ?? 0;
+      const pct = clampPct(reviewPercents[o.id] ?? 0);
+      totalVp += vp;
+      vpAchieved += (vp * pct) / 100;
+    }
+    const vpAchievedRounded = Math.round(vpAchieved * 100) / 100;
+    return {
+      totalVp,
+      vpAchieved: vpAchievedRounded,
+      vpAchievedPct: totalVp > 0 ? Math.round((vpAchievedRounded / totalVp) * 100) : 0,
+    };
+  })();
+
+  const openFinalReview = () => {
+    const existing = selectedList?.scorecard;
+    const percents: Record<string, number> = {};
+    const statuses: Record<string, WorkflowStatus> = {};
+    for (const o of reviewObjectives) {
+      const prior = existing?.items.find(i => i.objectiveId === o.id);
+      percents[o.id] = prior ? clampPct(prior.percentAchieved) : 0;
+      statuses[o.id] = o.workflowStatus || 'todo';
+    }
+    setReviewPercents(percents);
+    setReviewStatuses(statuses);
+    setShowPlanActionMenu(false);
+    setShowFinalReview(true);
+  };
+
+  const handleSaveReview = async () => {
+    if (!selectedList) return;
+    setSavingReview(true);
+    try {
+      // Apply any status changes to the underlying objectives.
+      for (const o of reviewObjectives) {
+        const next = reviewStatuses[o.id];
+        if (next && next !== (o.workflowStatus || 'todo')) {
+          await updateObjective(o.id, { workflowStatus: next }, userEmail);
+        }
+      }
+      const items: PlanScorecardItem[] = reviewObjectives.map(o => ({
+        objectiveId: o.id,
+        title: o.title,
+        valuePoints: o.valuePoints ?? 0,
+        percentAchieved: clampPct(reviewPercents[o.id] ?? 0),
+        workflowStatus: reviewStatuses[o.id] || o.workflowStatus || 'todo',
+      }));
+      const scorecard: PlanScorecard = {
+        reviewedAt: new Date().toISOString(),
+        reviewedBy: userEmail,
+        items,
+        totalVp: reviewTotals.totalVp,
+        vpAchieved: reviewTotals.vpAchieved,
+        vpAchievedPct: reviewTotals.vpAchievedPct,
+      };
+      await saveListScorecard(selectedList.id, scorecard);
+      setShowFinalReview(false);
+      setShowScorecard(true);
+    } finally {
+      setSavingReview(false);
+    }
+  };
 
   // VP sum + count of the selected child plan's items in `objId`'s subtree
   // (excluding the item itself) — i.e. the children of that parent objective
@@ -1230,6 +1316,28 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
               <input type="checkbox" checked={showVpDots} onChange={(e) => setShowVpDotsPersist(e.target.checked)} className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
               VP roll-up dots
             </label>
+            {!isReadOnlyList && (
+              <button
+                onClick={openFinalReview}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 text-left border-t border-gray-100"
+              >
+                <svg className="w-4 h-4 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="flex-1">{selectedList?.scorecard ? 'Redo Final Review' : 'Final Review'}</span>
+              </button>
+            )}
+            {selectedList?.scorecard && (
+              <button
+                onClick={() => { setShowPlanActionMenu(false); setShowScorecard(true); }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 text-left"
+              >
+                <svg className="w-4 h-4 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span className="flex-1">View scorecard</span>
+              </button>
+            )}
             <button
               onClick={() => { setShowPlanActionMenu(false); setShowPlanHistory(true); }}
               className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 text-left"
@@ -1589,6 +1697,23 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
                       </span>
                     ))}
                   </span>
+                );
+              })()}
+              {planFocusEffective.scorecard && (() => {
+                const sc = planFocusEffective.scorecard!;
+                const pct = sc.vpAchievedPct;
+                const tone = pct >= 70 ? 'bg-green-50 border-green-300 text-green-700'
+                  : pct >= 40 ? 'bg-yellow-50 border-yellow-300 text-yellow-700'
+                  : 'bg-red-50 border-red-300 text-red-700';
+                return (
+                  <button
+                    onClick={() => setShowScorecard(true)}
+                    className={`text-xs px-2 py-1 rounded border ${tone} hover:brightness-95 flex items-center gap-1.5`}
+                    title={`Final Review: ${sc.vpAchieved} of ${sc.totalVp} VP achieved. Click to view scorecard.`}
+                  >
+                    <span className="font-semibold">Final Score {pct}%</span>
+                    <span className="opacity-75">({sc.vpAchieved}/{sc.totalVp} VP)</span>
+                  </button>
                 );
               })()}
               <div className="ml-auto">{renderPlanActionMenu()}</div>
@@ -3434,6 +3559,188 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
           );
         })()}
       </SlidePane>
+      {showFinalReview && selectedList && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center p-4" onClick={() => { if (!savingReview) setShowFinalReview(false); }}>
+          <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="p-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900">Final Review — {selectedList.name}</h3>
+              <p className="text-xs text-gray-500 mt-1">
+                Set each item's status and rate how well it was done in value points. VP achieved for an item is its VP × % achieved.
+              </p>
+            </div>
+            {reviewObjectives.length === 0 ? (
+              <div className="p-8 text-center text-sm text-gray-400">This plan has no items to review.</div>
+            ) : (
+              <div className="overflow-y-auto flex-1">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50 sticky top-0 z-10">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Item</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">VP</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">% Achieved</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">VP Achieved</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {reviewObjectives.map(o => {
+                      const vp = o.valuePoints ?? 0;
+                      const pct = clampPct(reviewPercents[o.id] ?? 0);
+                      return (
+                        <tr key={o.id} className="align-top">
+                          <td className="px-3 py-2 text-gray-800 max-w-[240px]">
+                            <div className="break-words">{o.title}</div>
+                          </td>
+                          <td className="px-3 py-2">
+                            <select
+                              value={reviewStatuses[o.id] || o.workflowStatus || 'todo'}
+                              onChange={(e) => setReviewStatuses(s => ({ ...s, [o.id]: e.target.value as WorkflowStatus }))}
+                              className="border border-gray-300 rounded px-1.5 py-0.5 text-xs bg-white"
+                            >
+                              {WORKFLOW_STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                            </select>
+                          </td>
+                          <td className="px-3 py-2 text-right text-gray-600 tabular-nums">{vp}</td>
+                          <td className="px-3 py-2">
+                            <div className="flex items-center gap-1 flex-wrap">
+                              {SCORE_PRESETS.map(p => (
+                                <button
+                                  key={p}
+                                  onClick={() => setReviewPercents(m => ({ ...m, [o.id]: p }))}
+                                  className={`px-1.5 py-0.5 text-xs rounded border ${pct === p ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'}`}
+                                >
+                                  {p}%
+                                </button>
+                              ))}
+                              <input
+                                type="number"
+                                min={0}
+                                max={100}
+                                value={pct}
+                                onChange={(e) => setReviewPercents(m => ({ ...m, [o.id]: clampPct(Number(e.target.value)) }))}
+                                className="w-14 border border-gray-300 rounded px-1 py-0.5 text-xs text-right"
+                                title="Custom percent (0–100)"
+                              />
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 text-right text-gray-800 font-medium tabular-nums">{Math.round((vp * pct) / 100 * 100) / 100}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot className="bg-gray-50 sticky bottom-0">
+                    <tr className="font-semibold text-gray-800">
+                      <td className="px-3 py-2" colSpan={2}>Final Score</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{reviewTotals.totalVp}</td>
+                      <td className="px-3 py-2 text-right text-xs text-gray-500">VP Achieved %</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{reviewTotals.vpAchieved}</td>
+                    </tr>
+                    <tr className="text-sm">
+                      <td className="px-3 pb-3" colSpan={4}></td>
+                      <td className="px-3 pb-3 text-right">
+                        <span className={`inline-block px-2 py-0.5 rounded ${reviewTotals.vpAchievedPct >= 70 ? 'bg-green-100 text-green-700' : reviewTotals.vpAchievedPct >= 40 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
+                          {reviewTotals.vpAchievedPct}%
+                        </span>
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+            <div className="p-4 border-t border-gray-200 flex justify-end gap-2">
+              <button
+                onClick={() => setShowFinalReview(false)}
+                disabled={savingReview}
+                className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveReview}
+                disabled={savingReview || reviewObjectives.length === 0}
+                className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+              >
+                {savingReview ? 'Saving…' : 'Save review & scorecard'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showScorecard && selectedList?.scorecard && (() => {
+        const sc = selectedList.scorecard!;
+        const fmt = (ts: string) => { try { return new Date(ts).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }); } catch { return ts; } };
+        const statusLabel = (s?: WorkflowStatus) => WORKFLOW_STATUS_OPTIONS.find(o => o.value === s)?.label || '—';
+        return (
+          <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center p-4" onClick={() => setShowScorecard(false)}>
+            <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+              <div className="p-4 border-b border-gray-200 flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Final Scorecard — {selectedList.name}</h3>
+                  <p className="text-xs text-gray-500 mt-1">Reviewed by {sc.reviewedBy} · {fmt(sc.reviewedAt)}</p>
+                </div>
+                <span className={`text-sm px-2.5 py-1 rounded font-semibold ${sc.vpAchievedPct >= 70 ? 'bg-green-100 text-green-700' : sc.vpAchievedPct >= 40 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
+                  {sc.vpAchievedPct}%
+                </span>
+              </div>
+              <div className="overflow-y-auto flex-1">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Item</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">VP</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">% Achieved</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">VP Achieved</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {sc.items.map(it => (
+                      <tr key={it.objectiveId}>
+                        <td className="px-3 py-2 text-gray-800 max-w-[260px]"><div className="break-words">{it.title}</div></td>
+                        <td className="px-3 py-2 text-gray-600">{statusLabel(it.workflowStatus)}</td>
+                        <td className="px-3 py-2 text-right text-gray-600 tabular-nums">{it.valuePoints}</td>
+                        <td className="px-3 py-2 text-right text-gray-600 tabular-nums">{it.percentAchieved}%</td>
+                        <td className="px-3 py-2 text-right text-gray-800 font-medium tabular-nums">{Math.round(it.valuePoints * it.percentAchieved / 100 * 100) / 100}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-gray-50 sticky bottom-0">
+                    <tr className="font-semibold text-gray-800">
+                      <td className="px-3 py-2" colSpan={2}>Final Score</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{sc.totalVp}</td>
+                      <td className="px-3 py-2 text-right text-xs text-gray-500">{sc.vpAchievedPct}%</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{sc.vpAchieved}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+              <div className="p-4 border-t border-gray-200 flex justify-between gap-2">
+                <div className="text-xs text-gray-500 self-center">
+                  Total VP {sc.totalVp} · VP Achieved {sc.vpAchieved} · {sc.vpAchievedPct}%
+                </div>
+                <div className="flex gap-2">
+                  {!isReadOnlyList && (
+                    <button
+                      onClick={() => { setShowScorecard(false); openFinalReview(); }}
+                      className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                    >
+                      Redo review
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowScorecard(false)}
+                    className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {showSelectChildModal && selectedList && (
         <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center p-4" onClick={() => setShowSelectChildModal(false)}>
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-4" onClick={(e) => e.stopPropagation()}>

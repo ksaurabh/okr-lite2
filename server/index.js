@@ -3102,6 +3102,10 @@ app.put('/api/users/me/lists/:listId', requireAuth, (req, res) => {
     if (req.body.status) lists[listIndex].status = req.body.status;
     else delete lists[listIndex].status;
   }
+  if ('scorecard' in req.body) {
+    if (req.body.scorecard) lists[listIndex].scorecard = req.body.scorecard;
+    else delete lists[listIndex].scorecard;
+  }
   lists[listIndex].updatedAt = new Date().toISOString();
 
   const savedLists = saveUserLists(req.user.email, lists);

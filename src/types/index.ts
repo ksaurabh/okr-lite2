@@ -295,6 +295,29 @@ export interface ListHistoryEntry {
   toPosition?: number;
 }
 
+// A single item's line on a plan's final scorecard. `valuePoints` and `title`
+// are snapshots taken at review time so the scorecard stays stable even if the
+// objective later changes. `percentAchieved` is 0–100.
+export interface PlanScorecardItem {
+  objectiveId: string;
+  title: string;
+  valuePoints: number;
+  percentAchieved: number;
+  workflowStatus?: WorkflowStatus;
+}
+
+// The final review attached to a plan: per-item ratings plus the rolled-up
+// score. `vpAchieved` = Σ (valuePoints × percentAchieved / 100); `vpAchievedPct`
+// = vpAchieved / totalVp × 100.
+export interface PlanScorecard {
+  reviewedAt: string;
+  reviewedBy: string;
+  items: PlanScorecardItem[];
+  totalVp: number;
+  vpAchieved: number;
+  vpAchievedPct: number;
+}
+
 export interface List {
   id: string;
   name: string;
@@ -310,4 +333,5 @@ export interface List {
   status?: string;
   createdByEmail?: string;
   history?: ListHistoryEntry[];
+  scorecard?: PlanScorecard;
 }
