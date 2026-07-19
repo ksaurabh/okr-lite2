@@ -5,6 +5,7 @@ import { ObjectiveFilterPanel } from '../filters/ObjectiveFilterPanel';
 import { CompactObjectiveCard } from '../objectives/CompactObjectiveCard';
 import { AddToPlanBookmark } from '../plans/AddToPlanBookmark';
 import { GradePlanModal } from '../plans/GradePlanModal';
+import { AddAllItemsToPlanModal } from '../plans/AddAllItemsToPlanModal';
 import { renderGroupedPeriodOptions } from '../../utils/periodOptions';
 import { resolveJiraEpicForObjective } from '../../utils/jiraEpic';
 import { ObjectiveForm } from '../objectives/ObjectiveForm';
@@ -176,6 +177,7 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
   const [editingPlanName, setEditingPlanName] = useState(false);
   const [planNameDraft, setPlanNameDraft] = useState('');
   const [gradingPlan, setGradingPlan] = useState(false);
+  const [addingAllToPlan, setAddingAllToPlan] = useState(false);
   // Parent-plan picker: candidates default to same-owner plans that are "bigger"
   // (higher level or longer duration); both constraints are toggleable off.
   const [showParentPicker, setShowParentPicker] = useState(false);
@@ -1395,6 +1397,16 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
                 Carry open items to next plan
               </button>
             )}
+            <button
+              onClick={() => { setShowPlanActionMenu(false); setAddingAllToPlan(true); }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 text-left border-b border-gray-100"
+              title="Add all of this plan's items to another plan (pick one or create it)"
+            >
+              <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-3m-9-4l9-9m0 0h-4m4 0v4" />
+              </svg>
+              Add all items to a plan…
+            </button>
             <button
               onClick={() => { setShowPlanActionMenu(false); setShowPlanHistory(true); }}
               className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 text-left"
@@ -4004,6 +4016,13 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
           plan={planFocusEffective}
           isReadOnly={isReadOnlyList}
           onClose={() => setGradingPlan(false)}
+        />
+      )}
+
+      {addingAllToPlan && planFocusEffective && (
+        <AddAllItemsToPlanModal
+          sourcePlan={planFocusEffective}
+          onClose={() => setAddingAllToPlan(false)}
         />
       )}
     </div>
