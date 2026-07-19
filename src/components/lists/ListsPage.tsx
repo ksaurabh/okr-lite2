@@ -169,6 +169,10 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
   const [treeAssigneeFilter, setTreeAssigneeFilter] = useState<string[]>([]);
   const [treePeriodFilter, setTreePeriodFilter] = useState<string[]>([]);
   const [treeShowDoneArchived, setTreeShowDoneArchived] = useState(false);
+  // Auto filtering scopes the objective tree (hides done/archived, applies the
+  // filters); turn it off to see the whole subtree. Search narrows by title.
+  const [treeAutoFilter, setTreeAutoFilter] = useState(true);
+  const [treeSearch, setTreeSearch] = useState('');
   const [editingPlanName, setEditingPlanName] = useState(false);
   const [planNameDraft, setPlanNameDraft] = useState('');
   const [gradingPlan, setGradingPlan] = useState(false);
@@ -2530,14 +2534,39 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
                       );
                     })()
                   ) : planSelectedObjective ? (() => {
-                    const treeFc = filterCount(treeStatusFilter, treeOwnerFilter, treeAssigneeFilter, treePeriodFilter) + (treeShowDoneArchived ? 0 : 1);
                     const doneArchivedSet: Set<WorkflowStatus> = new Set(['done', 'archived']);
-                    const treeFilteredIds = (!treeShowDoneArchived || filterCount(treeStatusFilter, treeOwnerFilter, treeAssigneeFilter, treePeriodFilter) > 0)
-                      ? new Set(orgObjectives.filter(o => {
+                    const q = treeSearch.trim().toLowerCase();
+                    const manualFc = filterCount(treeStatusFilter, treeOwnerFilter, treeAssigneeFilter, treePeriodFilter);
+                    // Auto filtering (done/archived hide + the filters) applies only when on.
+                    const treeFc = (treeAutoFilter ? manualFc + (treeShowDoneArchived ? 0 : 1) : 0) + (q ? 1 : 0);
+                    // Which objectives are visible: pass the auto filters (when on) AND the
+                    // search. Then pull in each match's ancestors so its tree path renders.
+                    const needsFilter = q.length > 0 || (treeAutoFilter && (!treeShowDoneArchived || manualFc > 0));
+                    const treeFilteredIds: Set<string> | null = (() => {
+                      if (!needsFilter) return null;
+                      const byId = new Map(orgObjectives.map(o => [o.id, o]));
+                      const matched = orgObjectives.filter(o => {
+                        if (q && !o.title.toLowerCase().includes(q)) return false;
+                        if (treeAutoFilter) {
                           if (!treeShowDoneArchived && doneArchivedSet.has(o.workflowStatus || 'todo')) return false;
-                          return passesFilters(o, treeStatusFilter, treeOwnerFilter, treeAssigneeFilter, treePeriodFilter);
-                        }).map(o => o.id))
-                      : null;
+                          if (!passesFilters(o, treeStatusFilter, treeOwnerFilter, treeAssigneeFilter, treePeriodFilter)) return false;
+                        }
+                        return true;
+                      });
+                      const ids = new Set(matched.map(o => o.id));
+                      for (const o of matched) {
+                        let cur: Objective | undefined = o;
+                        const seen = new Set<string>();
+                        while (cur?.parentId && !seen.has(cur.parentId)) {
+                          seen.add(cur.parentId);
+                          ids.add(cur.parentId);
+                          cur = byId.get(cur.parentId);
+                        }
+                      }
+                      return ids;
+                    })();
+                    // Pool of objectives (for filter dropdown counts) under the selection.
+                    const poolHidesDoneArchived = treeAutoFilter && !treeShowDoneArchived;
                     const treePool: Objective[] = (() => {
                       const pool: Objective[] = [];
                       const seen = new Set<string>();
@@ -2546,7 +2575,7 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
                         seen.add(id);
                         const o = orgObjectives.find(x => x.id === id);
                         if (!o) return;
-                        if (treeShowDoneArchived || !doneArchivedSet.has(o.workflowStatus || 'todo')) {
+                        if (!poolHidesDoneArchived || !doneArchivedSet.has(o.workflowStatus || 'todo')) {
                           pool.push(o);
                         }
                         orgObjectives.filter(c => c.parentId === id).forEach(c => walk(c.id));
@@ -2565,7 +2594,24 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
                     return (
                     <>
                       <div className="px-3 py-2 border-b border-gray-100 flex items-center gap-2 bg-gray-50">
-                        <span className="text-xs font-semibold text-gray-700 truncate flex-1">Objective Tree (Auto Filtered)</span>
+                        <span className="text-xs font-semibold text-gray-700 whitespace-nowrap">Objective Tree</span>
+                        <input
+                          type="text"
+                          value={treeSearch}
+                          onChange={(e) => setTreeSearch(e.target.value)}
+                          placeholder="Search objectives…"
+                          className="flex-1 min-w-0 text-xs px-2 py-0.5 border border-gray-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                        {treeSearch && (
+                          <button onClick={() => setTreeSearch('')} className="text-[10px] text-gray-400 hover:text-gray-700" title="Clear search">✕</button>
+                        )}
+                        <button
+                          onClick={() => setTreeAutoFilter(v => !v)}
+                          className={`px-2 py-0.5 text-[10px] border rounded whitespace-nowrap ${treeAutoFilter ? 'bg-blue-50 border-blue-300 text-blue-700' : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'}`}
+                          title="Auto filtering hides done/archived and applies the tree filters below. Turn it off to see the whole subtree."
+                        >
+                          Auto filter {treeAutoFilter ? 'on' : 'off'}
+                        </button>
                         <div className="inline-flex border border-gray-300 rounded overflow-hidden">
                           <button
                             onClick={() => setListPlanTreeView('table')}
