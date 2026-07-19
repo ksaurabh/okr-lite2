@@ -1161,6 +1161,54 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
     ? (lists.find(l => l.id === forcedListId) || sharedPlans.find(l => l.id === forcedListId) || null)
     : (planFocus && planFocus.id === selectedListId ? planFocus : null);
 
+  // "Next Plan": the same plan (same owner + level) one duration later. The next
+  // duration is the earliest non-archived period of the same type starting after
+  // this plan's period. Surfaces matching plans (to jump to) or lets you create one.
+  const nextPlanInfo = (() => {
+    if (!planFocusEffective) return null;
+    const cur = periods.find(p => p.id === planFocusEffective.periodId) || null;
+    if (!cur) return { cur: null, next: null, matches: [] as List[] };
+    const next = periods
+      .filter(p => p.type === cur.type && !p.archived && (p.startDate || '') > (cur.startDate || ''))
+      .sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''))[0] || null;
+    const matches = next
+      ? lists.filter(l =>
+          l.id !== planFocusEffective.id &&
+          l.periodId === next.id &&
+          (l.ownerId || '') === (planFocusEffective.ownerId || '') &&
+          (l.level || '') === (planFocusEffective.level || ''))
+      : [];
+    return { cur, next, matches };
+  })();
+
+  const goOrCreateNextPlan = async () => {
+    if (!planFocusEffective || !nextPlanInfo?.next) return;
+    const { cur, next, matches } = nextPlanInfo;
+    if (matches.length > 0) {
+      setPlanFocusListId(matches[0].id);
+      setSelectedListId(matches[0].id);
+      return;
+    }
+    // Create one: same owner/level/parent/color, next period, a new name.
+    const base = cur && cur.name && planFocusEffective.name.includes(cur.name)
+      ? planFocusEffective.name.split(cur.name).join(next.name)
+      : planFocusEffective.name;
+    const name = window.prompt(`Name for the next-duration plan (${next.name}):`, base);
+    if (!name || !name.trim()) return;
+    const res = await createList(name.trim(), planFocusEffective.color, planFocusEffective.parentId, {
+      ownerId: planFocusEffective.ownerId,
+      periodId: next.id,
+      level: planFocusEffective.level,
+      shared: planFocusEffective.shared,
+    });
+    if (res && typeof res === 'object' && 'id' in res) {
+      setPlanFocusListId(res.id);
+      setSelectedListId(res.id);
+    } else if (res && typeof res === 'object' && 'error' in res) {
+      window.alert(res.error);
+    }
+  };
+
   // Kebab "Plan actions" menu — collects the plan-split controls (child-list
   // picker, create child list/plan, columns, add-existing, Top Level / Objective
   // Tree toggles) plus History. Rendered in the plan header row.
@@ -1459,12 +1507,39 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
         {planFocusEffective && (
           <div className="px-4 pt-3 pb-2 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-white">
             {!embedded && (
-            <button
-              onClick={() => { setPlanFocusListId(null); onViewChange('plans-overview'); }}
-              className="text-xs text-blue-600 hover:text-blue-700 mb-1"
-            >
-              ← Back to Plans
-            </button>
+            <div className="flex items-center justify-between mb-1">
+              <button
+                onClick={() => { setPlanFocusListId(null); onViewChange('plans-overview'); }}
+                className="text-xs text-blue-600 hover:text-blue-700"
+              >
+                ← Back to Plans
+              </button>
+              {nextPlanInfo?.cur && nextPlanInfo.next && (() => {
+                const count = nextPlanInfo.matches.length;
+                // Read-only (shared) plan: allow jumping to an existing next plan, but not creating.
+                if (isReadOnlyList && count === 0) return null;
+                if (count === 0) {
+                  return (
+                    <button
+                      onClick={goOrCreateNextPlan}
+                      className="text-xs text-blue-600 hover:text-blue-700 hover:underline"
+                      title={`No plan yet for ${nextPlanInfo.next.name} — create one with the same owner and level`}
+                    >
+                      + Next Plan
+                    </button>
+                  );
+                }
+                return (
+                  <button
+                    onClick={goOrCreateNextPlan}
+                    className="text-xs text-blue-600 hover:text-blue-700 hover:underline"
+                    title={count > 1 ? `${count} plans for ${nextPlanInfo.next.name} — open the first` : `Open the ${nextPlanInfo.next.name} plan`}
+                  >
+                    Next Plan{count > 1 ? ` (${count})` : ''} →
+                  </button>
+                );
+              })()}
+            </div>
             )}
             {(() => {
               // Nudge the owner to grade once the plan's period has ended — unless
