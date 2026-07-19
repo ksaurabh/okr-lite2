@@ -24,9 +24,20 @@ function parseAttainment(raw: string): number | undefined {
 }
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
+// Grade bands: >=90 great, >=80 good, >=70 green; 50-70 orange; <50 red.
 const pctColor = (pct: number | null) =>
-  pct == null ? 'text-gray-300' : pct >= 80 ? 'text-green-600' : pct >= 50 ? 'text-amber-600' : 'text-red-500';
-const barColor = (pct: number) => (pct >= 80 ? 'bg-green-500' : pct >= 50 ? 'bg-amber-500' : 'bg-red-500');
+  pct == null ? 'text-gray-300'
+    : pct >= 90 ? 'text-emerald-600'
+    : pct >= 80 ? 'text-green-600'
+    : pct >= 70 ? 'text-green-500'
+    : pct >= 50 ? 'text-orange-500'
+    : 'text-red-500';
+const barColor = (pct: number) =>
+  pct >= 90 ? 'bg-emerald-500'
+    : pct >= 80 ? 'bg-green-500'
+    : pct >= 70 ? 'bg-green-400'
+    : pct >= 50 ? 'bg-orange-500'
+    : 'bg-red-500';
 
 // Quote every field so commas/quotes/newlines in titles or comments are safe, and
 // Excel doesn't read a leading -/= as a formula.
