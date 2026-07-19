@@ -1212,6 +1212,51 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
     }
   };
 
+  // Carry every open item (workflow status not done and not archived) from this
+  // plan into the next-duration plan, creating that plan if it doesn't exist yet.
+  // Items already in the target are skipped; the source plan is left unchanged.
+  const carryOpenItemsToNextPlan = async () => {
+    if (!planFocusEffective || !nextPlanInfo?.next) return;
+    const { cur, next, matches } = nextPlanInfo;
+    const isOpen = (o?: Objective) => !!o && o.workflowStatus !== 'done' && o.workflowStatus !== 'archived';
+    const openIds = planFocusEffective.items.map(it => it.objectiveId).filter(id => isOpen(getObjective(id)));
+    if (openIds.length === 0) {
+      window.alert('No open items to carry — every item is done or archived.');
+      return;
+    }
+
+    let target: List | null = matches[0] || null;
+    if (!target) {
+      const base = cur && cur.name && planFocusEffective.name.includes(cur.name)
+        ? planFocusEffective.name.split(cur.name).join(next.name)
+        : planFocusEffective.name;
+      const name = window.prompt(`No ${next.name} plan yet — name the new plan to carry ${openIds.length} open item${openIds.length === 1 ? '' : 's'} into:`, base);
+      if (!name || !name.trim()) return;
+      const res = await createList(name.trim(), planFocusEffective.color, planFocusEffective.parentId, {
+        ownerId: planFocusEffective.ownerId,
+        periodId: next.id,
+        level: planFocusEffective.level,
+        shared: planFocusEffective.shared,
+      });
+      if (!res || typeof res !== 'object' || !('id' in res)) {
+        if (res && typeof res === 'object' && 'error' in res) window.alert(res.error);
+        return;
+      }
+      target = res;
+    } else if (!window.confirm(`Add ${openIds.length} open item${openIds.length === 1 ? '' : 's'} to "${target.name}"?`)) {
+      return;
+    }
+
+    const existing = new Set(target.items.map(it => it.objectiveId));
+    const toAdd = openIds.filter(id => !existing.has(id));
+    for (const id of toAdd) await addItemToList(target.id, id);
+
+    setPlanFocusListId(target.id);
+    setSelectedListId(target.id);
+    const skipped = openIds.length - toAdd.length;
+    if (skipped > 0) window.alert(`Added ${toAdd.length} item${toAdd.length === 1 ? '' : 's'}; ${skipped} already in the plan.`);
+  };
+
   // Kebab "Plan actions" menu — collects the plan-split controls (child-list
   // picker, create child list/plan, columns, add-existing, Top Level / Objective
   // Tree toggles) plus History. Rendered in the plan header row.
@@ -1293,6 +1338,18 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
               </svg>
               Grade this plan
             </button>
+            {!isReadOnlyList && nextPlanInfo?.next && (
+              <button
+                onClick={() => { setShowPlanActionMenu(false); carryOpenItemsToNextPlan(); }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 text-left border-b border-gray-100"
+                title={`Add every not-done, not-archived item to the ${nextPlanInfo.next.name} plan (created if needed)`}
+              >
+                <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                </svg>
+                Carry open items to next plan
+              </button>
+            )}
             <button
               onClick={() => { setShowPlanActionMenu(false); setShowPlanHistory(true); }}
               className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 text-left"
