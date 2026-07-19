@@ -172,6 +172,12 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
   const [editingPlanName, setEditingPlanName] = useState(false);
   const [planNameDraft, setPlanNameDraft] = useState('');
   const [gradingPlan, setGradingPlan] = useState(false);
+  // Parent-plan picker: candidates default to same-owner plans that are "bigger"
+  // (higher level or longer duration); both constraints are toggleable off.
+  const [showParentPicker, setShowParentPicker] = useState(false);
+  const [parentSameOwner, setParentSameOwner] = useState(true);
+  const [parentBiggerOnly, setParentBiggerOnly] = useState(true);
+  const [parentSearch, setParentSearch] = useState('');
   const togglePlanSelectedObjective = (obj: Objective) => {
     setPlanSelectedObjective(prev => prev?.id === obj.id ? null : obj);
   };
@@ -1184,6 +1190,41 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
     return { cur, next, matches };
   })();
 
+  // Candidate parent plans for the current plan. "Bigger" = higher org level
+  // (company > team > individual) or longer duration (oneoff > quarter > month >
+  // week). Same-owner and bigger-only are optional; with both off, any plan
+  // (except this one and its own descendants, to avoid cycles) can be the parent.
+  const parentPlanCandidates = (() => {
+    if (!planFocusEffective) return [];
+    const pool = [...lists, ...sharedPlans].filter((l, i, arr) => arr.findIndex(x => x.id === l.id) === i);
+    const byId = new Map(pool.map(p => [p.id, p]));
+    const levelRank = (lv?: string) => (lv === 'company' ? 0 : lv === 'team' ? 1 : lv === 'individual' ? 2 : 3);
+    const durSize = (l: List) => {
+      const t = periods.find(p => p.id === l.periodId)?.type;
+      return t === 'oneoff' ? 4 : t === 'quarter' ? 3 : t === 'month' ? 2 : t === 'week' ? 1 : 0;
+    };
+    const isBigger = (c: List) =>
+      levelRank(c.level) < levelRank(planFocusEffective.level) || durSize(c) > durSize(planFocusEffective);
+    // c is a descendant of the current plan if the current plan appears in c's parent chain.
+    const isDescendant = (c: List) => {
+      const seen = new Set<string>();
+      let cur: List | undefined = c;
+      while (cur?.parentId && !seen.has(cur.parentId)) {
+        if (cur.parentId === planFocusEffective.id) return true;
+        seen.add(cur.parentId);
+        cur = byId.get(cur.parentId);
+      }
+      return false;
+    };
+    const q = parentSearch.trim().toLowerCase();
+    return pool
+      .filter(c => c.id !== planFocusEffective.id && !isDescendant(c) &&
+        (!parentSameOwner || (c.ownerId || '') === (planFocusEffective.ownerId || '')) &&
+        (!parentBiggerOnly || isBigger(c)) &&
+        (!q || c.name.toLowerCase().includes(q)))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  })();
+
   const goOrCreateNextPlan = async () => {
     if (!planFocusEffective || !nextPlanInfo?.next) return;
     const { cur, next, matches } = nextPlanInfo;
@@ -1673,17 +1714,78 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
                 const parent = planFocusEffective.parentId
                   ? (lists.find(l => l.id === planFocusEffective.parentId) || sharedPlans.find(l => l.id === planFocusEffective.parentId))
                   : null;
-                if (!parent) return null;
                 return (
-                  <span className="text-xs text-gray-500">
-                    <span className="text-gray-400">Parent:</span>{' '}
-                    <button
-                      onClick={() => { setPlanFocusListId(parent.id); setSelectedListId(parent.id); }}
-                      className="text-blue-600 hover:text-blue-700 hover:underline"
-                      title="Open parent plan"
-                    >
-                      {parent.name}
-                    </button>
+                  <span className="text-xs text-gray-500 flex items-center gap-1 relative">
+                    <span className="text-gray-400">Parent:</span>
+                    {parent ? (
+                      <button
+                        onClick={() => { setPlanFocusListId(parent.id); setSelectedListId(parent.id); }}
+                        className="text-blue-600 hover:text-blue-700 hover:underline"
+                        title="Open parent plan"
+                      >
+                        {parent.name}
+                      </button>
+                    ) : (
+                      <span className="text-gray-400">None</span>
+                    )}
+                    {!isReadOnlyList && (
+                      <button
+                        onClick={() => { setParentSearch(''); setShowParentPicker(v => !v); }}
+                        className="text-blue-600 hover:text-blue-700 hover:underline"
+                        title="Change parent plan"
+                      >
+                        (change)
+                      </button>
+                    )}
+                    {showParentPicker && !isReadOnlyList && (
+                      <>
+                        <div className="fixed inset-0 z-20" onClick={() => setShowParentPicker(false)} />
+                        <div className="absolute left-0 top-full mt-1 z-30 w-80 bg-white border border-gray-200 rounded-md shadow-lg p-2">
+                          <div className="flex items-center gap-3 mb-2 text-[11px] text-gray-600">
+                            <label className="flex items-center gap-1 cursor-pointer">
+                              <input type="checkbox" checked={parentSameOwner} onChange={(e) => setParentSameOwner(e.target.checked)} className="w-3 h-3" />
+                              Same owner
+                            </label>
+                            <label className="flex items-center gap-1 cursor-pointer">
+                              <input type="checkbox" checked={parentBiggerOnly} onChange={(e) => setParentBiggerOnly(e.target.checked)} className="w-3 h-3" />
+                              Bigger only
+                            </label>
+                          </div>
+                          <input
+                            type="text"
+                            autoFocus
+                            value={parentSearch}
+                            onChange={(e) => setParentSearch(e.target.value)}
+                            placeholder="Search plans…"
+                            className="w-full text-xs border border-gray-300 rounded px-2 py-1 mb-1"
+                          />
+                          <div className="max-h-60 overflow-y-auto">
+                            <button
+                              onClick={() => { updateListParent(planFocusEffective.id, null); setShowParentPicker(false); }}
+                              className="w-full text-left px-2 py-1.5 text-xs text-gray-700 hover:bg-gray-50 border-b border-gray-100"
+                            >
+                              — None (no parent) —
+                            </button>
+                            {parentPlanCandidates.length === 0 ? (
+                              <div className="px-2 py-2 text-xs text-gray-400">No matching plans. Loosen the filters above.</div>
+                            ) : parentPlanCandidates.map(c => {
+                              const per = periods.find(p => p.id === c.periodId);
+                              const owner = orgUsers.find(u => u.id === c.ownerId);
+                              return (
+                                <button
+                                  key={c.id}
+                                  onClick={() => { updateListParent(planFocusEffective.id, c.id); setShowParentPicker(false); }}
+                                  className={`w-full text-left px-2 py-1.5 text-xs hover:bg-gray-50 ${c.id === planFocusEffective.parentId ? 'bg-blue-50 text-blue-700' : 'text-gray-700'}`}
+                                >
+                                  {c.name}
+                                  <span className="text-gray-400"> · {c.level || 'no level'}{per ? ` · ${per.name}` : ''}{!parentSameOwner && owner ? ` · ${owner.name || owner.email}` : ''}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </span>
                 );
               })()}
