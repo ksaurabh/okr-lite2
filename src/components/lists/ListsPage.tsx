@@ -1168,8 +1168,11 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
     if (!planFocusEffective) return null;
     const cur = periods.find(p => p.id === planFocusEffective.periodId) || null;
     if (!cur) return { cur: null, next: null, matches: [] as List[] };
+    // The next duration is simply the next period of the same type by start date.
+    // Archived periods still count — otherwise the link vanishes whenever the very
+    // next period happens to be archived (e.g. the current month marked archived).
     const next = periods
-      .filter(p => p.type === cur.type && !p.archived && (p.startDate || '') > (cur.startDate || ''))
+      .filter(p => p.type === cur.type && (p.startDate || '') > (cur.startDate || ''))
       .sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''))[0] || null;
     const matches = next
       ? lists.filter(l =>
