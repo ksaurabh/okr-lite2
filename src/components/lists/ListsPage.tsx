@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { ObjectiveFilterPanel } from '../filters/ObjectiveFilterPanel';
 import { CompactObjectiveCard } from '../objectives/CompactObjectiveCard';
 import { AddToPlanBookmark } from '../plans/AddToPlanBookmark';
+import { GradePlanModal } from '../plans/GradePlanModal';
 import { renderGroupedPeriodOptions } from '../../utils/periodOptions';
 import { resolveJiraEpicForObjective } from '../../utils/jiraEpic';
 import { ObjectiveForm } from '../objectives/ObjectiveForm';
@@ -172,8 +173,19 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
   const [treeAssigneeFilter, setTreeAssigneeFilter] = useState<string[]>([]);
   const [treePeriodFilter, setTreePeriodFilter] = useState<string[]>([]);
   const [treeShowDoneArchived, setTreeShowDoneArchived] = useState(false);
+  // Auto filtering scopes the objective tree (hides done/archived, applies the
+  // filters); turn it off to see the whole subtree. Search narrows by title.
+  const [treeAutoFilter, setTreeAutoFilter] = useState(true);
+  const [treeSearch, setTreeSearch] = useState('');
   const [editingPlanName, setEditingPlanName] = useState(false);
   const [planNameDraft, setPlanNameDraft] = useState('');
+  const [gradingPlan, setGradingPlan] = useState(false);
+  // Parent-plan picker: candidates default to same-owner plans that are "bigger"
+  // (higher level or longer duration); both constraints are toggleable off.
+  const [showParentPicker, setShowParentPicker] = useState(false);
+  const [parentSameOwner, setParentSameOwner] = useState(true);
+  const [parentBiggerOnly, setParentBiggerOnly] = useState(true);
+  const [parentSearch, setParentSearch] = useState('');
   const togglePlanSelectedObjective = (obj: Objective) => {
     setPlanSelectedObjective(prev => prev?.id === obj.id ? null : obj);
   };
@@ -1245,6 +1257,137 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
     ? (lists.find(l => l.id === forcedListId) || sharedPlans.find(l => l.id === forcedListId) || null)
     : (planFocus && planFocus.id === selectedListId ? planFocus : null);
 
+  // "Next Plan": the same plan (same owner + level) one duration later. The next
+  // duration is the earliest non-archived period of the same type starting after
+  // this plan's period. Surfaces matching plans (to jump to) or lets you create one.
+  const nextPlanInfo = (() => {
+    if (!planFocusEffective) return null;
+    const cur = periods.find(p => p.id === planFocusEffective.periodId) || null;
+    if (!cur) return { cur: null, next: null, matches: [] as List[] };
+    // The next duration is simply the next period of the same type by start date.
+    // Archived periods still count — otherwise the link vanishes whenever the very
+    // next period happens to be archived (e.g. the current month marked archived).
+    const next = periods
+      .filter(p => p.type === cur.type && (p.startDate || '') > (cur.startDate || ''))
+      .sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''))[0] || null;
+    const matches = next
+      ? lists.filter(l =>
+          l.id !== planFocusEffective.id &&
+          l.periodId === next.id &&
+          (l.ownerId || '') === (planFocusEffective.ownerId || '') &&
+          (l.level || '') === (planFocusEffective.level || ''))
+      : [];
+    return { cur, next, matches };
+  })();
+
+  // Candidate parent plans for the current plan. "Bigger" = higher org level
+  // (company > team > individual) or longer duration (oneoff > quarter > month >
+  // week). Same-owner and bigger-only are optional; with both off, any plan
+  // (except this one and its own descendants, to avoid cycles) can be the parent.
+  const parentPlanCandidates = (() => {
+    if (!planFocusEffective) return [];
+    const pool = [...lists, ...sharedPlans].filter((l, i, arr) => arr.findIndex(x => x.id === l.id) === i);
+    const byId = new Map(pool.map(p => [p.id, p]));
+    const levelRank = (lv?: string) => (lv === 'company' ? 0 : lv === 'team' ? 1 : lv === 'individual' ? 2 : 3);
+    const durSize = (l: List) => {
+      const t = periods.find(p => p.id === l.periodId)?.type;
+      return t === 'oneoff' ? 4 : t === 'quarter' ? 3 : t === 'month' ? 2 : t === 'week' ? 1 : 0;
+    };
+    const isBigger = (c: List) =>
+      levelRank(c.level) < levelRank(planFocusEffective.level) || durSize(c) > durSize(planFocusEffective);
+    // c is a descendant of the current plan if the current plan appears in c's parent chain.
+    const isDescendant = (c: List) => {
+      const seen = new Set<string>();
+      let cur: List | undefined = c;
+      while (cur?.parentId && !seen.has(cur.parentId)) {
+        if (cur.parentId === planFocusEffective.id) return true;
+        seen.add(cur.parentId);
+        cur = byId.get(cur.parentId);
+      }
+      return false;
+    };
+    const q = parentSearch.trim().toLowerCase();
+    return pool
+      .filter(c => c.id !== planFocusEffective.id && !isDescendant(c) &&
+        (!parentSameOwner || (c.ownerId || '') === (planFocusEffective.ownerId || '')) &&
+        (!parentBiggerOnly || isBigger(c)) &&
+        (!q || c.name.toLowerCase().includes(q)))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  })();
+
+  const goOrCreateNextPlan = async () => {
+    if (!planFocusEffective || !nextPlanInfo?.next) return;
+    const { cur, next, matches } = nextPlanInfo;
+    if (matches.length > 0) {
+      setPlanFocusListId(matches[0].id);
+      setSelectedListId(matches[0].id);
+      return;
+    }
+    // Create one: same owner/level/parent/color, next period, a new name.
+    const base = cur && cur.name && planFocusEffective.name.includes(cur.name)
+      ? planFocusEffective.name.split(cur.name).join(next.name)
+      : planFocusEffective.name;
+    const name = window.prompt(`Name for the next-duration plan (${next.name}):`, base);
+    if (!name || !name.trim()) return;
+    const res = await createList(name.trim(), planFocusEffective.color, planFocusEffective.parentId, {
+      ownerId: planFocusEffective.ownerId,
+      periodId: next.id,
+      level: planFocusEffective.level,
+      shared: planFocusEffective.shared,
+    });
+    if (res && typeof res === 'object' && 'id' in res) {
+      setPlanFocusListId(res.id);
+      setSelectedListId(res.id);
+    } else if (res && typeof res === 'object' && 'error' in res) {
+      window.alert(res.error);
+    }
+  };
+
+  // Carry every open item (workflow status not done and not archived) from this
+  // plan into the next-duration plan, creating that plan if it doesn't exist yet.
+  // Items already in the target are skipped; the source plan is left unchanged.
+  const carryOpenItemsToNextPlan = async () => {
+    if (!planFocusEffective || !nextPlanInfo?.next) return;
+    const { cur, next, matches } = nextPlanInfo;
+    const isOpen = (o?: Objective) => !!o && o.workflowStatus !== 'done' && o.workflowStatus !== 'archived';
+    const openIds = planFocusEffective.items.map(it => it.objectiveId).filter(id => isOpen(getObjective(id)));
+    if (openIds.length === 0) {
+      window.alert('No open items to carry — every item is done or archived.');
+      return;
+    }
+
+    let target: List | null = matches[0] || null;
+    if (!target) {
+      const base = cur && cur.name && planFocusEffective.name.includes(cur.name)
+        ? planFocusEffective.name.split(cur.name).join(next.name)
+        : planFocusEffective.name;
+      const name = window.prompt(`No ${next.name} plan yet — name the new plan to carry ${openIds.length} open item${openIds.length === 1 ? '' : 's'} into:`, base);
+      if (!name || !name.trim()) return;
+      const res = await createList(name.trim(), planFocusEffective.color, planFocusEffective.parentId, {
+        ownerId: planFocusEffective.ownerId,
+        periodId: next.id,
+        level: planFocusEffective.level,
+        shared: planFocusEffective.shared,
+      });
+      if (!res || typeof res !== 'object' || !('id' in res)) {
+        if (res && typeof res === 'object' && 'error' in res) window.alert(res.error);
+        return;
+      }
+      target = res;
+    } else if (!window.confirm(`Add ${openIds.length} open item${openIds.length === 1 ? '' : 's'} to "${target.name}"?`)) {
+      return;
+    }
+
+    const existing = new Set(target.items.map(it => it.objectiveId));
+    const toAdd = openIds.filter(id => !existing.has(id));
+    for (const id of toAdd) await addItemToList(target.id, id);
+
+    setPlanFocusListId(target.id);
+    setSelectedListId(target.id);
+    const skipped = openIds.length - toAdd.length;
+    if (skipped > 0) window.alert(`Added ${toAdd.length} item${toAdd.length === 1 ? '' : 's'}; ${skipped} already in the plan.`);
+  };
+
   // Kebab "Plan actions" menu — collects the plan-split controls (child-list
   // picker, create child list/plan, columns, add-existing, Top Level / Objective
   // Tree toggles) plus History. Rendered in the plan header row.
@@ -1336,6 +1479,28 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
                 <span className="flex-1">View scorecard</span>
+              </button>
+            )}
+            <button
+              onClick={() => { setShowPlanActionMenu(false); setGradingPlan(true); }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 text-left border-b border-gray-100"
+              title="Grade this plan — status, attainment and comments per item; submit to close"
+            >
+              <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Grade this plan
+            </button>
+            {!isReadOnlyList && nextPlanInfo?.next && (
+              <button
+                onClick={() => { setShowPlanActionMenu(false); carryOpenItemsToNextPlan(); }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 text-left border-b border-gray-100"
+                title={`Add every not-done, not-archived item to the ${nextPlanInfo.next.name} plan (created if needed)`}
+              >
+                <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                </svg>
+                Carry open items to next plan
               </button>
             )}
             <button
@@ -1555,13 +1720,59 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
         {planFocusEffective && (
           <div className="px-4 pt-3 pb-2 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-white">
             {!embedded && (
-            <button
-              onClick={() => { setPlanFocusListId(null); onViewChange('plans-overview'); }}
-              className="text-xs text-blue-600 hover:text-blue-700 mb-1"
-            >
-              ← Back to Plans
-            </button>
+            <div className="flex items-center justify-between mb-1">
+              <button
+                onClick={() => { setPlanFocusListId(null); onViewChange('plans-overview'); }}
+                className="text-xs text-blue-600 hover:text-blue-700"
+              >
+                ← Back to Plans
+              </button>
+              {nextPlanInfo?.cur && nextPlanInfo.next && (() => {
+                const count = nextPlanInfo.matches.length;
+                // Read-only (shared) plan: allow jumping to an existing next plan, but not creating.
+                if (isReadOnlyList && count === 0) return null;
+                if (count === 0) {
+                  return (
+                    <button
+                      onClick={goOrCreateNextPlan}
+                      className="text-xs text-blue-600 hover:text-blue-700 hover:underline"
+                      title={`No plan yet for ${nextPlanInfo.next.name} — create one with the same owner and level`}
+                    >
+                      + Next Plan
+                    </button>
+                  );
+                }
+                return (
+                  <button
+                    onClick={goOrCreateNextPlan}
+                    className="text-xs text-blue-600 hover:text-blue-700 hover:underline"
+                    title={count > 1 ? `${count} plans for ${nextPlanInfo.next.name} — open the first` : `Open the ${nextPlanInfo.next.name} plan`}
+                  >
+                    Next Plan{count > 1 ? ` (${count})` : ''} →
+                  </button>
+                );
+              })()}
+            </div>
             )}
+            {(() => {
+              // Nudge the owner to grade once the plan's period has ended — unless
+              // it's already Closed (graded/submitted).
+              const period = periods.find(p => p.id === planFocusEffective.periodId);
+              const today = new Date().toLocaleDateString('en-CA'); // local YYYY-MM-DD
+              const expired = !!period?.endDate && period.endDate < today;
+              if (!expired || planFocusEffective.status === 'Closed') return null;
+              return (
+                <div className="mb-2 flex items-center justify-between gap-3 px-3 py-2 rounded border border-amber-300 bg-amber-50 text-amber-900 text-sm">
+                  <span><span className="font-medium">This duration has expired.</span> Grade this plan now.</span>
+                  <button
+                    onClick={() => setGradingPlan(true)}
+                    className="px-2.5 py-1 text-xs font-medium bg-amber-600 text-white rounded hover:bg-amber-700 whitespace-nowrap"
+                  >
+                    Grade this plan
+                  </button>
+                </div>
+              );
+            })()}
             <div className="flex items-center gap-3 flex-wrap">
               {editingPlanName && !isReadOnlyList ? (
                 <input
@@ -1615,17 +1826,78 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
                 const parent = planFocusEffective.parentId
                   ? (lists.find(l => l.id === planFocusEffective.parentId) || sharedPlans.find(l => l.id === planFocusEffective.parentId))
                   : null;
-                if (!parent) return null;
                 return (
-                  <span className="text-xs text-gray-500">
-                    <span className="text-gray-400">Parent:</span>{' '}
-                    <button
-                      onClick={() => { setPlanFocusListId(parent.id); setSelectedListId(parent.id); }}
-                      className="text-blue-600 hover:text-blue-700 hover:underline"
-                      title="Open parent plan"
-                    >
-                      {parent.name}
-                    </button>
+                  <span className="text-xs text-gray-500 flex items-center gap-1 relative">
+                    <span className="text-gray-400">Parent:</span>
+                    {parent ? (
+                      <button
+                        onClick={() => { setPlanFocusListId(parent.id); setSelectedListId(parent.id); }}
+                        className="text-blue-600 hover:text-blue-700 hover:underline"
+                        title="Open parent plan"
+                      >
+                        {parent.name}
+                      </button>
+                    ) : (
+                      <span className="text-gray-400">None</span>
+                    )}
+                    {!isReadOnlyList && (
+                      <button
+                        onClick={() => { setParentSearch(''); setShowParentPicker(v => !v); }}
+                        className="text-blue-600 hover:text-blue-700 hover:underline"
+                        title="Change parent plan"
+                      >
+                        (change)
+                      </button>
+                    )}
+                    {showParentPicker && !isReadOnlyList && (
+                      <>
+                        <div className="fixed inset-0 z-20" onClick={() => setShowParentPicker(false)} />
+                        <div className="absolute left-0 top-full mt-1 z-30 w-80 bg-white border border-gray-200 rounded-md shadow-lg p-2">
+                          <div className="flex items-center gap-3 mb-2 text-[11px] text-gray-600">
+                            <label className="flex items-center gap-1 cursor-pointer">
+                              <input type="checkbox" checked={parentSameOwner} onChange={(e) => setParentSameOwner(e.target.checked)} className="w-3 h-3" />
+                              Same owner
+                            </label>
+                            <label className="flex items-center gap-1 cursor-pointer">
+                              <input type="checkbox" checked={parentBiggerOnly} onChange={(e) => setParentBiggerOnly(e.target.checked)} className="w-3 h-3" />
+                              Bigger only
+                            </label>
+                          </div>
+                          <input
+                            type="text"
+                            autoFocus
+                            value={parentSearch}
+                            onChange={(e) => setParentSearch(e.target.value)}
+                            placeholder="Search plans…"
+                            className="w-full text-xs border border-gray-300 rounded px-2 py-1 mb-1"
+                          />
+                          <div className="max-h-60 overflow-y-auto">
+                            <button
+                              onClick={() => { updateListParent(planFocusEffective.id, null); setShowParentPicker(false); }}
+                              className="w-full text-left px-2 py-1.5 text-xs text-gray-700 hover:bg-gray-50 border-b border-gray-100"
+                            >
+                              — None (no parent) —
+                            </button>
+                            {parentPlanCandidates.length === 0 ? (
+                              <div className="px-2 py-2 text-xs text-gray-400">No matching plans. Loosen the filters above.</div>
+                            ) : parentPlanCandidates.map(c => {
+                              const per = periods.find(p => p.id === c.periodId);
+                              const owner = orgUsers.find(u => u.id === c.ownerId);
+                              return (
+                                <button
+                                  key={c.id}
+                                  onClick={() => { updateListParent(planFocusEffective.id, c.id); setShowParentPicker(false); }}
+                                  className={`w-full text-left px-2 py-1.5 text-xs hover:bg-gray-50 ${c.id === planFocusEffective.parentId ? 'bg-blue-50 text-blue-700' : 'text-gray-700'}`}
+                                >
+                                  {c.name}
+                                  <span className="text-gray-400"> · {c.level || 'no level'}{per ? ` · ${per.name}` : ''}{!parentSameOwner && owner ? ` · ${owner.name || owner.email}` : ''}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </span>
                 );
               })()}
@@ -2387,14 +2659,39 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
                       );
                     })()
                   ) : planSelectedObjective ? (() => {
-                    const treeFc = filterCount(treeStatusFilter, treeOwnerFilter, treeAssigneeFilter, treePeriodFilter) + (treeShowDoneArchived ? 0 : 1);
                     const doneArchivedSet: Set<WorkflowStatus> = new Set(['done', 'archived']);
-                    const treeFilteredIds = (!treeShowDoneArchived || filterCount(treeStatusFilter, treeOwnerFilter, treeAssigneeFilter, treePeriodFilter) > 0)
-                      ? new Set(orgObjectives.filter(o => {
+                    const q = treeSearch.trim().toLowerCase();
+                    const manualFc = filterCount(treeStatusFilter, treeOwnerFilter, treeAssigneeFilter, treePeriodFilter);
+                    // Auto filtering (done/archived hide + the filters) applies only when on.
+                    const treeFc = (treeAutoFilter ? manualFc + (treeShowDoneArchived ? 0 : 1) : 0) + (q ? 1 : 0);
+                    // Which objectives are visible: pass the auto filters (when on) AND the
+                    // search. Then pull in each match's ancestors so its tree path renders.
+                    const needsFilter = q.length > 0 || (treeAutoFilter && (!treeShowDoneArchived || manualFc > 0));
+                    const treeFilteredIds: Set<string> | null = (() => {
+                      if (!needsFilter) return null;
+                      const byId = new Map(orgObjectives.map(o => [o.id, o]));
+                      const matched = orgObjectives.filter(o => {
+                        if (q && !o.title.toLowerCase().includes(q)) return false;
+                        if (treeAutoFilter) {
                           if (!treeShowDoneArchived && doneArchivedSet.has(o.workflowStatus || 'todo')) return false;
-                          return passesFilters(o, treeStatusFilter, treeOwnerFilter, treeAssigneeFilter, treePeriodFilter);
-                        }).map(o => o.id))
-                      : null;
+                          if (!passesFilters(o, treeStatusFilter, treeOwnerFilter, treeAssigneeFilter, treePeriodFilter)) return false;
+                        }
+                        return true;
+                      });
+                      const ids = new Set(matched.map(o => o.id));
+                      for (const o of matched) {
+                        let cur: Objective | undefined = o;
+                        const seen = new Set<string>();
+                        while (cur?.parentId && !seen.has(cur.parentId)) {
+                          seen.add(cur.parentId);
+                          ids.add(cur.parentId);
+                          cur = byId.get(cur.parentId);
+                        }
+                      }
+                      return ids;
+                    })();
+                    // Pool of objectives (for filter dropdown counts) under the selection.
+                    const poolHidesDoneArchived = treeAutoFilter && !treeShowDoneArchived;
                     const treePool: Objective[] = (() => {
                       const pool: Objective[] = [];
                       const seen = new Set<string>();
@@ -2403,7 +2700,7 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
                         seen.add(id);
                         const o = orgObjectives.find(x => x.id === id);
                         if (!o) return;
-                        if (treeShowDoneArchived || !doneArchivedSet.has(o.workflowStatus || 'todo')) {
+                        if (!poolHidesDoneArchived || !doneArchivedSet.has(o.workflowStatus || 'todo')) {
                           pool.push(o);
                         }
                         orgObjectives.filter(c => c.parentId === id).forEach(c => walk(c.id));
@@ -2422,7 +2719,24 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
                     return (
                     <>
                       <div className="px-3 py-2 border-b border-gray-100 flex items-center gap-2 bg-gray-50">
-                        <span className="text-xs font-semibold text-gray-700 truncate flex-1">Objective Tree (Auto Filtered)</span>
+                        <span className="text-xs font-semibold text-gray-700 whitespace-nowrap">Objective Tree</span>
+                        <input
+                          type="text"
+                          value={treeSearch}
+                          onChange={(e) => setTreeSearch(e.target.value)}
+                          placeholder="Search objectives…"
+                          className="flex-1 min-w-0 text-xs px-2 py-0.5 border border-gray-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                        {treeSearch && (
+                          <button onClick={() => setTreeSearch('')} className="text-[10px] text-gray-400 hover:text-gray-700" title="Clear search">✕</button>
+                        )}
+                        <button
+                          onClick={() => setTreeAutoFilter(v => !v)}
+                          className={`px-2 py-0.5 text-[10px] border rounded whitespace-nowrap ${treeAutoFilter ? 'bg-blue-50 border-blue-300 text-blue-700' : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'}`}
+                          title="Auto filtering hides done/archived and applies the tree filters below. Turn it off to see the whole subtree."
+                        >
+                          Auto filter {treeAutoFilter ? 'on' : 'off'}
+                        </button>
                         <div className="inline-flex border border-gray-300 rounded overflow-hidden">
                           <button
                             onClick={() => setListPlanTreeView('table')}
@@ -3978,6 +4292,14 @@ export function ListsPage({ onViewChange, embedded = false, forcedListId, forced
             </div>
           </div>
         </div>
+      )}
+
+      {gradingPlan && planFocusEffective && (
+        <GradePlanModal
+          plan={planFocusEffective}
+          isReadOnly={isReadOnlyList}
+          onClose={() => setGradingPlan(false)}
+        />
       )}
     </div>
   );

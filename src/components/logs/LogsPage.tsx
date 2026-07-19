@@ -25,6 +25,8 @@ const FIELD_TO_KEY: Record<string, keyof Objective> = {
   nextStep: 'nextStep',
   storyPoints: 'storyPoints',
   valuePoints: 'valuePoints',
+  attainment: 'attainment',
+  attainmentNote: 'attainmentNote',
   isKeyResult: 'isKeyResult',
   link: 'link',
 };
@@ -61,6 +63,8 @@ const FIELD_LABELS: Record<string, string> = {
   nextStep: 'next step',
   storyPoints: 'story points',
   valuePoints: 'value points',
+  attainment: 'attainment',
+  attainmentNote: 'grade comment',
   link: 'link',
   isKeyResult: 'key result flag',
   type: 'type',

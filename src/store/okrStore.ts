@@ -156,6 +156,10 @@ interface OKRActions {
   // User Preferences
   editorWidth: number | undefined;
   setEditorWidth: (width: number) => Promise<void>;
+  // Plan ids most recently chosen in the Add-to-Plan selector, newest first
+  // (max 5). Persisted per user so the selector can surface likely repeats.
+  recentPlanIds: string[];
+  recordRecentPlan: (planId: string) => Promise<void>;
   columnWidths: ColumnWidths;
   setColumnWidths: (widths: Partial<ColumnWidths>) => Promise<void>;
   visibleColumns: ColumnKey[];
@@ -410,6 +414,7 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
   isLoading: false,
   error: null,
   editorWidth: undefined,
+  recentPlanIds: [],
   columnWidths: DEFAULT_COLUMN_WIDTHS,
   visibleColumns: DEFAULT_VISIBLE_COLUMNS,
   evergreenOverdueColumns: ['workflowStatus', 'owner', 'nextStepDate'] as ColumnKey[],
@@ -564,6 +569,12 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
     }
     if ('valuePoints' in updates && normalize(updates.valuePoints) !== normalize(existingObj.valuePoints)) {
       changes.push({ field: 'valuePoints', oldValue: existingObj.valuePoints, newValue: updates.valuePoints, oldRaw: existingObj.valuePoints, newRaw: updates.valuePoints });
+    }
+    if ('attainment' in updates && normalize(updates.attainment) !== normalize(existingObj.attainment)) {
+      changes.push({ field: 'attainment', oldValue: existingObj.attainment, newValue: updates.attainment, oldRaw: existingObj.attainment, newRaw: updates.attainment });
+    }
+    if ('attainmentNote' in updates && normalize(updates.attainmentNote) !== normalize(existingObj.attainmentNote)) {
+      changes.push({ field: 'attainmentNote', oldValue: existingObj.attainmentNote || '(empty)', newValue: updates.attainmentNote || '(empty)', oldRaw: existingObj.attainmentNote, newRaw: updates.attainmentNote });
     }
     if ('isKeyResult' in updates && !!updates.isKeyResult !== !!existingObj.isKeyResult) {
       changes.push({ field: 'isKeyResult', oldValue: existingObj.isKeyResult ? 'Yes' : 'No', newValue: updates.isKeyResult ? 'Yes' : 'No', oldRaw: !!existingObj.isKeyResult, newRaw: !!updates.isKeyResult });
@@ -1192,6 +1203,9 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
         if (data.preferences?.editorWidth) {
           updates.editorWidth = data.preferences.editorWidth;
         }
+        if (Array.isArray(data.preferences?.recentPlanIds)) {
+          updates.recentPlanIds = data.preferences.recentPlanIds.filter((id: unknown): id is string => typeof id === 'string').slice(0, 5);
+        }
         if (data.preferences?.columnWidths) {
           updates.columnWidths = { ...DEFAULT_COLUMN_WIDTHS, ...data.preferences.columnWidths };
         }
@@ -1292,6 +1306,25 @@ export const useOKRStore = create<OKRStore>((set, get) => ({
       });
     } catch (err) {
       console.error('Failed to save editor width preference:', err);
+    }
+  },
+
+  recordRecentPlan: async (planId: string) => {
+    if (!planId) return;
+    const prev = get().recentPlanIds || [];
+    const next = [planId, ...prev.filter(id => id !== planId)].slice(0, 5);
+    // Skip the write if nothing actually changed (same plan already at the front).
+    if (next.length === prev.length && next.every((id, i) => id === prev[i])) return;
+    set({ recentPlanIds: next });
+    try {
+      await fetch(`${API_URL}/api/users/me/preferences`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferences: { recentPlanIds: next } }),
+      });
+    } catch (err) {
+      console.error('Failed to save recent plans preference:', err);
     }
   },
 

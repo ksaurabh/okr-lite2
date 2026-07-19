@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
-import type { ObjectiveLevel, Period, User } from '../../types';
+import type { List, ObjectiveLevel, Period, User } from '../../types';
 import { renderGroupedPeriodOptions } from '../../utils/periodOptions';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
@@ -18,6 +18,8 @@ export function AddToPlanBookmark({ objectiveId, size = 'md' }: AddToPlanBookmar
   const lists = useOKRStore((s: OKRStore) => s.lists);
   const periods = useOKRStore((s: OKRStore) => s.periods);
   const addItemToList = useOKRStore((s: OKRStore) => s.addItemToList);
+  const recentPlanIds = useOKRStore((s: OKRStore) => s.recentPlanIds);
+  const recordRecentPlan = useOKRStore((s: OKRStore) => s.recordRecentPlan);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [filterOwnerId, setFilterOwnerId] = useState('');
@@ -88,8 +90,39 @@ export function AddToPlanBookmark({ objectiveId, size = 'md' }: AddToPlanBookmar
       .sort((a, b) => (a.p!.startDate || '').localeCompare(b.p!.startDate || ''));
   }, [plans, periods]);
 
+  // The 5 most-recently-used plans (that still exist), newest first.
+  const recentPlans = useMemo(
+    () => recentPlanIds.map(id => plans.find(p => p.id === id)).filter((p): p is List => !!p).slice(0, 5),
+    [recentPlanIds, plans],
+  );
+
+  const choosePlan = (p: List) => {
+    if (!p.items.some(it => it.objectiveId === objectiveId)) {
+      addItemToList(p.id, objectiveId);
+      recordRecentPlan(p.id);
+    }
+    setOpen(false);
+  };
+
+  const planRow = (p: List, keyPrefix: string) => {
+    const already = p.items.some(it => it.objectiveId === objectiveId);
+    return (
+      <button
+        key={`${keyPrefix}-${p.id}`}
+        onClick={(e) => { e.stopPropagation(); choosePlan(p); }}
+        disabled={already}
+        className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 ${already ? 'text-gray-400 cursor-not-allowed' : 'text-gray-700 hover:bg-gray-50'}`}
+      >
+        <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: p.color || '#6b7280' }} />
+        <span className="flex-1 truncate">{p.name}</span>
+        {already && <span className="text-[10px] text-gray-400">added</span>}
+      </button>
+    );
+  };
+
   const iconClass = size === 'sm' ? 'w-3.5 h-3.5' : 'w-4 h-4';
   const hasAnyFilter = filterOwnerId || filterLevel || filterPeriodId;
+  const showRecents = recentPlans.length > 0 && !search.trim() && !hasAnyFilter;
 
   return (
     <div ref={ref} className="relative flex-shrink-0">
@@ -165,28 +198,22 @@ export function AddToPlanBookmark({ objectiveId, size = 'md' }: AddToPlanBookmar
             </div>
             {plans.length === 0 ? (
               <div className="px-3 py-2 text-xs text-gray-400">No plans available.</div>
-            ) : filteredPlans.length === 0 ? (
-              <div className="px-3 py-2 text-xs text-gray-400">No matches.</div>
+            ) : (search.trim() || hasAnyFilter) ? (
+              filteredPlans.length === 0
+                ? <div className="px-3 py-2 text-xs text-gray-400">No matches.</div>
+                : filteredPlans.map(p => planRow(p, 'f'))
             ) : (
-              filteredPlans.map(p => {
-                const already = p.items.some(it => it.objectiveId === objectiveId);
-                return (
-                  <button
-                    key={p.id}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (!already) addItemToList(p.id, objectiveId);
-                      setOpen(false);
-                    }}
-                    disabled={already}
-                    className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 ${already ? 'text-gray-400 cursor-not-allowed' : 'text-gray-700 hover:bg-gray-50'}`}
-                  >
-                    <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: p.color || '#6b7280' }} />
-                    <span className="flex-1 truncate">{p.name}</span>
-                    {already && <span className="text-[10px] text-gray-400">added</span>}
-                  </button>
-                );
-              })
+              <>
+                {showRecents && (
+                  <>
+                    <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Recently used</div>
+                    {recentPlans.map(p => planRow(p, 'recent'))}
+                    <div className="border-t border-gray-100 my-1" />
+                    <div className="px-3 pb-1 text-[10px] uppercase tracking-wider text-gray-400 font-semibold">All plans</div>
+                  </>
+                )}
+                {plans.map(p => planRow(p, 'all'))}
+              </>
             )}
           </div>
         </div>,

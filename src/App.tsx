@@ -8,6 +8,7 @@ import { ProgressPage } from './components/progress';
 import { PeriodsPage } from './components/periods';
 import { TeamsPage } from './components/teams/TeamsPage';
 import { PlansPage } from './components/plans/PlansPage';
+import { ScorecardPage } from './components/plans/ScorecardPage';
 import { PlanBuilderPage } from './components/plans/PlanBuilderPage';
 import { AgentPage } from './components/agent/AgentPage';
 import { WeeklyUpdatesPage } from './components/weeklyupdates/WeeklyUpdatesPage';
@@ -22,9 +23,9 @@ import { LoginPage, UnauthorizedPage, AuthCallback, AdminInviteAccept } from './
 import { Modal } from './components/common';
 import { useOKRStore } from './store/okrStore';
 
-type View = 'dashboard' | 'objectives' | 'plans' | 'plans-overview' | 'planbuilder' | 'weeklyupdates' | 'agent' | 'views' | 'checklist' | 'progress' | 'updates' | 'logwork' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin' | 'logs';
+type View = 'dashboard' | 'objectives' | 'plans' | 'plans-overview' | 'planbuilder' | 'weeklyupdates' | 'agent' | 'views' | 'checklist' | 'progress' | 'updates' | 'logwork' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin' | 'logs' | 'scorecard';
 
-const ALL_VIEWS: View[] = ['dashboard', 'objectives', 'plans', 'plans-overview', 'planbuilder', 'weeklyupdates', 'agent', 'views', 'checklist', 'progress', 'updates', 'logwork', 'teams', 'periods', 'tags', 'settings', 'admin', 'logs'];
+const ALL_VIEWS: View[] = ['dashboard', 'objectives', 'plans', 'plans-overview', 'planbuilder', 'weeklyupdates', 'agent', 'views', 'checklist', 'progress', 'updates', 'logwork', 'teams', 'periods', 'tags', 'settings', 'admin', 'logs', 'scorecard'];
 const RESERVED_PATHS = new Set(['/auth/callback', '/invite/accept']);
 
 function viewFromPath(pathname: string): View {
@@ -112,6 +113,12 @@ function AppContent() {
   // Show unauthorized page if authenticated but domain not allowed
   if (!isAllowed) {
     return <UnauthorizedPage />;
+  }
+
+  // Standalone scorecard: a full page with no app chrome, reached directly via
+  // /scorecard?plan=<id> (the shareable link). Still behind auth like everything.
+  if (currentView === 'scorecard') {
+    return <ScorecardPage onExit={() => setCurrentView('plans-overview')} />;
   }
 
   // Show main app if authenticated and allowed
