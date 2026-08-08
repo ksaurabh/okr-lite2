@@ -44,6 +44,7 @@ export function MindmapCanvasPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState('');
   const [isSpaceDown, setIsSpaceDown] = useState(false);
+  const [menuNoteId, setMenuNoteId] = useState<string | null>(null);
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const notesRef = useRef(notes);
@@ -72,6 +73,15 @@ export function MindmapCanvasPage() {
       .catch(() => { if (!cancelled) setStatus('notfound'); });
     return () => { cancelled = true; };
   }, [id]);
+
+  // Close the note action menu on any outside interaction (its own controls
+  // stopPropagation, so clicks inside the menu don't reach this listener).
+  useEffect(() => {
+    if (!menuNoteId) return;
+    const close = () => setMenuNoteId(null);
+    window.addEventListener('mousedown', close);
+    return () => window.removeEventListener('mousedown', close);
+  }, [menuNoteId]);
 
   // body { overflow: hidden } for the canvas page only.
   useEffect(() => {
@@ -257,9 +267,12 @@ export function MindmapCanvasPage() {
     scheduleSave();
   };
 
+  // Drag the note from anywhere on its surface (the "⋯" button, its menu, the
+  // resize grip and the edit textarea all stopPropagation so they're exempt).
   const startDrag = (e: React.MouseEvent, n: MindmapNote) => {
-    if (!canEditRef.current || spaceRef.current) return;
+    if (!canEditRef.current || spaceRef.current || editingId === n.id) return;
     e.stopPropagation();
+    setMenuNoteId(null);
     interactionRef.current = { kind: 'drag', id: n.id, startX: e.clientX, startY: e.clientY, origX: n.x, origY: n.y };
     movedRef.current = false;
   };
@@ -267,6 +280,7 @@ export function MindmapCanvasPage() {
   const startResize = (e: React.MouseEvent, n: MindmapNote) => {
     if (!canEditRef.current || spaceRef.current) return;
     e.stopPropagation();
+    setMenuNoteId(null);
     interactionRef.current = { kind: 'resize', id: n.id, startX: e.clientX, startY: e.clientY, origW: n.w, origH: n.h };
     movedRef.current = false;
   };
@@ -416,22 +430,41 @@ export function MindmapCanvasPage() {
               <div
                 key={n.id}
                 data-note
-                style={{ position: 'absolute', left: n.x, top: n.y, width: n.w, height: n.h, backgroundColor: n.color }}
-                className="rounded-md shadow-md border border-black/5 flex flex-col overflow-hidden"
+                style={{
+                  position: 'absolute', left: n.x, top: n.y, width: n.w, height: n.h,
+                  backgroundColor: n.color,
+                  cursor: canEdit && editingId !== n.id ? 'move' : 'default',
+                  zIndex: menuNoteId === n.id || editingId === n.id ? 30 : undefined,
+                }}
+                className="rounded-md shadow-md border border-black/5 flex flex-col"
+                onMouseDown={canEdit ? e => startDrag(e, n) : undefined}
+                onDoubleClick={canEdit ? () => beginEdit(n) : undefined}
               >
+                {/* All note actions live behind this "⋯" button. */}
                 {canEdit && (
-                  <div
-                    className="flex items-center gap-1 px-1.5 py-1 bg-black/5 flex-shrink-0"
-                    style={{ cursor: 'move' }}
-                    onMouseDown={e => startDrag(e, n)}
+                  <button
+                    onMouseDown={e => e.stopPropagation()}
+                    onDoubleClick={e => e.stopPropagation()}
+                    onClick={e => { e.stopPropagation(); setMenuNoteId(prev => (prev === n.id ? null : n.id)); }}
+                    className="absolute top-1 right-1 z-10 w-6 h-6 rounded-full bg-white/80 hover:bg-white shadow flex items-center justify-center text-gray-600"
+                    title="Note actions"
                   >
-                    <div className="flex items-center gap-0.5 flex-wrap flex-1">
+                    <span className="text-base leading-none -mt-1.5">⋯</span>
+                  </button>
+                )}
+                {canEdit && menuNoteId === n.id && (
+                  <div
+                    onMouseDown={e => e.stopPropagation()}
+                    onDoubleClick={e => e.stopPropagation()}
+                    className="absolute top-8 right-1 z-20 bg-white rounded-lg shadow-lg border border-gray-200 p-2"
+                  >
+                    <div className="grid grid-cols-5 gap-1 mb-1.5">
                       {PALETTE.map(c => (
                         <button
                           key={c}
                           onMouseDown={e => e.stopPropagation()}
                           onClick={e => { e.stopPropagation(); recolor(n, c); }}
-                          className="w-3 h-3 rounded-sm border border-black/10"
+                          className="w-4 h-4 rounded border border-black/10 hover:scale-110 transition-transform"
                           style={{ backgroundColor: c }}
                           title="Recolor"
                         />
@@ -439,18 +472,14 @@ export function MindmapCanvasPage() {
                     </div>
                     <button
                       onMouseDown={e => e.stopPropagation()}
-                      onClick={e => { e.stopPropagation(); deleteNote(n); }}
-                      className="text-gray-600 hover:text-red-600 leading-none px-1"
-                      title="Delete note"
+                      onClick={e => { e.stopPropagation(); deleteNote(n); setMenuNoteId(null); }}
+                      className="w-full text-left text-xs text-red-600 hover:bg-red-50 rounded px-2 py-1"
                     >
-                      ×
+                      Delete note
                     </button>
                   </div>
                 )}
-                <div
-                  className="flex-1 overflow-auto p-2 text-sm text-gray-800"
-                  onDoubleClick={() => beginEdit(n)}
-                >
+                <div className={`flex-1 min-h-0 text-sm text-gray-800 ${editingId === n.id ? 'overflow-hidden' : 'overflow-auto p-2'}`}>
                   {editingId === n.id ? (
                     <textarea
                       autoFocus
@@ -458,11 +487,12 @@ export function MindmapCanvasPage() {
                       onChange={e => setEditingText(e.target.value)}
                       onBlur={commitEdit}
                       onMouseDown={e => e.stopPropagation()}
+                      onDoubleClick={e => e.stopPropagation()}
                       onKeyDown={e => {
                         if (e.key === 'Escape') { (e.target as HTMLTextAreaElement).blur(); }
                         else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); commitEdit(); }
                       }}
-                      className="w-full h-full resize-none bg-white/60 rounded p-1 text-sm focus:outline-none"
+                      className="w-full h-full box-border resize-none bg-white/70 p-2 text-sm focus:outline-none rounded-b-md"
                     />
                   ) : (
                     <div className="note-md break-words" dangerouslySetInnerHTML={{ __html: renderNoteMarkdown(n.text) }} />

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { MindmapListItem } from './types';
 import { navigateTo } from './nav';
+import { Modal } from '../common/Modal';
+import { Button } from '../common/Button';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -10,14 +12,76 @@ function fmtDate(iso: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+// In-app text-entry modal (replaces window.prompt).
+function TextPromptModal({ title, label, initial, submitLabel, onSubmit, onClose }: {
+  title: string; label: string; initial: string; submitLabel: string;
+  onSubmit: (value: string) => void; onClose: () => void;
+}) {
+  const [value, setValue] = useState(initial);
+  return (
+    <Modal isOpen onClose={onClose} title={title}>
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm text-gray-600 mb-1">{label}</label>
+          <input
+            type="text"
+            autoFocus
+            value={value}
+            onChange={e => setValue(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') onSubmit(value); }}
+            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => onSubmit(value)}>{submitLabel}</Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// In-app confirmation modal (replaces window.confirm).
+function ConfirmModal({ title, message, confirmLabel, onConfirm, onClose }: {
+  title: string; message: string; confirmLabel: string; onConfirm: () => void; onClose: () => void;
+}) {
+  return (
+    <Modal isOpen onClose={onClose} title={title}>
+      <div className="space-y-4">
+        <p className="text-sm text-gray-600">{message}</p>
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button variant="danger" onClick={onConfirm}>{confirmLabel}</Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+type PromptState =
+  | { mode: 'create' }
+  | { mode: 'rename'; item: MindmapListItem }
+  | null;
+
 export function MindmapsPage() {
   const [items, setItems] = useState<MindmapListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [banner, setBanner] = useState<string | null>(null);
 
   const [ownerFilter, setOwnerFilter] = useState(''); // creatorEmail or ''
   const [starredOnly, setStarredOnly] = useState(false);
   const [search, setSearch] = useState('');
+
+  const [prompt, setPrompt] = useState<PromptState>(null);
+  const [confirmDelete, setConfirmDelete] = useState<MindmapListItem | null>(null);
+
+  // Auto-dismiss the error banner.
+  useEffect(() => {
+    if (!banner) return;
+    const t = setTimeout(() => setBanner(null), 4000);
+    return () => clearTimeout(t);
+  }, [banner]);
 
   const load = () => {
     setLoading(true);
@@ -53,9 +117,9 @@ export function MindmapsPage() {
     });
   }, [items, ownerFilter, starredOnly, search]);
 
-  const createNew = async () => {
-    const title = (window.prompt('Mindmap title', 'Untitled mindmap') ?? '').trim();
-    if (title === null) return;
+  const submitCreate = async (raw: string) => {
+    const title = raw.trim() || 'Untitled mindmap';
+    setPrompt(null);
     try {
       const r = await fetch(`${API_URL}/api/mindmaps`, {
         method: 'POST',
@@ -67,7 +131,25 @@ export function MindmapsPage() {
       const d = await r.json();
       navigateTo(`/mindmap/${d.mindmap.id}`);
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : 'Could not create mindmap');
+      setBanner(err instanceof Error ? err.message : 'Could not create mindmap');
+    }
+  };
+
+  const submitRename = async (item: MindmapListItem, raw: string) => {
+    const trimmed = raw.trim();
+    setPrompt(null);
+    if (!trimmed || trimmed === item.title) return;
+    try {
+      const r = await fetch(`${API_URL}/api/mindmaps/${item.id}`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: trimmed }),
+      });
+      if (!r.ok) throw new Error();
+      setItems(prev => prev.map(x => (x.id === item.id ? { ...x, title: trimmed } : x)));
+    } catch {
+      setBanner('Could not rename mindmap');
     }
   };
 
@@ -88,33 +170,14 @@ export function MindmapsPage() {
     }
   };
 
-  const rename = async (m: MindmapListItem) => {
-    const title = window.prompt('Rename mindmap', m.title);
-    if (title === null) return;
-    const trimmed = title.trim();
-    if (!trimmed || trimmed === m.title) return;
-    try {
-      const r = await fetch(`${API_URL}/api/mindmaps/${m.id}`, {
-        method: 'PUT',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: trimmed }),
-      });
-      if (!r.ok) throw new Error();
-      setItems(prev => prev.map(x => (x.id === m.id ? { ...x, title: trimmed } : x)));
-    } catch {
-      window.alert('Could not rename mindmap');
-    }
-  };
-
-  const remove = async (m: MindmapListItem) => {
-    if (!window.confirm(`Delete "${m.title}"? This cannot be undone.`)) return;
+  const doDelete = async (m: MindmapListItem) => {
+    setConfirmDelete(null);
     try {
       const r = await fetch(`${API_URL}/api/mindmaps/${m.id}`, { method: 'DELETE', credentials: 'include' });
       if (!r.ok) throw new Error();
       setItems(prev => prev.filter(x => x.id !== m.id));
     } catch {
-      window.alert('Could not delete mindmap');
+      setBanner('Could not delete mindmap');
     }
   };
 
@@ -126,12 +189,16 @@ export function MindmapsPage() {
           <p className="text-sm text-gray-500">Sticky-note canvases for brainstorming and planning.</p>
         </div>
         <button
-          onClick={createNew}
+          onClick={() => setPrompt({ mode: 'create' })}
           className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
         >
           + New mindmap
         </button>
       </div>
+
+      {banner && (
+        <div className="mb-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">{banner}</div>
+      )}
 
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <select
@@ -208,8 +275,8 @@ export function MindmapsPage() {
                   <td className="px-3 py-2 text-right whitespace-nowrap">
                     {m.mine ? (
                       <>
-                        <button onClick={() => rename(m)} className="text-xs text-gray-500 hover:text-blue-600 px-1.5">Rename</button>
-                        <button onClick={() => remove(m)} className="text-xs text-gray-500 hover:text-red-600 px-1.5">Delete</button>
+                        <button onClick={() => setPrompt({ mode: 'rename', item: m })} className="text-xs text-gray-500 hover:text-blue-600 px-1.5">Rename</button>
+                        <button onClick={() => setConfirmDelete(m)} className="text-xs text-gray-500 hover:text-red-600 px-1.5">Delete</button>
                       </>
                     ) : (
                       <span className="text-xs text-gray-300">—</span>
@@ -220,6 +287,36 @@ export function MindmapsPage() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {prompt?.mode === 'create' && (
+        <TextPromptModal
+          title="New mindmap"
+          label="Title"
+          initial="Untitled mindmap"
+          submitLabel="Create"
+          onSubmit={submitCreate}
+          onClose={() => setPrompt(null)}
+        />
+      )}
+      {prompt?.mode === 'rename' && (
+        <TextPromptModal
+          title="Rename mindmap"
+          label="Title"
+          initial={prompt.item.title}
+          submitLabel="Save"
+          onSubmit={value => submitRename(prompt.item, value)}
+          onClose={() => setPrompt(null)}
+        />
+      )}
+      {confirmDelete && (
+        <ConfirmModal
+          title="Delete mindmap"
+          message={`Delete “${confirmDelete.title}”? This cannot be undone.`}
+          confirmLabel="Delete"
+          onConfirm={() => doDelete(confirmDelete)}
+          onClose={() => setConfirmDelete(null)}
+        />
       )}
     </div>
   );
