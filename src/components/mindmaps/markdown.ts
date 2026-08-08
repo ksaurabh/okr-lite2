@@ -26,38 +26,64 @@ function inline(s: string): string {
   return out;
 }
 
+// Detect a list item, returning its nesting depth (from leading indentation),
+// list type, and content. Indent it by two spaces (or a tab) per level.
+function matchListItem(line: string): { depth: number; type: 'ul' | 'ol'; content: string } | null {
+  const expanded = line.replace(/\t/g, '  '); // a tab counts as one indent level
+  const m = /^(\s*)([-*]|\d+\.)\s+(.*)$/.exec(expanded);
+  if (!m) return null;
+  const depth = Math.floor(m[1].length / 2);
+  const type: 'ul' | 'ol' = /\d/.test(m[2]) ? 'ol' : 'ul';
+  return { depth, type, content: m[3] };
+}
+
 export function renderNoteMarkdown(src: string): string {
   const escaped = escapeHtml(src ?? '');
   const lines = escaped.split(/\r?\n/);
   const html: string[] = [];
-  let listType: 'ul' | 'ol' | null = null;
 
-  const closeList = () => {
-    if (listType) {
-      html.push(`</${listType}>`);
-      listType = null;
-    }
+  // Stack of open lists, one per nesting level. `liOpen` tracks whether the
+  // <li> at each level is still open (a child list nests inside an open <li>).
+  const stack: Array<'ul' | 'ol'> = [];
+  const liOpen: boolean[] = [];
+
+  const closeItem = () => {
+    const top = liOpen.length - 1;
+    if (top >= 0 && liOpen[top]) { html.push('</li>'); liOpen[top] = false; }
   };
+  const openList = (type: 'ul' | 'ol') => { html.push(`<${type}>`); stack.push(type); liOpen.push(false); };
+  const closeList = () => { closeItem(); html.push(`</${stack.pop()}>`); liOpen.pop(); };
+  const closeAllLists = () => { while (stack.length) closeList(); };
 
   for (const line of lines) {
+    const item = matchListItem(line);
+    if (item) {
+      // Can't nest deeper than one level below what's currently open.
+      const depth = Math.min(item.depth, stack.length);
+      while (stack.length > depth + 1) closeList();     // came back out
+      if (stack.length === depth + 1) {
+        if (stack[depth] !== item.type) { closeList(); openList(item.type); }
+        else closeItem();                                // sibling at same level
+      } else {
+        while (stack.length < depth + 1) openList(item.type); // go deeper (inside open <li>)
+      }
+      html.push(`<li>${inline(item.content)}`);
+      liOpen[depth] = true;
+      continue;
+    }
+
     let m: RegExpExecArray | null;
     if ((m = /^(#{1,6})\s+(.*)$/.exec(line))) {
-      closeList();
+      closeAllLists();
       const level = m[1].length;
       html.push(`<h${level}>${inline(m[2])}</h${level}>`);
-    } else if ((m = /^\s*[-*]\s+(.*)$/.exec(line))) {
-      if (listType !== 'ul') { closeList(); html.push('<ul>'); listType = 'ul'; }
-      html.push(`<li>${inline(m[1])}</li>`);
-    } else if ((m = /^\s*\d+\.\s+(.*)$/.exec(line))) {
-      if (listType !== 'ol') { closeList(); html.push('<ol>'); listType = 'ol'; }
-      html.push(`<li>${inline(m[1])}</li>`);
     } else if (line.trim() === '') {
-      closeList();
+      closeAllLists();
     } else {
-      closeList();
+      closeAllLists();
       html.push(`<p>${inline(line)}</p>`);
     }
   }
-  closeList();
+  closeAllLists();
   return html.join('');
 }
