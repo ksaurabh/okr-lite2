@@ -7,6 +7,7 @@ export interface MindmapNote {
   h: number;
   color: string; // hex
   text: string;  // markdown source
+  linkedMindmapId?: string; // optional link to another mindmap
 }
 
 export interface Mindmap {
@@ -15,6 +16,7 @@ export interface Mindmap {
   creatorEmail: string;
   creatorName: string;
   shared: boolean;
+  sharedWith?: string[]; // emails (creator-only)
   createdAt: string;
   updatedAt: string;
   notes: MindmapNote[];
@@ -27,6 +29,7 @@ export interface MindmapListItem {
   creatorEmail: string;
   creatorName: string;
   shared: boolean;
+  sharedWith?: string[]; // emails (creator-only)
   createdAt: string;
   updatedAt: string;
   noteCount: number;

@@ -42,6 +42,9 @@ function pathFromView(view: View): string {
 
 function AppContent() {
   const [currentView, setCurrentViewState] = useState<View>(() => viewFromPath(window.location.pathname));
+  // Track the full pathname so navigations that keep the same view (e.g.
+  // /mindmap/A → /mindmap/B via a note link) still re-render and remount.
+  const [pathname, setPathname] = useState(window.location.pathname);
 
   const setCurrentView = (view: View) => {
     setCurrentViewState(view);
@@ -49,11 +52,13 @@ function AppContent() {
     if (window.location.pathname !== path) {
       window.history.pushState({}, '', path);
     }
+    setPathname(path);
   };
 
   useEffect(() => {
     const handlePopState = () => {
       setCurrentViewState(viewFromPath(window.location.pathname));
+      setPathname(window.location.pathname);
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
@@ -125,7 +130,7 @@ function AppContent() {
   // Standalone mindmap canvas: full-viewport editor with no app chrome, reached
   // via /mindmap/:id. Reads the id straight from the path.
   if (currentView === 'mindmap') {
-    return <MindmapCanvasPage />;
+    return <MindmapCanvasPage key={pathname} />;
   }
 
   // Show main app if authenticated and allowed

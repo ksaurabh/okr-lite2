@@ -5,12 +5,25 @@ import {
   NEW_NOTE_W, NEW_NOTE_H, ZOOM_MIN, ZOOM_MAX,
 } from './types';
 import { renderNoteMarkdown } from './markdown';
-import { navigateTo } from './nav';
+import { navigateTo, navigateToMindmap, navigateBackToMindmap, getMindmapBackStack } from './nav';
+import { ShareMindmapModal } from './ShareMindmapModal';
+import { NoteLinkModal } from './NoteLinkModal';
+import { useAuth } from '../../context/AuthContext';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
 function clamp(v: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, v)); }
 function newNoteId() { return `n_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 9)}`; }
+
+// A new mindmap made from a note takes the note's first "# heading" line as its
+// title; failing that, the first non-empty line; failing that, a default.
+function titleFromNote(text: string): string {
+  const lines = (text || '').split(/\r?\n/);
+  const heading = lines.find(l => /^#{1,6}\s+\S/.test(l));
+  if (heading) return heading.replace(/^#{1,6}\s+/, '').trim().slice(0, 200);
+  const firstNonEmpty = lines.map(l => l.trim()).find(Boolean);
+  return (firstNonEmpty || 'Untitled mindmap').slice(0, 200);
+}
 
 interface View { tx: number; ty: number; scale: number; }
 
@@ -25,13 +38,19 @@ type Interaction =
 
 export function MindmapCanvasPage() {
   const id = window.location.pathname.split('/')[2] || '';
+  const { user } = useAuth();
+  const selfEmail = user?.email || '';
+  const backStack = getMindmapBackStack();
 
   const [status, setStatus] = useState<'loading' | 'notfound' | 'ready'>('loading');
   const [title, setTitle] = useState('');
   const [shared, setShared] = useState(false);
+  const [sharedWith, setSharedWith] = useState<string[]>([]);
   const [canEdit, setCanEdit] = useState(false);
   const [starred, setStarred] = useState(false);
   const [notes, setNotes] = useState<MindmapNote[]>([]);
+  const [showShare, setShowShare] = useState(false);
+  const [linkNoteId, setLinkNoteId] = useState<string | null>(null);
 
   const [view, setViewState] = useState<View>({ tx: 0, ty: 0, scale: 1 });
   const viewRef = useRef(view);
@@ -80,6 +99,7 @@ export function MindmapCanvasPage() {
         if (cancelled) return;
         setTitle(d.mindmap.title);
         setShared(!!d.mindmap.shared);
+        setSharedWith(Array.isArray(d.mindmap.sharedWith) ? d.mindmap.sharedWith : []);
         setCanEdit(!!d.canEdit);
         setStarred(!!d.starred);
         setNotes(Array.isArray(d.mindmap.notes) ? d.mindmap.notes : []);
@@ -410,6 +430,57 @@ export function MindmapCanvasPage() {
     scheduleSave();
   };
 
+  // ---- Note ↔ mindmap links ----
+  const currentCrumb = () => ({ id, title });
+
+  const openLinkedMindmap = (n: MindmapNote) => {
+    if (n.linkedMindmapId) navigateToMindmap(n.linkedMindmapId, currentCrumb());
+  };
+
+  const setNoteLink = (n: MindmapNote, mindmapId: string) => {
+    setNotes(prev => prev.map(x => (x.id === n.id ? { ...x, linkedMindmapId: mindmapId } : x)));
+    scheduleSave();
+  };
+
+  const unlinkNote = (n: MindmapNote) => {
+    setNotes(prev => prev.map(x => {
+      if (x.id !== n.id) return x;
+      const copy = { ...x };
+      delete copy.linkedMindmapId;
+      return copy;
+    }));
+    scheduleSave();
+  };
+
+  // Create a fresh mindmap titled from the note's heading, link the note to it,
+  // then navigate there (with this mindmap on the back stack).
+  const createMindmapFromNote = async (n: MindmapNote) => {
+    try {
+      const r = await fetch(`${API_URL}/api/mindmaps`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: titleFromNote(n.text) }),
+      });
+      if (!r.ok) throw new Error();
+      const d = await r.json();
+      const newId: string = d.mindmap.id;
+      // Persist the link before navigating away (send the current notes with the
+      // link applied so the debounce race can't drop it).
+      const nextNotes = notesRef.current.map(x => (x.id === n.id ? { ...x, linkedMindmapId: newId } : x));
+      setNotes(nextNotes);
+      await fetch(`${API_URL}/api/mindmaps/${id}`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes: nextNotes }),
+      }).catch(() => {});
+      navigateToMindmap(newId, currentCrumb());
+    } catch {
+      /* ignore — creating from note failed */
+    }
+  };
+
   // ---- Palette drag & drop ----
   const onPaletteDragStart = (e: React.DragEvent, color: string) => {
     if (!canEdit) { e.preventDefault(); return; }
@@ -441,12 +512,6 @@ export function MindmapCanvasPage() {
     const t = title.trim() || 'Untitled mindmap';
     if (t !== title) setTitle(t);
     putMeta({ title: t });
-  };
-  const toggleShared = () => {
-    if (!canEdit) return;
-    const next = !shared;
-    setShared(next);
-    putMeta({ shared: next });
   };
   const toggleStar = () => {
     const next = !starred;
@@ -481,6 +546,16 @@ export function MindmapCanvasPage() {
         <button onClick={() => navigateTo('/mindmaps')} className="text-gray-500 hover:text-gray-800 p-1" title="Back to Mindmaps">
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
         </button>
+        {backStack.length > 0 && (
+          <button
+            onClick={() => navigateBackToMindmap()}
+            className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 px-2 py-1 rounded hover:bg-blue-50 max-w-[180px]"
+            title={`Back to “${backStack[backStack.length - 1].title}”`}
+          >
+            <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+            <span className="truncate">{backStack[backStack.length - 1].title}</span>
+          </button>
+        )}
         <input
           value={title}
           onChange={e => setTitle(e.target.value)}
@@ -492,14 +567,21 @@ export function MindmapCanvasPage() {
         <button onClick={toggleStar} className={`p-1 text-lg leading-none ${starred ? 'text-amber-400' : 'text-gray-300 hover:text-amber-300'}`} title={starred ? 'Unstar' : 'Star'}>
           {starred ? '★' : '☆'}
         </button>
-        <button
-          onClick={toggleShared}
-          disabled={!canEdit}
-          className={`text-xs px-2 py-1 rounded border ${shared ? 'bg-green-50 text-green-700 border-green-200' : 'bg-gray-50 text-gray-600 border-gray-200'} ${canEdit ? 'hover:bg-gray-100' : 'opacity-60 cursor-not-allowed'}`}
-          title={canEdit ? 'Toggle sharing' : 'Only the creator can change sharing'}
-        >
-          {shared ? 'Shared' : 'Private'}
-        </button>
+        {(() => {
+          const isShared = shared || sharedWith.length > 0;
+          const label = shared ? 'Shared' : sharedWith.length > 0 ? `Shared · ${sharedWith.length}` : 'Private';
+          return (
+            <button
+              onClick={() => canEdit && setShowShare(true)}
+              disabled={!canEdit}
+              className={`flex items-center gap-1 text-xs px-2 py-1 rounded border ${isShared ? 'bg-green-50 text-green-700 border-green-200' : 'bg-gray-50 text-gray-600 border-gray-200'} ${canEdit ? 'hover:bg-gray-100' : 'opacity-60 cursor-not-allowed'}`}
+              title={canEdit ? 'Share settings' : 'Only the creator can change sharing'}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
+              {label}
+            </button>
+          );
+        })()}
         <div className="flex-1" />
         <div className="flex items-center gap-1 text-gray-600">
           <button onClick={() => zoomButton(1 / 1.12)} className="w-7 h-7 rounded border border-gray-200 hover:bg-gray-50" title="Zoom out">−</button>
@@ -566,6 +648,14 @@ export function MindmapCanvasPage() {
                     <span className="w-px h-4 bg-gray-200" />
                     <button
                       onMouseDown={e => e.stopPropagation()}
+                      onClick={e => { e.stopPropagation(); setLinkNoteId(n.id); }}
+                      className={`p-0.5 ${n.linkedMindmapId ? 'text-blue-600 hover:text-blue-800' : 'text-gray-500 hover:text-blue-600'}`}
+                      title={n.linkedMindmapId ? 'Linked mindmap' : 'Link to a mindmap'}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 015.656 0 4 4 0 010 5.656l-3 3a4 4 0 01-5.656-5.656m-1.414 5.656a4 4 0 01-5.656 0 4 4 0 010-5.656l3-3a4 4 0 015.656 5.656" /></svg>
+                    </button>
+                    <button
+                      onMouseDown={e => e.stopPropagation()}
                       onClick={e => { e.stopPropagation(); deleteNote(n); }}
                       className="text-gray-500 hover:text-red-600 p-0.5"
                       title="Delete note"
@@ -573,6 +663,18 @@ export function MindmapCanvasPage() {
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                     </button>
                   </div>
+                )}
+                {/* Linked-note badge — visible to anyone; click to follow the link. */}
+                {n.linkedMindmapId && editingId !== n.id && (
+                  <button
+                    onMouseDown={e => e.stopPropagation()}
+                    onDoubleClick={e => e.stopPropagation()}
+                    onClick={e => { e.stopPropagation(); openLinkedMindmap(n); }}
+                    className="absolute top-1 left-1 z-10 w-5 h-5 rounded-full bg-white/85 hover:bg-white shadow flex items-center justify-center text-blue-600"
+                    title="Open linked mindmap"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 015.656 0 4 4 0 010 5.656l-3 3a4 4 0 01-5.656-5.656m-1.414 5.656a4 4 0 01-5.656 0 4 4 0 010-5.656l3-3a4 4 0 015.656 5.656" /></svg>
+                  </button>
                 )}
                 <div className={`flex-1 min-h-0 text-sm text-gray-800 ${editingId === n.id ? 'overflow-hidden' : 'overflow-auto p-2'}`}>
                   {editingId === n.id ? (
@@ -638,6 +740,33 @@ export function MindmapCanvasPage() {
           Scroll to zoom · Space + drag to pan{canEdit ? ' · drag empty canvas to select · double-click to edit' : ' · read-only'}
         </div>
       </div>
+
+      {showShare && canEdit && (
+        <ShareMindmapModal
+          mindmapId={id}
+          initialShared={shared}
+          initialSharedWith={sharedWith}
+          selfEmail={selfEmail}
+          onClose={() => setShowShare(false)}
+          onSaved={(s, sw) => { setShared(s); setSharedWith(sw); }}
+        />
+      )}
+
+      {linkNoteId && (() => {
+        const n = notes.find(x => x.id === linkNoteId);
+        if (!n) return null;
+        return (
+          <NoteLinkModal
+            hasLink={!!n.linkedMindmapId}
+            excludeId={id}
+            onClose={() => setLinkNoteId(null)}
+            onOpenLinked={() => openLinkedMindmap(n)}
+            onUnlink={() => unlinkNote(n)}
+            onCreateFromNote={() => createMindmapFromNote(n)}
+            onLinkExisting={(mid) => setNoteLink(n, mid)}
+          />
+        );
+      })()}
     </div>
   );
 }

@@ -539,6 +539,10 @@ function sanitizeNote(note) {
     ? n.color.trim()
     : MINDMAP_DEFAULT_COLOR;
   const text = typeof n.text === 'string' ? n.text.slice(0, MINDMAP_TEXT_CAP) : '';
+  // Optional link to another mindmap; keep only a well-formed mindmap id.
+  const linkedMindmapId = typeof n.linkedMindmapId === 'string' && /^mm_[A-Za-z0-9_-]+$/.test(n.linkedMindmapId)
+    ? n.linkedMindmapId
+    : undefined;
   return {
     id,
     x: toFiniteNumber(n.x, 0),
@@ -547,6 +551,7 @@ function sanitizeNote(note) {
     h: Math.max(MINDMAP_NOTE_MIN_H, toFiniteNumber(n.h, 160)),
     color,
     text,
+    ...(linkedMindmapId ? { linkedMindmapId } : {}),
   };
 }
 
@@ -554,14 +559,20 @@ function sanitizeNotes(notes) {
   return Array.isArray(notes) ? notes.map(sanitizeNote) : [];
 }
 
-// Visible = same org AND (creator is me OR shared). Returns null when the map
-// should appear not to exist (caller answers 404, never 403 — don't leak ids).
+// Visible = same org AND (creator is me OR shared org-wide OR shared with me).
+function isMindmapVisible(mm, email, domain) {
+  if (mm.domain && domain && mm.domain !== domain) return false;
+  return mm.creatorEmail === email
+    || mm.shared === true
+    || (Array.isArray(mm.sharedWith) && mm.sharedWith.includes(email));
+}
+
+// Returns null when the map should appear not to exist (caller answers 404,
+// never 403 — don't leak ids).
 function findVisibleMindmap(mindmaps, id, email, domain) {
   const mm = mindmaps.find(m => m.id === id);
-  if (!mm) return null;
-  if (mm.domain && domain && mm.domain !== domain) return null;
-  if (mm.creatorEmail === email || mm.shared === true) return mm;
-  return null;
+  if (!mm || !isMindmapVisible(mm, email, domain)) return null;
+  return mm;
 }
 
 function getStarredMindmapIds(email) {
@@ -2058,22 +2069,25 @@ app.get('/api/mindmaps', requireAuth, (req, res) => {
   const email = req.user.email;
   const domain = req.user.domain;
   const starred = new Set(getStarredMindmapIds(email));
-  const visible = getMindmaps().filter(m =>
-    (!m.domain || !domain || m.domain === domain) && (m.creatorEmail === email || m.shared === true)
-  );
+  const visible = getMindmaps().filter(m => isMindmapVisible(m, email, domain));
   const mindmaps = visible
-    .map(m => ({
-      id: m.id,
-      title: m.title,
-      creatorEmail: m.creatorEmail,
-      creatorName: m.creatorName,
-      shared: !!m.shared,
-      createdAt: m.createdAt,
-      updatedAt: m.updatedAt,
-      noteCount: Array.isArray(m.notes) ? m.notes.length : 0,
-      mine: m.creatorEmail === email,
-      starred: starred.has(m.id),
-    }))
+    .map(m => {
+      const mine = m.creatorEmail === email;
+      return {
+        id: m.id,
+        title: m.title,
+        creatorEmail: m.creatorEmail,
+        creatorName: m.creatorName,
+        shared: !!m.shared,
+        // Only the creator sees who else it's shared with.
+        ...(mine ? { sharedWith: Array.isArray(m.sharedWith) ? m.sharedWith : [] } : {}),
+        createdAt: m.createdAt,
+        updatedAt: m.updatedAt,
+        noteCount: Array.isArray(m.notes) ? m.notes.length : 0,
+        mine,
+        starred: starred.has(m.id),
+      };
+    })
     .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
   res.json({ mindmaps });
 });
@@ -2091,6 +2105,7 @@ app.post('/api/mindmaps', requireAuth, (req, res) => {
     creatorName: displayNameForEmail(email, req.user.name),
     domain: req.user.domain || null,
     shared: false,
+    sharedWith: [],
     createdAt: now,
     updatedAt: now,
     notes: [],
@@ -2106,15 +2121,19 @@ app.get('/api/mindmaps/:id', requireAuth, (req, res) => {
   const email = req.user.email;
   const mm = findVisibleMindmap(getMindmaps(), req.params.id, email, req.user.domain);
   if (!mm) return res.status(404).json({ error: 'Mindmap not found' });
+  const mine = mm.creatorEmail === email;
+  // Only the creator sees the explicit share list.
+  const out = { ...mm };
+  if (!mine) delete out.sharedWith;
   res.json({
-    mindmap: mm,
-    mine: mm.creatorEmail === email,
-    canEdit: mm.creatorEmail === email,
+    mindmap: out,
+    mine,
+    canEdit: mine,
     starred: getStarredMindmapIds(email).includes(mm.id),
   });
 });
 
-// Update title/shared/notes. Creator only; anyone else gets 404 (don't leak).
+// Update title/shared/sharedWith/notes. Creator only; anyone else gets 404.
 app.put('/api/mindmaps/:id', requireAuth, (req, res) => {
   const email = req.user.email;
   const mindmaps = getMindmaps();
@@ -2122,9 +2141,18 @@ app.put('/api/mindmaps/:id', requireAuth, (req, res) => {
   if (!mm) return res.status(404).json({ error: 'Mindmap not found' });
   if (mm.creatorEmail !== email) return res.status(404).json({ error: 'Mindmap not found' });
 
-  const { title, shared, notes } = req.body || {};
+  const { title, shared, sharedWith, notes } = req.body || {};
   if (typeof title === 'string') mm.title = (title.trim() || 'Untitled mindmap').slice(0, 200);
   if (typeof shared === 'boolean') mm.shared = shared;
+  if (Array.isArray(sharedWith)) {
+    // Normalize to a de-duped list of lowercased emails (never the creator).
+    mm.sharedWith = Array.from(new Set(
+      sharedWith
+        .filter(e => typeof e === 'string')
+        .map(e => e.trim().toLowerCase())
+        .filter(e => e && e !== email.toLowerCase()),
+    )).slice(0, 500);
+  }
   if (notes !== undefined) mm.notes = sanitizeNotes(notes);
   mm.updatedAt = new Date().toISOString();
   saveMindmaps(mindmaps);
