@@ -17,7 +17,9 @@ interface View { tx: number; ty: number; scale: number; }
 // Active pointer interaction. Only one runs at a time.
 type Interaction =
   | { kind: 'pan'; startX: number; startY: number; startTx: number; startTy: number }
+  | { kind: 'marquee'; startX: number; startY: number }
   | { kind: 'drag'; id: string; startX: number; startY: number; origX: number; origY: number }
+  | { kind: 'groupdrag'; startX: number; startY: number; origins: Record<string, { x: number; y: number }> }
   | { kind: 'resize'; id: string; startX: number; startY: number; origW: number; origH: number }
   | null;
 
@@ -44,9 +46,16 @@ export function MindmapCanvasPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState('');
   const [isSpaceDown, setIsSpaceDown] = useState(false);
-  // The selected note shows its action bar and resize grip. Selection happens on
-  // a plain click; a press-and-drag moves the note instead (and clears selection).
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Selected notes. A single selection shows the note's action bar and resize
+  // grip; a multi-selection (from a marquee drag on empty canvas) can be moved
+  // together. Selection happens on a plain click or a marquee; a press-and-drag
+  // on a single note moves it instead.
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const selectedRef = useRef(selectedIds);
+  selectedRef.current = selectedIds;
+  const soleSelected = selectedIds.length === 1 ? selectedIds[0] : null;
+  // Rubber-band rectangle in canvas-relative pixels while marquee-selecting.
+  const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const notesRef = useRef(notes);
@@ -75,16 +84,6 @@ export function MindmapCanvasPage() {
       .catch(() => { if (!cancelled) setStatus('notfound'); });
     return () => { cancelled = true; };
   }, [id]);
-
-  // Clicking anywhere other than the action bar clears the selection. The bar's
-  // controls and a note's own drag both stopPropagation, so a mousedown only
-  // reaches this listener when it's on empty canvas, the palette, or the toolbar.
-  useEffect(() => {
-    if (!selectedId) return;
-    const clear = () => setSelectedId(null);
-    window.addEventListener('mousedown', clear);
-    return () => window.removeEventListener('mousedown', clear);
-  }, [selectedId]);
 
   // body { overflow: hidden } for the canvas page only.
   useEffect(() => {
@@ -213,6 +212,27 @@ export function MindmapCanvasPage() {
         setView(prev => ({ ...prev, tx: it.startTx + (e.clientX - it.startX), ty: it.startTy + (e.clientY - it.startY) }));
         return;
       }
+      if (it.kind === 'marquee') {
+        movedRef.current = true;
+        const el = canvasRef.current;
+        if (!el) return;
+        const rect = el.getBoundingClientRect();
+        setMarquee({
+          x: Math.min(it.startX, e.clientX) - rect.left,
+          y: Math.min(it.startY, e.clientY) - rect.top,
+          w: Math.abs(e.clientX - it.startX),
+          h: Math.abs(e.clientY - it.startY),
+        });
+        // Select every note whose world rect intersects the marquee.
+        const a = screenToWorld(it.startX, it.startY);
+        const b = screenToWorld(e.clientX, e.clientY);
+        const minX = Math.min(a.wx, b.wx), maxX = Math.max(a.wx, b.wx);
+        const minY = Math.min(a.wy, b.wy), maxY = Math.max(a.wy, b.wy);
+        setSelectedIds(notesRef.current
+          .filter(n => n.x < maxX && n.x + n.w > minX && n.y < maxY && n.y + n.h > minY)
+          .map(n => n.id));
+        return;
+      }
       // Below a small threshold it's still a click, not a drag — don't move the
       // note or lose the selection over a few jittery pixels.
       if (!movedRef.current && Math.hypot(e.clientX - it.startX, e.clientY - it.startY) < 4) return;
@@ -221,8 +241,12 @@ export function MindmapCanvasPage() {
       const dx = (e.clientX - it.startX) / scale;
       const dy = (e.clientY - it.startY) / scale;
       if (it.kind === 'drag') {
-        setSelectedId(null); // moving the note hides the action bar (resizing keeps it)
+        setSelectedIds([]); // moving a single note hides its action bar (resizing keeps it)
         setNotes(prev => prev.map(n => (n.id === it.id ? { ...n, x: it.origX + dx, y: it.origY + dy } : n)));
+      } else if (it.kind === 'groupdrag') {
+        setNotes(prev => prev.map(n => (it.origins[n.id]
+          ? { ...n, x: it.origins[n.id].x + dx, y: it.origins[n.id].y + dy }
+          : n)));
       } else if (it.kind === 'resize') {
         setNotes(prev => prev.map(n => (n.id === it.id
           ? { ...n, w: Math.max(NOTE_MIN_W, it.origW + dx), h: Math.max(NOTE_MIN_H, it.origH + dy) }
@@ -233,16 +257,18 @@ export function MindmapCanvasPage() {
       const it = interactionRef.current;
       interactionRef.current = null;
       if (!it) return;
-      if (it.kind === 'drag' && !movedRef.current) {
-        setSelectedId(it.id); // a plain click selects the note → shows the action bar
-      } else if ((it.kind === 'drag' || it.kind === 'resize') && movedRef.current) {
+      if (it.kind === 'marquee') {
+        setMarquee(null);
+      } else if (it.kind === 'drag' && !movedRef.current) {
+        setSelectedIds([it.id]); // a plain click selects the note → shows the action bar
+      } else if ((it.kind === 'drag' || it.kind === 'groupdrag' || it.kind === 'resize') && movedRef.current) {
         scheduleSave();
       }
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
-  }, [scheduleSave, setView]);
+  }, [scheduleSave, setView, screenToWorld]);
 
   const startPan = (e: React.MouseEvent) => {
     const { tx, ty } = viewRef.current;
@@ -250,8 +276,16 @@ export function MindmapCanvasPage() {
     movedRef.current = false;
   };
 
+  // Marquee-select from empty canvas. Clears the current selection up front; a
+  // plain click (no drag) therefore just deselects, a drag rubber-band selects.
+  const startMarquee = (e: React.MouseEvent) => {
+    setSelectedIds([]);
+    interactionRef.current = { kind: 'marquee', startX: e.clientX, startY: e.clientY };
+    movedRef.current = false;
+  };
+
   // Capture phase: runs before a note's own handlers. Space+drag always pans
-  // (even over a note); a plain drag on empty canvas pans too.
+  // (even over a note); a plain drag on empty canvas rubber-band-selects.
   const onCanvasMouseDownCapture = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
     const overNote = (e.target as HTMLElement).closest('[data-note]');
@@ -260,7 +294,7 @@ export function MindmapCanvasPage() {
       e.stopPropagation();
       startPan(e);
     } else if (!overNote) {
-      startPan(e);
+      startMarquee(e);
     }
   };
 
@@ -287,7 +321,18 @@ export function MindmapCanvasPage() {
   const startDrag = (e: React.MouseEvent, n: MindmapNote) => {
     if (!canEditRef.current || spaceRef.current || editingId === n.id) return;
     e.stopPropagation();
-    interactionRef.current = { kind: 'drag', id: n.id, startX: e.clientX, startY: e.clientY, origX: n.x, origY: n.y };
+    // If this note is part of a multi-selection, drag the whole group together;
+    // otherwise drag just this note.
+    if (selectedRef.current.length > 1 && selectedRef.current.includes(n.id)) {
+      const origins: Record<string, { x: number; y: number }> = {};
+      for (const sid of selectedRef.current) {
+        const sn = notesRef.current.find(x => x.id === sid);
+        if (sn) origins[sid] = { x: sn.x, y: sn.y };
+      }
+      interactionRef.current = { kind: 'groupdrag', startX: e.clientX, startY: e.clientY, origins };
+    } else {
+      interactionRef.current = { kind: 'drag', id: n.id, startX: e.clientX, startY: e.clientY, origX: n.x, origY: n.y };
+    }
     movedRef.current = false;
   };
 
@@ -300,7 +345,7 @@ export function MindmapCanvasPage() {
 
   const beginEdit = (n: MindmapNote) => {
     if (!canEditRef.current) return;
-    setSelectedId(null);
+    setSelectedIds([]);
     setEditingId(n.id);
     setEditingText(n.text);
   };
@@ -448,16 +493,16 @@ export function MindmapCanvasPage() {
                   position: 'absolute', left: n.x, top: n.y, width: n.w, height: n.h,
                   backgroundColor: n.color,
                   cursor: canEdit && editingId !== n.id ? 'move' : 'default',
-                  zIndex: selectedId === n.id || editingId === n.id ? 30 : undefined,
+                  zIndex: selectedIds.includes(n.id) || editingId === n.id ? 30 : undefined,
                 }}
-                className={`rounded-md shadow-md border flex flex-col ${selectedId === n.id ? 'border-blue-400 ring-1 ring-blue-300' : 'border-black/5'}`}
+                className={`rounded-md shadow-md border flex flex-col ${selectedIds.includes(n.id) ? 'border-blue-400 ring-1 ring-blue-300' : 'border-black/5'}`}
                 onMouseDown={canEdit ? e => startDrag(e, n) : undefined}
                 onDoubleClick={canEdit ? () => beginEdit(n) : undefined}
               >
-                {/* Action bar — shown while the note is selected. Holds every note
-                    action; its mousedown is stopped so using it never drags or
-                    deselects the note. */}
-                {canEdit && selectedId === n.id && editingId !== n.id && (
+                {/* Action bar — shown only for a single selected note. Holds every
+                    note action; its mousedown is stopped so using it never drags
+                    or deselects the note. */}
+                {canEdit && soleSelected === n.id && editingId !== n.id && (
                   <div
                     onMouseDown={e => e.stopPropagation()}
                     onDoubleClick={e => e.stopPropagation()}
@@ -506,7 +551,7 @@ export function MindmapCanvasPage() {
                     <div className="note-md break-words" dangerouslySetInnerHTML={{ __html: renderNoteMarkdown(n.text) }} />
                   )}
                 </div>
-                {canEdit && selectedId === n.id && editingId !== n.id && (
+                {canEdit && soleSelected === n.id && editingId !== n.id && (
                   <div
                     onMouseDown={e => startResize(e, n)}
                     className="absolute bottom-0 right-0 w-3.5 h-3.5"
@@ -519,6 +564,14 @@ export function MindmapCanvasPage() {
               </div>
             ))}
           </div>
+
+          {/* Rubber-band selection rectangle (screen space, above the world). */}
+          {marquee && (
+            <div
+              className="absolute border border-blue-400 bg-blue-400/10 pointer-events-none"
+              style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }}
+            />
+          )}
         </div>
 
         {/* Color palette (top-right) */}
@@ -540,7 +593,7 @@ export function MindmapCanvasPage() {
 
         {/* Hint pill */}
         <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 text-[11px] text-gray-500 bg-white/80 backdrop-blur px-3 py-1 rounded-full shadow-sm border border-gray-200">
-          Scroll to zoom · hold Space + drag to pan{canEdit ? ' · double-click a note to edit' : ' · read-only'}
+          Scroll to zoom · Space + drag to pan{canEdit ? ' · drag empty canvas to select · double-click to edit' : ' · read-only'}
         </div>
       </div>
     </div>
