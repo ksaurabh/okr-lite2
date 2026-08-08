@@ -19,6 +19,7 @@ const ORGANIZATIONS_FILE = join(__dirname, 'organizations.json');
 const SUPER_ADMINS_FILE = join(__dirname, 'super-admins.json');
 const USERS_FILE = join(__dirname, 'users.json');
 const OKR_DATA_FILE = join(__dirname, 'okr-data.json');
+const MINDMAPS_FILE = join(__dirname, 'mindmaps.json');
 
 // Initialize files if they don't exist
 if (!existsSync(DOMAINS_FILE)) {
@@ -41,6 +42,9 @@ if (!existsSync(OKR_DATA_FILE)) {
     periods: [],
     tags: [],
   }, null, 2));
+}
+if (!existsSync(MINDMAPS_FILE)) {
+  writeFileSync(MINDMAPS_FILE, JSON.stringify({ mindmaps: [] }, null, 2));
 }
 
 // Helper functions for domains
@@ -488,6 +492,98 @@ function saveOKRData(data) {
 
 function generateId() {
   return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+}
+
+// ---- Mindmaps ----
+// A "mindmap" is a sticky-note canvas. Visibility is by creatorEmail/shared and
+// scoped to the creator's org (domain) so maps never leak across organizations.
+// Stars are per-viewer and stored on the user record, never on the mindmap —
+// starring must not mutate the map or require write access to it.
+const MINDMAP_DEFAULT_COLOR = '#fde68a';
+const MINDMAP_NOTE_MIN_W = 80;
+const MINDMAP_NOTE_MIN_H = 60;
+const MINDMAP_TEXT_CAP = 20000;
+
+function getMindmaps() {
+  try {
+    return JSON.parse(readFileSync(MINDMAPS_FILE, 'utf-8')).mindmaps || [];
+  } catch {
+    return [];
+  }
+}
+
+function saveMindmaps(mindmaps) {
+  writeFileSync(MINDMAPS_FILE, JSON.stringify({ mindmaps }, null, 2));
+}
+
+function generateMindmapId() {
+  return `mm_${Date.now().toString(36)}${Math.random().toString(36).substring(2, 9)}`;
+}
+
+function generateNoteId() {
+  return `n_${Date.now().toString(36)}${Math.random().toString(36).substring(2, 9)}`;
+}
+
+// The client sends the whole notes array on every save, so this is the only
+// line of defense: coerce coordinates/size to finite numbers, clamp the minimum
+// size, validate the color, and cap text length.
+function toFiniteNumber(value, fallback) {
+  const n = typeof value === 'number' ? value : parseFloat(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function sanitizeNote(note) {
+  const n = note && typeof note === 'object' ? note : {};
+  const id = typeof n.id === 'string' && n.id ? n.id.slice(0, 64) : generateNoteId();
+  const color = typeof n.color === 'string' && /^#[0-9a-f]{3,8}$/i.test(n.color.trim())
+    ? n.color.trim()
+    : MINDMAP_DEFAULT_COLOR;
+  const text = typeof n.text === 'string' ? n.text.slice(0, MINDMAP_TEXT_CAP) : '';
+  return {
+    id,
+    x: toFiniteNumber(n.x, 0),
+    y: toFiniteNumber(n.y, 0),
+    w: Math.max(MINDMAP_NOTE_MIN_W, toFiniteNumber(n.w, 220)),
+    h: Math.max(MINDMAP_NOTE_MIN_H, toFiniteNumber(n.h, 160)),
+    color,
+    text,
+  };
+}
+
+function sanitizeNotes(notes) {
+  return Array.isArray(notes) ? notes.map(sanitizeNote) : [];
+}
+
+// Visible = same org AND (creator is me OR shared). Returns null when the map
+// should appear not to exist (caller answers 404, never 403 — don't leak ids).
+function findVisibleMindmap(mindmaps, id, email, domain) {
+  const mm = mindmaps.find(m => m.id === id);
+  if (!mm) return null;
+  if (mm.domain && domain && mm.domain !== domain) return null;
+  if (mm.creatorEmail === email || mm.shared === true) return mm;
+  return null;
+}
+
+function getStarredMindmapIds(email) {
+  const user = getUsers().find(u => u.email === email);
+  return Array.isArray(user?.starredMindmaps) ? user.starredMindmaps : [];
+}
+
+function setMindmapStar(email, mindmapId, star) {
+  const users = getUsers();
+  const idx = users.findIndex(u => u.email === email);
+  if (idx === -1) return null;
+  const current = new Set(Array.isArray(users[idx].starredMindmaps) ? users[idx].starredMindmaps : []);
+  if (star) current.add(mindmapId); else current.delete(mindmapId);
+  users[idx].starredMindmaps = Array.from(current);
+  saveUsers(users);
+  return users[idx].starredMindmaps;
+}
+
+// Denormalized display name for the creator, resolved from the user record.
+function displayNameForEmail(email, fallback) {
+  const user = getUsers().find(u => u.email === email);
+  return user?.name || fallback || email;
 }
 
 function isDomainAllowed(email) {
@@ -1953,6 +2049,114 @@ app.put('/api/users/me/views/:viewId/starred', requireAuth, (req, res) => {
 
   const savedViews = saveUserViews(req.user.email, views);
   res.json({ view: views[viewIndex], views: savedViews });
+});
+
+// ---- Mindmaps (sticky-note canvas) ----
+
+// List: own + shared within the org, each annotated with mine/starred, newest first.
+app.get('/api/mindmaps', requireAuth, (req, res) => {
+  const email = req.user.email;
+  const domain = req.user.domain;
+  const starred = new Set(getStarredMindmapIds(email));
+  const visible = getMindmaps().filter(m =>
+    (!m.domain || !domain || m.domain === domain) && (m.creatorEmail === email || m.shared === true)
+  );
+  const mindmaps = visible
+    .map(m => ({
+      id: m.id,
+      title: m.title,
+      creatorEmail: m.creatorEmail,
+      creatorName: m.creatorName,
+      shared: !!m.shared,
+      createdAt: m.createdAt,
+      updatedAt: m.updatedAt,
+      noteCount: Array.isArray(m.notes) ? m.notes.length : 0,
+      mine: m.creatorEmail === email,
+      starred: starred.has(m.id),
+    }))
+    .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+  res.json({ mindmaps });
+});
+
+// Create an empty mindmap and return it (client redirects straight to its canvas).
+app.post('/api/mindmaps', requireAuth, (req, res) => {
+  const email = req.user.email;
+  const rawTitle = typeof req.body?.title === 'string' ? req.body.title.trim() : '';
+  const title = (rawTitle || 'Untitled mindmap').slice(0, 200);
+  const now = new Date().toISOString();
+  const mindmap = {
+    id: generateMindmapId(),
+    title,
+    creatorEmail: email,
+    creatorName: displayNameForEmail(email, req.user.name),
+    domain: req.user.domain || null,
+    shared: false,
+    createdAt: now,
+    updatedAt: now,
+    notes: [],
+  };
+  const mindmaps = getMindmaps();
+  mindmaps.push(mindmap);
+  saveMindmaps(mindmaps);
+  res.json({ mindmap, mine: true, canEdit: true, starred: false });
+});
+
+// Read one visible mindmap. Not visible / nonexistent => 404 (never 403).
+app.get('/api/mindmaps/:id', requireAuth, (req, res) => {
+  const email = req.user.email;
+  const mm = findVisibleMindmap(getMindmaps(), req.params.id, email, req.user.domain);
+  if (!mm) return res.status(404).json({ error: 'Mindmap not found' });
+  res.json({
+    mindmap: mm,
+    mine: mm.creatorEmail === email,
+    canEdit: mm.creatorEmail === email,
+    starred: getStarredMindmapIds(email).includes(mm.id),
+  });
+});
+
+// Update title/shared/notes. Creator only; anyone else gets 404 (don't leak).
+app.put('/api/mindmaps/:id', requireAuth, (req, res) => {
+  const email = req.user.email;
+  const mindmaps = getMindmaps();
+  const mm = findVisibleMindmap(mindmaps, req.params.id, email, req.user.domain);
+  if (!mm) return res.status(404).json({ error: 'Mindmap not found' });
+  if (mm.creatorEmail !== email) return res.status(404).json({ error: 'Mindmap not found' });
+
+  const { title, shared, notes } = req.body || {};
+  if (typeof title === 'string') mm.title = (title.trim() || 'Untitled mindmap').slice(0, 200);
+  if (typeof shared === 'boolean') mm.shared = shared;
+  if (notes !== undefined) mm.notes = sanitizeNotes(notes);
+  mm.updatedAt = new Date().toISOString();
+  saveMindmaps(mindmaps);
+
+  res.json({
+    mindmap: mm,
+    mine: true,
+    canEdit: true,
+    starred: getStarredMindmapIds(email).includes(mm.id),
+  });
+});
+
+// Delete. Creator only; anyone else gets 404.
+app.delete('/api/mindmaps/:id', requireAuth, (req, res) => {
+  const email = req.user.email;
+  const mindmaps = getMindmaps();
+  const mm = findVisibleMindmap(mindmaps, req.params.id, email, req.user.domain);
+  if (!mm) return res.status(404).json({ error: 'Mindmap not found' });
+  if (mm.creatorEmail !== email) return res.status(404).json({ error: 'Mindmap not found' });
+  saveMindmaps(mindmaps.filter(m => m.id !== mm.id));
+  res.json({ success: true });
+});
+
+// Star/unstar. Any viewer; stored per-user, never touches the mindmap record.
+app.post('/api/mindmaps/:id/star', requireAuth, (req, res) => {
+  const email = req.user.email;
+  const mm = findVisibleMindmap(getMindmaps(), req.params.id, email, req.user.domain);
+  if (!mm) return res.status(404).json({ error: 'Mindmap not found' });
+  const star = !!req.body?.star;
+  const starredList = setMindmapStar(email, mm.id, star);
+  if (starredList === null) return res.status(404).json({ error: 'User not found' });
+  res.json({ starred: star });
 });
 
 // ---- Plan stages (per-organization, configurable in Settings) ----
