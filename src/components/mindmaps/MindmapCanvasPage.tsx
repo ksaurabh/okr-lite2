@@ -66,6 +66,10 @@ export function MindmapCanvasPage() {
   const canEditRef = useRef(false);
   canEditRef.current = canEdit;
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // In-app clipboard for copy/paste (Cmd/Ctrl+C / +V). Holds note data without
+  // ids; each paste offsets a little further so clones don't stack exactly.
+  const clipboardRef = useRef<Array<Omit<MindmapNote, 'id'>>>([]);
+  const pasteCountRef = useRef(0);
 
   // ---- Load ----
   useEffect(() => {
@@ -201,6 +205,44 @@ export function MindmapCanvasPage() {
     window.addEventListener('keyup', onKeyUp);
     return () => { window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp); };
   }, []);
+
+  // ---- Copy / paste selected notes (Cmd/Ctrl+C, Cmd/Ctrl+V) ----
+  // Skipped while editing a note or typing in a field, so native text
+  // copy/paste keeps working there.
+  useEffect(() => {
+    const isField = (t: EventTarget | null) => {
+      const el = t as HTMLElement | null;
+      return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA');
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || editingId !== null || isField(e.target)) return;
+      const key = e.key.toLowerCase();
+      if (key === 'c') {
+        const byId = new Map(notesRef.current.map(n => [n.id, n]));
+        const copied = selectedRef.current
+          .map(sid => byId.get(sid))
+          .filter((n): n is MindmapNote => !!n)
+          .map(({ x, y, w, h, color, text }) => ({ x, y, w, h, color, text }));
+        if (copied.length === 0) return;
+        e.preventDefault();
+        clipboardRef.current = copied;
+        pasteCountRef.current = 0;
+      } else if (key === 'v') {
+        if (!canEditRef.current || clipboardRef.current.length === 0) return;
+        e.preventDefault();
+        pasteCountRef.current += 1;
+        const off = 24 * pasteCountRef.current;
+        const clones: MindmapNote[] = clipboardRef.current.map(c => ({
+          ...c, id: newNoteId(), x: c.x + off, y: c.y + off,
+        }));
+        setNotes(prev => [...prev, ...clones]);
+        setSelectedIds(clones.map(c => c.id));
+        scheduleSave();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [editingId, scheduleSave]);
 
   // ---- Global move/up handlers for the active interaction ----
   useEffect(() => {
