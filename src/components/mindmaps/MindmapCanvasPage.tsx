@@ -58,6 +58,8 @@ export function MindmapCanvasPage() {
   const [starred, setStarred] = useState(false);
   const [notes, setNotes] = useState<MindmapNote[]>([]);
   const [views, setViews] = useState<MindmapView[]>([]);
+  const [activeViewId, setActiveViewId] = useState<string | null>(null);
+  const [showViewSwitcher, setShowViewSwitcher] = useState(false);
   const [frames, setFrames] = useState<MindmapFrame[]>([]);
   const [showShare, setShowShare] = useState(false);
   const [showViews, setShowViews] = useState(false);
@@ -117,11 +119,17 @@ export function MindmapCanvasPage() {
         setTitle(d.mindmap.title);
         setShared(!!d.mindmap.shared);
         setSharedWith(Array.isArray(d.mindmap.sharedWith) ? d.mindmap.sharedWith : []);
-        setViews(Array.isArray(d.mindmap.views) ? d.mindmap.views : []);
+        const loadedViews = Array.isArray(d.mindmap.views) ? d.mindmap.views : [];
+        setViews(loadedViews);
         setFrames(Array.isArray(d.mindmap.frames) ? d.mindmap.frames : []);
         setCanEdit(!!d.canEdit);
         setStarred(!!d.starred);
         setNotes(Array.isArray(d.mindmap.notes) ? d.mindmap.notes : []);
+        // Apply default view on load
+        const defaultView = loadedViews.find(v => v.isDefault);
+        if (defaultView) {
+          setActiveViewId(defaultView.id);
+        }
         setStatus('ready');
       })
       .catch(() => { if (!cancelled) setStatus('notfound'); });
@@ -135,12 +143,17 @@ export function MindmapCanvasPage() {
     return () => { document.body.style.overflow = prev; };
   }, []);
 
+  // Clear selection when the active view changes
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [activeViewId]);
+
   // Fit-to-notes once the map is loaded.
   const fitView = useCallback(() => {
     const el = canvasRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    const ns = notesRef.current;
+    const ns = filteredNotes;
     if (ns.length === 0) { setView({ tx: 0, ty: 0, scale: 1 }); return; }
     const minX = Math.min(...ns.map(n => n.x));
     const minY = Math.min(...ns.map(n => n.y));
@@ -151,7 +164,7 @@ export function MindmapCanvasPage() {
     const cx = (minX + maxX) / 2;
     const cy = (minY + maxY) / 2;
     setView({ tx: rect.width / 2 - cx * scale, ty: rect.height / 2 - cy * scale, scale });
-  }, [setView]);
+  }, [setView, filteredNotes]);
 
   useEffect(() => {
     if (status === 'ready') fitView();
@@ -225,6 +238,20 @@ export function MindmapCanvasPage() {
   };
 
   // ---- Space key → pan mode (ignore while typing in a field) ----
+  useEffect(() => {
+    // Close view switcher when clicking outside
+    const onClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (showViewSwitcher && !target.closest('[data-view-switcher]')) {
+        setShowViewSwitcher(false);
+      }
+    };
+    if (showViewSwitcher) {
+      document.addEventListener('click', onClick);
+      return () => document.removeEventListener('click', onClick);
+    }
+  }, [showViewSwitcher]);
+
   useEffect(() => {
     const isField = (t: EventTarget | null) => {
       const el = t as HTMLElement | null;
@@ -484,6 +511,34 @@ export function MindmapCanvasPage() {
     return Array.from(set).sort();
   }, [notes]);
 
+  // Filter notes based on the active view
+  const filteredNotes = useMemo(() => {
+    if (!activeViewId) return notes;
+    const activeView = views.find(v => v.id === activeViewId);
+    if (!activeView) return notes;
+
+    const { mode, frameIds, tags } = activeView;
+    const targetFrameSet = new Set(frameIds || []);
+    const targetTagSet = new Set(tags || []);
+
+    return notes.filter(n => {
+      // A note is targeted if it's in a targeted frame OR has a targeted tag
+      const inTargetedFrame = targetFrameSet.size > 0 && frames.some(
+        f => targetFrameSet.has(f.id) && f.noteIds.includes(n.id)
+      );
+      const hasTargetedTag = targetTagSet.size > 0 && (n.tags || []).some(t => targetTagSet.has(t));
+      const isTargeted = inTargetedFrame || hasTargetedTag;
+
+      if (mode === 'include') {
+        // Include mode: show ONLY targeted notes
+        return isTargeted;
+      } else {
+        // Exclude mode: show everything EXCEPT targeted notes
+        return !isTargeted;
+      }
+    });
+  }, [notes, activeViewId, views, frames]);
+
   const setNoteTags = (n: MindmapNote, tags: string[]) => {
     setNotes(prev => prev.map(x => {
       if (x.id !== n.id) return x;
@@ -499,16 +554,23 @@ export function MindmapCanvasPage() {
   const saveViews = (next: MindmapView[]) => {
     setViews(next);
     putMeta({ views: next });
+    // If the active view was deleted, reset to Everything
+    if (activeViewId && !next.find(v => v.id === activeViewId)) {
+      const everythingView = next.find(v => v.name === 'Everything');
+      if (everythingView) setActiveViewId(everythingView.id);
+    }
   };
 
   // ---- Frames ----
   const noteById = useMemo(() => new Map(notes.map(n => [n.id, n])), [notes]);
+  // Filtered note map for rendering
+  const filteredNoteById = useMemo(() => new Map(filteredNotes.map(n => [n.id, n])), [filteredNotes]);
   // Each frame's rectangle = bounding box of its member notes, padded. Derived,
   // so it always hugs the notes as they move/resize.
   const frameRects = useMemo(() => {
     const out: { frame: MindmapFrame; rect: FrameRect }[] = [];
     for (const f of frames) {
-      const members = f.noteIds.map(nid => noteById.get(nid)).filter((n): n is MindmapNote => !!n);
+      const members = f.noteIds.map(nid => filteredNoteById.get(nid)).filter((n): n is MindmapNote => !!n);
       if (!members.length) continue;
       const minX = Math.min(...members.map(n => n.x)) - FRAME_PAD;
       const minY = Math.min(...members.map(n => n.y)) - FRAME_PAD;
@@ -517,16 +579,16 @@ export function MindmapCanvasPage() {
       out.push({ frame: f, rect: { x: minX, y: minY, w: maxX - minX, h: maxY - minY } });
     }
     return out;
-  }, [frames, noteById]);
+  }, [frames, filteredNoteById]);
 
   // Top-left of the current multi-selection's bounding box (world coords), used
   // to anchor the "Create a Frame" action above the selection.
   const selectionOrigin = useMemo(() => {
     if (selectedIds.length < 2) return null;
-    const members = selectedIds.map(nid => noteById.get(nid)).filter((n): n is MindmapNote => !!n);
+    const members = selectedIds.map(nid => filteredNoteById.get(nid)).filter((n): n is MindmapNote => !!n);
     if (members.length < 2) return null;
     return { x: Math.min(...members.map(n => n.x)), y: Math.min(...members.map(n => n.y)) };
-  }, [selectedIds, noteById]);
+  }, [selectedIds, filteredNoteById]);
 
   const createFrame = (name: string, noteIds: string[]) => {
     if (!canEditRef.current || noteIds.length === 0) return;
@@ -699,6 +761,31 @@ export function MindmapCanvasPage() {
             Views{views.length ? ` · ${views.length}` : ''}
           </button>
         )}
+        <div className="relative" data-view-switcher>
+          <button
+            onClick={() => setShowViewSwitcher(!showViewSwitcher)}
+            className="flex items-center gap-1 text-xs px-2 py-1 rounded border bg-white hover:bg-gray-50 text-gray-700 border-gray-200"
+            title="Switch view"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+            {activeViewId ? views.find(v => v.id === activeViewId)?.name || 'View' : 'View'}
+          </button>
+          {showViewSwitcher && (
+            <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[140px] z-30">
+              {views.map(v => (
+                <button
+                  key={v.id}
+                  onClick={() => { setActiveViewId(v.id); setShowViewSwitcher(false); }}
+                  className={`block w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 ${
+                    v.id === activeViewId ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
+                  }`}
+                >
+                  {v.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="flex-1" />
         <div className="flex items-center gap-1 text-gray-600">
           <button onClick={() => zoomButton(1 / 1.12)} className="w-7 h-7 rounded border border-gray-200 hover:bg-gray-50" title="Zoom out">−</button>
@@ -765,7 +852,7 @@ export function MindmapCanvasPage() {
                 </div>
               </div>
             ))}
-            {notes.map(n => (
+            {filteredNotes.map(n => (
               <div
                 key={n.id}
                 data-note

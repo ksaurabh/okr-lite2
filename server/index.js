@@ -592,10 +592,21 @@ function sanitizeView(v) {
   const groupIds = Array.isArray(o.groupIds)
     ? Array.from(new Set(o.groupIds.filter(g => typeof g === 'string' && /^g_[A-Za-z0-9_-]+$/.test(g)))).slice(0, 200)
     : [];
-  return { id, name, mode, tags, frameIds, groupIds };
+  const isDefault = o.isDefault === true;
+  return { id, name, mode, tags, frameIds, groupIds, isDefault };
 }
 function sanitizeViews(views) {
-  return Array.isArray(views) ? views.slice(0, 100).map(sanitizeView) : [];
+  const out = Array.isArray(views) ? views.slice(0, 100).map(sanitizeView) : [];
+  // Ensure at most one view is the default. If multiple claim it (or none do but
+  // an "Everything" view exists), keep the first default — or Everything.
+  const defaultIdx = out.findIndex(v => v.isDefault);
+  if (defaultIdx === -1) {
+    const everythingIdx = out.findIndex(v => v.name === 'Everything');
+    if (everythingIdx !== -1) out[everythingIdx].isDefault = true;
+  } else {
+    out.forEach((v, i) => { if (i !== defaultIdx) v.isDefault = false; });
+  }
+  return out;
 }
 
 // A frame is a named rectangle grouping a set of notes (by id). Its geometry is
@@ -2228,6 +2239,7 @@ app.post('/api/mindmaps', requireAuth, (req, res) => {
     shared: false,
     sharedWith: [],
     views: [],
+    defaultViewId: 'everything',
     frames: [],
     createdAt: now,
     updatedAt: now,

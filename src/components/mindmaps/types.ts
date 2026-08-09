@@ -19,6 +19,7 @@ export interface MindmapView {
   frameIds: string[];          // notes in these frames are targeted
   tags: string[];              // …as are notes with these tags (optional)
   groupIds: string[];
+  isDefault?: boolean;         // if true, this view is applied on load
 }
 
 // A named rectangle grouping a set of notes. Its geometry is derived from the

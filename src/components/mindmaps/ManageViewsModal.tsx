@@ -21,8 +21,35 @@ export function ManageViewsModal({ initialViews, frames, boardTags, onSave, onCl
   const [views, setViews] = useState<MindmapView[]>(initialViews);
   const [groups, setGroups] = useState<MindmapGroup[]>([]);
   const [editing, setEditing] = useState<MindmapView | null>(null);
+  const [defaultViewId, setDefaultViewId] = useState<string | null>(
+    initialViews.find(v => v.isDefault)?.id || null
+  );
 
   const frameName = (id: string) => frames.find(f => f.id === id)?.name || 'frame';
+
+  // Ensure "Everything" view exists on load and is default if no default is set
+  useEffect(() => {
+    const everythingView = views.find(v => v.name === 'Everything');
+    const hasDefault = views.some(v => v.isDefault);
+
+    if (!everythingView) {
+      const newEverythingView: MindmapView = {
+        id: newViewId(),
+        name: 'Everything',
+        mode: 'exclude',
+        frameIds: [],
+        tags: [],
+        groupIds: [],
+        isDefault: !hasDefault,
+      };
+      setViews(prev => [...prev, newEverythingView]);
+      if (!hasDefault) setDefaultViewId(newEverythingView.id);
+    } else if (!hasDefault) {
+      // If Everything exists but no default, make Everything the default
+      setViews(prev => prev.map(v => v.id === everythingView.id ? { ...v, isDefault: true } : v));
+      setDefaultViewId(everythingView.id);
+    }
+  }, []); // Run once on mount
 
   useEffect(() => {
     let cancelled = false;
@@ -38,15 +65,46 @@ export function ManageViewsModal({ initialViews, frames, boardTags, onSave, onCl
 
   const groupName = (id: string) => groups.find(g => g.id === id)?.name || 'group';
 
-  const startAdd = () => setEditing({ id: newViewId(), name: '', mode: 'exclude', frameIds: [], tags: [], groupIds: [] });
-  const startEdit = (v: MindmapView) => setEditing({ ...v, frameIds: [...(v.frameIds || [])], tags: [...(v.tags || [])], groupIds: [...v.groupIds] });
-  const removeView = (id: string) => setViews(prev => prev.filter(v => v.id !== id));
+  const startAdd = () => setEditing({ id: newViewId(), name: '', mode: 'exclude', frameIds: [], tags: [], groupIds: [], isDefault: false });
+  const startEdit = (v: MindmapView) => setEditing({ ...v, frameIds: [...(v.frameIds || [])], tags: [...(v.tags || [])], groupIds: [...v.groupIds], isDefault: v.isDefault || false });
+
+  const setAsDefault = (id: string) => {
+    setViews(prev => prev.map(v => ({ ...v, isDefault: v.id === id })));
+    setDefaultViewId(id);
+  };
+
+  const removeView = (id: string) => {
+    const viewToRemove = views.find(v => v.id === id);
+    if (viewToRemove?.name === 'Everything') return; // Don't allow deleting Everything view
+    setViews(prev => prev.filter(v => v.id !== id));
+    if (defaultViewId === id) {
+      // If removing the default, make Everything the new default
+      const everythingView = views.find(v => v.name === 'Everything');
+      if (everythingView) {
+        setViews(prev => prev.map(v => v.id === everythingView.id ? { ...v, isDefault: true } : v));
+        setDefaultViewId(everythingView.id);
+      }
+    }
+  };
 
   const commitEditing = () => {
     if (!editing) return;
     const name = editing.name.trim() || 'Untitled view';
     const clean = { ...editing, name };
-    setViews(prev => (prev.some(v => v.id === clean.id) ? prev.map(v => (v.id === clean.id ? clean : v)) : [...prev, clean]));
+    setViews(prev => {
+      const updated = prev.some(v => v.id === clean.id)
+        ? prev.map(v => (v.id === clean.id ? clean : v))
+        : [...prev, clean];
+      // Ensure only one view is marked as default
+      const hasDefault = updated.some(v => v.isDefault);
+      if (!hasDefault) {
+        const everythingView = updated.find(v => v.name === 'Everything');
+        if (everythingView) {
+          return updated.map(v => v.id === everythingView.id ? { ...v, isDefault: true } : v);
+        }
+      }
+      return updated;
+    });
     setEditing(null);
   };
 
@@ -153,7 +211,12 @@ export function ManageViewsModal({ initialViews, frames, boardTags, onSave, onCl
             ) : views.map(v => (
               <div key={v.id} className="px-3 py-2 flex items-start gap-2">
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-gray-800">{v.name}</div>
+                  <div className="flex items-center gap-2">
+                    <div className="text-sm font-medium text-gray-800">{v.name}</div>
+                    {v.isDefault && (
+                      <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">Default</span>
+                    )}
+                  </div>
                   <div className="text-[11px] text-gray-500">
                     {v.mode === 'include' ? 'Only' : 'Except'}: {[
                       ...(v.frameIds || []).map(frameName),
@@ -163,8 +226,19 @@ export function ManageViewsModal({ initialViews, frames, boardTags, onSave, onCl
                     {v.groupIds.length ? v.groupIds.map(groupName).join(', ') : 'no groups'}
                   </div>
                 </div>
+                {!v.isDefault && (
+                  <button
+                    onClick={() => setAsDefault(v.id)}
+                    className="text-xs text-gray-500 hover:text-blue-600 px-1.5"
+                    title="Set as default view"
+                  >
+                    Set default
+                  </button>
+                )}
                 <button onClick={() => startEdit(v)} className="text-xs text-gray-500 hover:text-blue-600 px-1.5">Edit</button>
-                <button onClick={() => removeView(v.id)} className="text-xs text-gray-500 hover:text-red-600 px-1.5">Delete</button>
+                {v.name !== 'Everything' && (
+                  <button onClick={() => removeView(v.id)} className="text-xs text-gray-500 hover:text-red-600 px-1.5">Delete</button>
+                )}
               </div>
             ))}
           </div>
