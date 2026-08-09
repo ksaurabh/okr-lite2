@@ -175,7 +175,7 @@ export function MindmapCanvasPage() {
     const el = canvasRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    const ns = filteredNotes;
+    const ns = notesRef.current;
     if (ns.length === 0) { setView({ tx: 0, ty: 0, scale: 1 }); return; }
     const minX = Math.min(...ns.map(n => n.x));
     const minY = Math.min(...ns.map(n => n.y));
@@ -186,7 +186,7 @@ export function MindmapCanvasPage() {
     const cx = (minX + maxX) / 2;
     const cy = (minY + maxY) / 2;
     setView({ tx: rect.width / 2 - cx * scale, ty: rect.height / 2 - cy * scale, scale });
-  }, [setView, filteredNotes]);
+  }, [setView]);
 
   useEffect(() => {
     if (status === 'ready') fitView();
@@ -533,12 +533,15 @@ export function MindmapCanvasPage() {
     return Array.from(set).sort();
   }, [notes]);
 
-  // Filter notes based on the active view
+  // Notes shown for the active view. A view that matches nothing must never
+  // blank the board — fall back to all notes so a stale/misconfigured view can't
+  // hide everything (the user can still switch to "All" explicitly).
   const filteredNotes = useMemo(() => {
     if (!activeViewId) return notes;
     const activeView = views.find(v => v.id === activeViewId);
     if (!activeView) return notes;
-    return filterNotesByView(notes, activeView, frames);
+    const result = filterNotesByView(notes, activeView, frames);
+    return result.length > 0 ? result : notes;
   }, [notes, activeViewId, views, frames]);
 
   const setNoteTags = (n: MindmapNote, tags: string[]) => {
