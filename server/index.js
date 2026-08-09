@@ -595,6 +595,31 @@ function sanitizeViews(views) {
   return Array.isArray(views) ? views.slice(0, 100).map(sanitizeView) : [];
 }
 
+// A frame is a named rectangle grouping a set of notes (by id). Its geometry is
+// derived client-side from the member notes' bounding box.
+function generateFrameId() {
+  return `f_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+}
+function sanitizeFrame(f) {
+  const o = f && typeof f === 'object' ? f : {};
+  const id = typeof o.id === 'string' && /^f_[A-Za-z0-9_-]+$/.test(o.id) ? o.id : generateFrameId();
+  const name = ((typeof o.name === 'string' ? o.name.trim() : '') || 'Frame').slice(0, 100);
+  const noteIds = Array.isArray(o.noteIds)
+    ? Array.from(new Set(o.noteIds.filter(x => typeof x === 'string').map(x => x.slice(0, 64)))).slice(0, 1000)
+    : [];
+  return { id, name, noteIds };
+}
+function sanitizeFrames(frames) {
+  return Array.isArray(frames) ? frames.slice(0, 200).map(sanitizeFrame) : [];
+}
+// Drop members that no longer exist, and frames left with no members.
+function pruneFrames(frames, notes) {
+  const ids = new Set((Array.isArray(notes) ? notes : []).map(n => n.id));
+  return (Array.isArray(frames) ? frames : [])
+    .map(f => ({ ...f, noteIds: f.noteIds.filter(id => ids.has(id)) }))
+    .filter(f => f.noteIds.length > 0);
+}
+
 // Does a view admit a note? include = note has any of the view's tags;
 // exclude = note has none of them.
 function viewAdmitsNote(view, noteTags) {
@@ -2191,6 +2216,7 @@ app.post('/api/mindmaps', requireAuth, (req, res) => {
     shared: false,
     sharedWith: [],
     views: [],
+    frames: [],
     createdAt: now,
     updatedAt: now,
     notes: [],
@@ -2211,8 +2237,10 @@ app.get('/api/mindmaps/:id', requireAuth, (req, res) => {
   if (!mine) {
     // Enforce view-based access: non-creators see only the notes their granted
     // views admit (or the whole board if no view is granted to them). Don't
-    // leak the view/group config or the explicit share list.
+    // leak the view/group config or the explicit share list. Frames are pruned
+    // to the notes the viewer can actually see.
     out.notes = notesVisibleToViewer(mm, grantedViewsFor(mm, email, req.user.domain));
+    out.frames = pruneFrames(mm.frames, out.notes);
     delete out.sharedWith;
     delete out.views;
   }
@@ -2232,7 +2260,7 @@ app.put('/api/mindmaps/:id', requireAuth, (req, res) => {
   if (!mm) return res.status(404).json({ error: 'Mindmap not found' });
   if (mm.creatorEmail !== email) return res.status(404).json({ error: 'Mindmap not found' });
 
-  const { title, shared, sharedWith, notes, views } = req.body || {};
+  const { title, shared, sharedWith, notes, views, frames } = req.body || {};
   if (typeof title === 'string') mm.title = (title.trim() || 'Untitled mindmap').slice(0, 200);
   if (typeof shared === 'boolean') mm.shared = shared;
   if (Array.isArray(sharedWith)) {
@@ -2245,7 +2273,10 @@ app.put('/api/mindmaps/:id', requireAuth, (req, res) => {
     )).slice(0, 500);
   }
   if (Array.isArray(views)) mm.views = sanitizeViews(views);
+  if (frames !== undefined) mm.frames = sanitizeFrames(frames);
   if (notes !== undefined) mm.notes = sanitizeNotes(notes);
+  // Keep frame membership consistent with the current notes.
+  mm.frames = pruneFrames(mm.frames, mm.notes);
   mm.updatedAt = new Date().toISOString();
   saveMindmaps(mindmaps);
 

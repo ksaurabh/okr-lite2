@@ -20,6 +20,14 @@ export interface MindmapView {
   groupIds: string[];
 }
 
+// A named rectangle grouping a set of notes. Its geometry is derived from the
+// member notes' bounding box; moving the frame moves all members together.
+export interface MindmapFrame {
+  id: string;
+  name: string;
+  noteIds: string[];
+}
+
 // A user group (org-scoped). Members list is admin-only.
 export interface MindmapGroup {
   id: string;
@@ -36,6 +44,7 @@ export interface Mindmap {
   shared: boolean;
   sharedWith?: string[]; // emails (creator-only)
   views?: MindmapView[]; // creator-only
+  frames?: MindmapFrame[];
   createdAt: string;
   updatedAt: string;
   notes: MindmapNote[];

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Mindmap, MindmapNote, MindmapView } from './types';
+import type { Mindmap, MindmapNote, MindmapView, MindmapFrame } from './types';
 import {
   PALETTE, DEFAULT_NOTE_COLOR, NOTE_MIN_W, NOTE_MIN_H,
   NEW_NOTE_W, NEW_NOTE_H, ZOOM_MIN, ZOOM_MAX,
@@ -10,7 +10,10 @@ import { ShareMindmapModal } from './ShareMindmapModal';
 import { NoteLinkModal } from './NoteLinkModal';
 import { NoteTagsModal } from './NoteTagsModal';
 import { ManageViewsModal } from './ManageViewsModal';
+import { TextPromptModal } from './TextPromptModal';
 import { useAuth } from '../../context/AuthContext';
+
+const FRAME_PAD = 20; // world px of padding between a frame's edge and its notes
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -35,8 +38,11 @@ type Interaction =
   | { kind: 'marquee'; startX: number; startY: number }
   | { kind: 'drag'; id: string; startX: number; startY: number; origX: number; origY: number }
   | { kind: 'groupdrag'; startX: number; startY: number; origins: Record<string, { x: number; y: number }> }
+  | { kind: 'framedrag'; frameId: string; startX: number; startY: number; origins: Record<string, { x: number; y: number }> }
   | { kind: 'resize'; id: string; startX: number; startY: number; origW: number; origH: number }
   | null;
+
+interface FrameRect { x: number; y: number; w: number; h: number; }
 
 export function MindmapCanvasPage() {
   const id = window.location.pathname.split('/')[2] || '';
@@ -52,10 +58,14 @@ export function MindmapCanvasPage() {
   const [starred, setStarred] = useState(false);
   const [notes, setNotes] = useState<MindmapNote[]>([]);
   const [views, setViews] = useState<MindmapView[]>([]);
+  const [frames, setFrames] = useState<MindmapFrame[]>([]);
   const [showShare, setShowShare] = useState(false);
   const [showViews, setShowViews] = useState(false);
   const [linkNoteId, setLinkNoteId] = useState<string | null>(null);
   const [tagNoteId, setTagNoteId] = useState<string | null>(null);
+  // Pending frame creation from the current selection, and frame rename.
+  const [framePromptNoteIds, setFramePromptNoteIds] = useState<string[] | null>(null);
+  const [renameFrameId, setRenameFrameId] = useState<string | null>(null);
 
   const [view, setViewState] = useState<View>({ tx: 0, ty: 0, scale: 1 });
   const viewRef = useRef(view);
@@ -84,6 +94,8 @@ export function MindmapCanvasPage() {
   const canvasRef = useRef<HTMLDivElement>(null);
   const notesRef = useRef(notes);
   notesRef.current = notes;
+  const framesRef = useRef(frames);
+  framesRef.current = frames;
   const spaceRef = useRef(false);
   const interactionRef = useRef<Interaction>(null);
   const movedRef = useRef(false);
@@ -106,6 +118,7 @@ export function MindmapCanvasPage() {
         setShared(!!d.mindmap.shared);
         setSharedWith(Array.isArray(d.mindmap.sharedWith) ? d.mindmap.sharedWith : []);
         setViews(Array.isArray(d.mindmap.views) ? d.mindmap.views : []);
+        setFrames(Array.isArray(d.mindmap.frames) ? d.mindmap.frames : []);
         setCanEdit(!!d.canEdit);
         setStarred(!!d.starred);
         setNotes(Array.isArray(d.mindmap.notes) ? d.mindmap.notes : []);
@@ -145,7 +158,7 @@ export function MindmapCanvasPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
 
-  // ---- Persistence: debounce ~500ms then PUT the whole notes array ----
+  // ---- Persistence: debounce ~500ms then PUT the notes and frames ----
   const scheduleSave = useCallback(() => {
     if (!canEditRef.current) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -154,7 +167,7 @@ export function MindmapCanvasPage() {
         method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ notes: notesRef.current }),
+        body: JSON.stringify({ notes: notesRef.current, frames: framesRef.current }),
       }).catch(() => {});
     }, 500);
   }, [id]);
@@ -311,7 +324,7 @@ export function MindmapCanvasPage() {
       if (it.kind === 'drag') {
         setSelectedIds([]); // moving a single note hides its action bar (resizing keeps it)
         setNotes(prev => prev.map(n => (n.id === it.id ? { ...n, x: it.origX + dx, y: it.origY + dy } : n)));
-      } else if (it.kind === 'groupdrag') {
+      } else if (it.kind === 'groupdrag' || it.kind === 'framedrag') {
         setNotes(prev => prev.map(n => (it.origins[n.id]
           ? { ...n, x: it.origins[n.id].x + dx, y: it.origins[n.id].y + dy }
           : n)));
@@ -329,7 +342,7 @@ export function MindmapCanvasPage() {
         setMarquee(null);
       } else if (it.kind === 'drag' && !movedRef.current) {
         setSelectedIds([it.id]); // a plain click selects the note → shows the action bar
-      } else if ((it.kind === 'drag' || it.kind === 'groupdrag' || it.kind === 'resize') && movedRef.current) {
+      } else if ((it.kind === 'drag' || it.kind === 'groupdrag' || it.kind === 'framedrag' || it.kind === 'resize') && movedRef.current) {
         scheduleSave();
       }
     };
@@ -356,12 +369,13 @@ export function MindmapCanvasPage() {
   // (even over a note); a plain drag on empty canvas rubber-band-selects.
   const onCanvasMouseDownCapture = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
-    const overNote = (e.target as HTMLElement).closest('[data-note]');
+    const t = e.target as HTMLElement;
+    const overInteractive = t.closest('[data-note]') || t.closest('[data-frame]');
     if (spaceRef.current) {
       e.preventDefault();
       e.stopPropagation();
       startPan(e);
-    } else if (!overNote) {
+    } else if (!overInteractive) {
       startMarquee(e);
     }
   };
@@ -433,6 +447,10 @@ export function MindmapCanvasPage() {
 
   const deleteNote = (n: MindmapNote) => {
     setNotes(prev => prev.filter(x => x.id !== n.id));
+    // Drop the note from any frame; remove frames left empty.
+    setFrames(prev => prev
+      .map(f => ({ ...f, noteIds: f.noteIds.filter(id => id !== n.id) }))
+      .filter(f => f.noteIds.length > 0));
     scheduleSave();
   };
 
@@ -481,6 +499,64 @@ export function MindmapCanvasPage() {
   const saveViews = (next: MindmapView[]) => {
     setViews(next);
     putMeta({ views: next });
+  };
+
+  // ---- Frames ----
+  const noteById = useMemo(() => new Map(notes.map(n => [n.id, n])), [notes]);
+  // Each frame's rectangle = bounding box of its member notes, padded. Derived,
+  // so it always hugs the notes as they move/resize.
+  const frameRects = useMemo(() => {
+    const out: { frame: MindmapFrame; rect: FrameRect }[] = [];
+    for (const f of frames) {
+      const members = f.noteIds.map(nid => noteById.get(nid)).filter((n): n is MindmapNote => !!n);
+      if (!members.length) continue;
+      const minX = Math.min(...members.map(n => n.x)) - FRAME_PAD;
+      const minY = Math.min(...members.map(n => n.y)) - FRAME_PAD;
+      const maxX = Math.max(...members.map(n => n.x + n.w)) + FRAME_PAD;
+      const maxY = Math.max(...members.map(n => n.y + n.h)) + FRAME_PAD;
+      out.push({ frame: f, rect: { x: minX, y: minY, w: maxX - minX, h: maxY - minY } });
+    }
+    return out;
+  }, [frames, noteById]);
+
+  // Top-left of the current multi-selection's bounding box (world coords), used
+  // to anchor the "Create a Frame" action above the selection.
+  const selectionOrigin = useMemo(() => {
+    if (selectedIds.length < 2) return null;
+    const members = selectedIds.map(nid => noteById.get(nid)).filter((n): n is MindmapNote => !!n);
+    if (members.length < 2) return null;
+    return { x: Math.min(...members.map(n => n.x)), y: Math.min(...members.map(n => n.y)) };
+  }, [selectedIds, noteById]);
+
+  const createFrame = (name: string, noteIds: string[]) => {
+    if (!canEditRef.current || noteIds.length === 0) return;
+    const frame: MindmapFrame = { id: `f_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`, name: name.trim() || 'Frame', noteIds: [...noteIds] };
+    setFrames(prev => [...prev, frame]);
+    setSelectedIds([]);
+    scheduleSave();
+  };
+  const renameFrame = (frameId: string, name: string) => {
+    setFrames(prev => prev.map(f => (f.id === frameId ? { ...f, name: name.trim() || f.name } : f)));
+    scheduleSave();
+  };
+  const deleteFrame = (frameId: string) => {
+    setFrames(prev => prev.filter(f => f.id !== frameId));
+    scheduleSave();
+  };
+
+  // Drag a frame by its boundary/title: moves every member note together,
+  // preserving their relative positions.
+  const startFrameDrag = (e: React.MouseEvent, frame: MindmapFrame) => {
+    if (!canEditRef.current || spaceRef.current) return;
+    e.stopPropagation();
+    setSelectedIds([]);
+    const origins: Record<string, { x: number; y: number }> = {};
+    for (const nid of frame.noteIds) {
+      const n = notesRef.current.find(x => x.id === nid);
+      if (n) origins[nid] = { x: n.x, y: n.y };
+    }
+    interactionRef.current = { kind: 'framedrag', frameId: frame.id, startX: e.clientX, startY: e.clientY, origins };
+    movedRef.current = false;
   };
 
   // Create a fresh mindmap titled from the note's heading, link the note to it,
@@ -650,6 +726,45 @@ export function MindmapCanvasPage() {
         >
           {/* World */}
           <div style={{ position: 'absolute', left: 0, top: 0, transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`, transformOrigin: '0 0' }}>
+            {/* Frames — rendered behind notes. Fill is click-through; only the
+                edge bands and title grab to move the frame. */}
+            {frameRects.map(({ frame, rect }) => (
+              <div key={frame.id}>
+                <div
+                  data-frame
+                  onMouseDown={canEdit ? e => startFrameDrag(e, frame) : undefined}
+                  onDoubleClick={canEdit ? () => setRenameFrameId(frame.id) : undefined}
+                  style={{ position: 'absolute', left: rect.x, top: rect.y - 22, maxWidth: rect.w, cursor: canEdit ? 'move' : 'default' }}
+                  className="group flex items-center gap-1"
+                  title={canEdit ? 'Drag to move frame · double-click to rename' : undefined}
+                >
+                  <span className="truncate text-xs font-medium text-gray-600 bg-gray-100/90 rounded px-1.5 py-0.5 shadow-sm">{frame.name}</span>
+                  {canEdit && (
+                    <button
+                      onMouseDown={e => e.stopPropagation()}
+                      onClick={e => { e.stopPropagation(); deleteFrame(frame.id); }}
+                      className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-600 text-xs leading-none px-0.5"
+                      title="Delete frame (keeps notes)"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+                <div
+                  style={{ position: 'absolute', left: rect.x, top: rect.y, width: rect.w, height: rect.h, pointerEvents: 'none' }}
+                  className="rounded-lg border-2 border-gray-400/50"
+                >
+                  {canEdit && (
+                    <>
+                      <div data-frame onMouseDown={e => startFrameDrag(e, frame)} style={{ position: 'absolute', left: 0, right: 0, top: -7, height: 14, pointerEvents: 'auto', cursor: 'move' }} />
+                      <div data-frame onMouseDown={e => startFrameDrag(e, frame)} style={{ position: 'absolute', left: 0, right: 0, bottom: -7, height: 14, pointerEvents: 'auto', cursor: 'move' }} />
+                      <div data-frame onMouseDown={e => startFrameDrag(e, frame)} style={{ position: 'absolute', top: 0, bottom: 0, left: -7, width: 14, pointerEvents: 'auto', cursor: 'move' }} />
+                      <div data-frame onMouseDown={e => startFrameDrag(e, frame)} style={{ position: 'absolute', top: 0, bottom: 0, right: -7, width: 14, pointerEvents: 'auto', cursor: 'move' }} />
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
             {notes.map(n => (
               <div
                 key={n.id}
@@ -775,6 +890,23 @@ export function MindmapCanvasPage() {
           )}
         </div>
 
+        {/* Multi-selection action: create a frame around the selected notes.
+            Rendered outside the canvas element so it doesn't trip the marquee. */}
+        {canEdit && !marquee && selectionOrigin && (
+          <div
+            className="absolute z-20"
+            style={{ left: selectionOrigin.x * view.scale + view.tx, top: selectionOrigin.y * view.scale + view.ty - 40 }}
+          >
+            <button
+              onClick={() => setFramePromptNoteIds([...selectedIds])}
+              className="flex items-center gap-1 text-xs bg-white shadow-lg border border-gray-200 rounded-lg px-2.5 py-1 text-gray-700 hover:bg-gray-50"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V6a2 2 0 012-2h2M4 16v2a2 2 0 002 2h2m8-16h2a2 2 0 012 2v2m-4 12h2a2 2 0 002-2v-2" /></svg>
+              Create a Frame
+            </button>
+          </div>
+        )}
+
         {/* Color palette (top-right) */}
         <div className={`absolute top-3 right-3 z-10 bg-white/90 backdrop-blur rounded-lg shadow border border-gray-200 p-2 ${canEdit ? '' : 'opacity-50 pointer-events-none'}`}>
           <div className="grid grid-cols-5 gap-1">
@@ -846,6 +978,32 @@ export function MindmapCanvasPage() {
           onClose={() => setShowViews(false)}
         />
       )}
+
+      {framePromptNoteIds && (
+        <TextPromptModal
+          title="Create a frame"
+          label="Frame name"
+          initial="Frame"
+          submitLabel="Create"
+          onSubmit={name => createFrame(name, framePromptNoteIds)}
+          onClose={() => setFramePromptNoteIds(null)}
+        />
+      )}
+
+      {renameFrameId && (() => {
+        const f = frames.find(x => x.id === renameFrameId);
+        if (!f) return null;
+        return (
+          <TextPromptModal
+            title="Rename frame"
+            label="Frame name"
+            initial={f.name}
+            submitLabel="Save"
+            onSubmit={name => renameFrame(f.id, name)}
+            onClose={() => setRenameFrameId(null)}
+          />
+        );
+      })()}
     </div>
   );
 }
