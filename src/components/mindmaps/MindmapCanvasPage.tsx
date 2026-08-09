@@ -125,11 +125,11 @@ export function MindmapCanvasPage() {
         setCanEdit(!!d.canEdit);
         setStarred(!!d.starred);
         setNotes(Array.isArray(d.mindmap.notes) ? d.mindmap.notes : []);
-        // Apply default view on load
+        // Open in the configured default view — but only if the viewer can access
+        // it. With no accessible default we leave no view active, which shows all
+        // notes (creators) / the union of granted notes (restricted viewers).
         const defaultView = loadedViews.find(v => v.isDefault);
-        if (defaultView) {
-          setActiveViewId(defaultView.id);
-        }
+        if (defaultView) setActiveViewId(defaultView.id);
         setStatus('ready');
       })
       .catch(() => { if (!cancelled) setStatus('notfound'); });
@@ -761,31 +761,41 @@ export function MindmapCanvasPage() {
             Views{views.length ? ` · ${views.length}` : ''}
           </button>
         )}
-        <div className="relative" data-view-switcher>
-          <button
-            onClick={() => setShowViewSwitcher(!showViewSwitcher)}
-            className="flex items-center gap-1 text-xs px-2 py-1 rounded border bg-white hover:bg-gray-50 text-gray-700 border-gray-200"
-            title="Switch view"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
-            {activeViewId ? views.find(v => v.id === activeViewId)?.name || 'View' : 'View'}
-          </button>
-          {showViewSwitcher && (
-            <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[140px] z-30">
-              {views.map(v => (
+        {views.length > 0 && (
+          <div className="relative" data-view-switcher>
+            <button
+              onClick={() => setShowViewSwitcher(!showViewSwitcher)}
+              className="flex items-center gap-1 text-xs px-2 py-1 rounded border bg-white hover:bg-gray-50 text-gray-700 border-gray-200"
+              title="Switch view"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+              {activeViewId ? views.find(v => v.id === activeViewId)?.name || 'All' : 'All'}
+            </button>
+            {showViewSwitcher && (
+              <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[140px] z-30">
                 <button
-                  key={v.id}
-                  onClick={() => { setActiveViewId(v.id); setShowViewSwitcher(false); }}
+                  onClick={() => { setActiveViewId(null); setShowViewSwitcher(false); }}
                   className={`block w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 ${
-                    v.id === activeViewId ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
+                    !activeViewId ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
                   }`}
                 >
-                  {v.name}
+                  All
                 </button>
-              ))}
-            </div>
-          )}
-        </div>
+                {views.map(v => (
+                  <button
+                    key={v.id}
+                    onClick={() => { setActiveViewId(v.id); setShowViewSwitcher(false); }}
+                    className={`block w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 ${
+                      v.id === activeViewId ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
+                    }`}
+                  >
+                    {v.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         <div className="flex-1" />
         <div className="flex items-center gap-1 text-gray-600">
           <button onClick={() => zoomButton(1 / 1.12)} className="w-7 h-7 rounded border border-gray-200 hover:bg-gray-50" title="Zoom out">−</button>

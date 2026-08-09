@@ -2261,12 +2261,24 @@ app.get('/api/mindmaps/:id', requireAuth, (req, res) => {
   if (!mine) {
     // Enforce view-based access: non-creators see only the notes their granted
     // views admit (or the whole board if no view is granted to them). Don't
-    // leak the view/group config or the explicit share list. Frames are pruned
-    // to the notes the viewer can actually see.
-    out.notes = notesVisibleToViewer(mm, grantedViewsFor(mm, email, req.user.domain));
-    out.frames = pruneFrames(mm.frames, out.notes);
+    // leak the explicit share list. Frames are pruned to the notes the viewer
+    // can actually see.
+    const granted = grantedViewsFor(mm, email, req.user.domain);
+    if (granted.length) {
+      // Restricted: union of granted views' notes, and expose exactly those
+      // views (minus group config) so the viewer can switch among them — but
+      // never to a view they weren't granted.
+      out.notes = notesVisibleToViewer(mm, granted);
+      out.frames = pruneFrames(mm.frames, out.notes);
+      out.views = granted.map(v => ({
+        id: v.id, name: v.name, mode: v.mode,
+        tags: v.tags || [], frameIds: v.frameIds || [], isDefault: !!v.isDefault,
+      }));
+    } else {
+      // Unrestricted: the whole board; no views to switch among.
+      out.views = [];
+    }
     delete out.sharedWith;
-    delete out.views;
   }
   res.json({
     mindmap: out,
