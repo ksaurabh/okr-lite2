@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useOKRStore, type OKRStore } from '../../store/okrStore';
+import { UserGroupsSettings } from './UserGroupsSettings';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -964,6 +965,8 @@ export function SettingsPage() {
           </div>
         </div>
       )}
+
+      {(isSuperAdmin || isOrgAdmin) && <UserGroupsSettings />}
 
       {(isSuperAdmin || isOrgAdmin) && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200">

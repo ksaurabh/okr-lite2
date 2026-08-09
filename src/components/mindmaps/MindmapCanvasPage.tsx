@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Mindmap, MindmapNote } from './types';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { Mindmap, MindmapNote, MindmapView } from './types';
 import {
   PALETTE, DEFAULT_NOTE_COLOR, NOTE_MIN_W, NOTE_MIN_H,
   NEW_NOTE_W, NEW_NOTE_H, ZOOM_MIN, ZOOM_MAX,
@@ -8,6 +8,8 @@ import { renderNoteMarkdown } from './markdown';
 import { navigateTo, navigateToMindmap, navigateBackToMindmap, getMindmapBackStack } from './nav';
 import { ShareMindmapModal } from './ShareMindmapModal';
 import { NoteLinkModal } from './NoteLinkModal';
+import { NoteTagsModal } from './NoteTagsModal';
+import { ManageViewsModal } from './ManageViewsModal';
 import { useAuth } from '../../context/AuthContext';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
@@ -49,8 +51,11 @@ export function MindmapCanvasPage() {
   const [canEdit, setCanEdit] = useState(false);
   const [starred, setStarred] = useState(false);
   const [notes, setNotes] = useState<MindmapNote[]>([]);
+  const [views, setViews] = useState<MindmapView[]>([]);
   const [showShare, setShowShare] = useState(false);
+  const [showViews, setShowViews] = useState(false);
   const [linkNoteId, setLinkNoteId] = useState<string | null>(null);
+  const [tagNoteId, setTagNoteId] = useState<string | null>(null);
 
   const [view, setViewState] = useState<View>({ tx: 0, ty: 0, scale: 1 });
   const viewRef = useRef(view);
@@ -100,6 +105,7 @@ export function MindmapCanvasPage() {
         setTitle(d.mindmap.title);
         setShared(!!d.mindmap.shared);
         setSharedWith(Array.isArray(d.mindmap.sharedWith) ? d.mindmap.sharedWith : []);
+        setViews(Array.isArray(d.mindmap.views) ? d.mindmap.views : []);
         setCanEdit(!!d.canEdit);
         setStarred(!!d.starred);
         setNotes(Array.isArray(d.mindmap.notes) ? d.mindmap.notes : []);
@@ -154,7 +160,7 @@ export function MindmapCanvasPage() {
   }, [id]);
 
   // Immediate metadata save (title / shared) — creator only.
-  const putMeta = useCallback((patch: { title?: string; shared?: boolean }) => {
+  const putMeta = useCallback((patch: { title?: string; shared?: boolean; views?: MindmapView[] }) => {
     if (!canEditRef.current) return;
     fetch(`${API_URL}/api/mindmaps/${id}`, {
       method: 'PUT',
@@ -452,6 +458,31 @@ export function MindmapCanvasPage() {
     scheduleSave();
   };
 
+  // ---- Tags & views ----
+  // Every distinct tag used on the board, for autocomplete and view building.
+  const boardTags = useMemo(() => {
+    const set = new Set<string>();
+    for (const n of notes) for (const t of n.tags || []) set.add(t);
+    return Array.from(set).sort();
+  }, [notes]);
+
+  const setNoteTags = (n: MindmapNote, tags: string[]) => {
+    setNotes(prev => prev.map(x => {
+      if (x.id !== n.id) return x;
+      const copy = { ...x };
+      if (tags.length) copy.tags = tags; else delete copy.tags;
+      return copy;
+    }));
+    scheduleSave();
+  };
+
+  // Views are persisted with their own immediate PUT (separate from the notes
+  // debounce) so an in-flight notes save can't clobber them.
+  const saveViews = (next: MindmapView[]) => {
+    setViews(next);
+    putMeta({ views: next });
+  };
+
   // Create a fresh mindmap titled from the note's heading, link the note to it,
   // then navigate there (with this mindmap on the back stack).
   const createMindmapFromNote = async (n: MindmapNote) => {
@@ -582,6 +613,16 @@ export function MindmapCanvasPage() {
             </button>
           );
         })()}
+        {canEdit && (
+          <button
+            onClick={() => setShowViews(true)}
+            className={`flex items-center gap-1 text-xs px-2 py-1 rounded border hover:bg-gray-100 ${views.length ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-gray-50 text-gray-600 border-gray-200'}`}
+            title="Views & group access"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h6a1 1 0 001-1v-6a1 1 0 00-1-1h-6z" /></svg>
+            Views{views.length ? ` · ${views.length}` : ''}
+          </button>
+        )}
         <div className="flex-1" />
         <div className="flex items-center gap-1 text-gray-600">
           <button onClick={() => zoomButton(1 / 1.12)} className="w-7 h-7 rounded border border-gray-200 hover:bg-gray-50" title="Zoom out">−</button>
@@ -656,6 +697,14 @@ export function MindmapCanvasPage() {
                     </button>
                     <button
                       onMouseDown={e => e.stopPropagation()}
+                      onClick={e => { e.stopPropagation(); setTagNoteId(n.id); }}
+                      className={`p-0.5 ${n.tags?.length ? 'text-indigo-600 hover:text-indigo-800' : 'text-gray-500 hover:text-indigo-600'}`}
+                      title="Edit tags"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /></svg>
+                    </button>
+                    <button
+                      onMouseDown={e => e.stopPropagation()}
                       onClick={e => { e.stopPropagation(); deleteNote(n); }}
                       className="text-gray-500 hover:text-red-600 p-0.5"
                       title="Delete note"
@@ -695,6 +744,14 @@ export function MindmapCanvasPage() {
                     <div className="note-md break-words" dangerouslySetInnerHTML={{ __html: renderNoteMarkdown(n.text) }} />
                   )}
                 </div>
+                {/* Tag chips */}
+                {n.tags && n.tags.length > 0 && editingId !== n.id && (
+                  <div className="flex flex-wrap gap-1 px-2 pb-1.5 flex-shrink-0">
+                    {n.tags.map(t => (
+                      <span key={t} className="text-[10px] leading-none bg-black/10 text-gray-700 rounded-full px-1.5 py-0.5">{t}</span>
+                    ))}
+                  </div>
+                )}
                 {canEdit && soleSelected === n.id && editingId !== n.id && (
                   <div
                     onMouseDown={e => startResize(e, n)}
@@ -767,6 +824,28 @@ export function MindmapCanvasPage() {
           />
         );
       })()}
+
+      {tagNoteId && (() => {
+        const n = notes.find(x => x.id === tagNoteId);
+        if (!n) return null;
+        return (
+          <NoteTagsModal
+            initialTags={n.tags || []}
+            boardTags={boardTags}
+            onSave={(tags) => setNoteTags(n, tags)}
+            onClose={() => setTagNoteId(null)}
+          />
+        );
+      })()}
+
+      {showViews && canEdit && (
+        <ManageViewsModal
+          initialViews={views}
+          boardTags={boardTags}
+          onSave={saveViews}
+          onClose={() => setShowViews(false)}
+        />
+      )}
     </div>
   );
 }

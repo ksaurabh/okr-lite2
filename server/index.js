@@ -543,6 +543,7 @@ function sanitizeNote(note) {
   const linkedMindmapId = typeof n.linkedMindmapId === 'string' && /^mm_[A-Za-z0-9_-]+$/.test(n.linkedMindmapId)
     ? n.linkedMindmapId
     : undefined;
+  const tags = sanitizeTags(n.tags);
   return {
     id,
     x: toFiniteNumber(n.x, 0),
@@ -552,11 +553,91 @@ function sanitizeNote(note) {
     color,
     text,
     ...(linkedMindmapId ? { linkedMindmapId } : {}),
+    ...(tags.length ? { tags } : {}),
   };
 }
 
 function sanitizeNotes(notes) {
   return Array.isArray(notes) ? notes.map(sanitizeNote) : [];
+}
+
+// Tags are free-form, normalized to lowercase, de-duped, and capped.
+function normalizeTag(t) {
+  return typeof t === 'string' ? t.trim().toLowerCase().slice(0, 50) : '';
+}
+function sanitizeTags(tags) {
+  if (!Array.isArray(tags)) return [];
+  const out = [];
+  for (const t of tags) {
+    const n = normalizeTag(t);
+    if (n && !out.includes(n)) out.push(n);
+    if (out.length >= 30) break;
+  }
+  return out;
+}
+
+// A view is a per-mindmap named tag-filter, granted to zero or more groups.
+function generateMindmapViewId() {
+  return `v_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+}
+function sanitizeView(v) {
+  const o = v && typeof v === 'object' ? v : {};
+  const id = typeof o.id === 'string' && /^v_[A-Za-z0-9_-]+$/.test(o.id) ? o.id : generateMindmapViewId();
+  const name = ((typeof o.name === 'string' ? o.name.trim() : '') || 'Untitled view').slice(0, 100);
+  const mode = o.mode === 'include' ? 'include' : 'exclude';
+  const tags = sanitizeTags(o.tags);
+  const groupIds = Array.isArray(o.groupIds)
+    ? Array.from(new Set(o.groupIds.filter(g => typeof g === 'string' && /^g_[A-Za-z0-9_-]+$/.test(g)))).slice(0, 200)
+    : [];
+  return { id, name, mode, tags, groupIds };
+}
+function sanitizeViews(views) {
+  return Array.isArray(views) ? views.slice(0, 100).map(sanitizeView) : [];
+}
+
+// Does a view admit a note? include = note has any of the view's tags;
+// exclude = note has none of them.
+function viewAdmitsNote(view, noteTags) {
+  const set = new Set(Array.isArray(noteTags) ? noteTags : []);
+  const any = view.tags.some(t => set.has(t));
+  return view.mode === 'include' ? any : !any;
+}
+// Notes a non-creator may see: if no views are granted to them, the whole
+// board (their access wasn't restricted); otherwise the union across granted
+// views.
+function notesVisibleToViewer(mm, grantedViews) {
+  const notes = Array.isArray(mm.notes) ? mm.notes : [];
+  if (!grantedViews.length) return notes;
+  return notes.filter(n => grantedViews.some(v => viewAdmitsNote(v, n.tags)));
+}
+
+// ---- User groups (org-scoped, stored on the organization record) ----
+function generateGroupId() {
+  return `g_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+}
+function getGroupsForDomain(domain) {
+  const org = getOrganizationByDomain(domain);
+  return Array.isArray(org?.groups) ? org.groups : [];
+}
+function saveGroupsForDomain(domain, groups) {
+  const orgs = getOrganizations();
+  const idx = orgs.findIndex(o => o.domain === domain?.toLowerCase());
+  if (idx === -1) return null;
+  orgs[idx].groups = groups;
+  saveOrganizations(orgs);
+  return orgs[idx].groups;
+}
+function getUserGroupIds(email, domain) {
+  const e = email?.toLowerCase();
+  return getGroupsForDomain(domain)
+    .filter(g => Array.isArray(g.memberEmails) && g.memberEmails.includes(e))
+    .map(g => g.id);
+}
+// Views on this mindmap granted to a group the viewer belongs to.
+function grantedViewsFor(mm, email, domain) {
+  const gids = getUserGroupIds(email, domain);
+  return (Array.isArray(mm.views) ? mm.views : [])
+    .filter(v => Array.isArray(v.groupIds) && v.groupIds.some(g => gids.includes(g)));
 }
 
 // Visible = same org AND (creator is me OR shared org-wide OR shared with me).
@@ -2083,7 +2164,10 @@ app.get('/api/mindmaps', requireAuth, (req, res) => {
         ...(mine ? { sharedWith: Array.isArray(m.sharedWith) ? m.sharedWith : [] } : {}),
         createdAt: m.createdAt,
         updatedAt: m.updatedAt,
-        noteCount: Array.isArray(m.notes) ? m.notes.length : 0,
+        // Non-creators only count the notes their granted views admit.
+        noteCount: mine
+          ? (Array.isArray(m.notes) ? m.notes.length : 0)
+          : notesVisibleToViewer(m, grantedViewsFor(m, email, domain)).length,
         mine,
         starred: starred.has(m.id),
       };
@@ -2106,6 +2190,7 @@ app.post('/api/mindmaps', requireAuth, (req, res) => {
     domain: req.user.domain || null,
     shared: false,
     sharedWith: [],
+    views: [],
     createdAt: now,
     updatedAt: now,
     notes: [],
@@ -2122,9 +2207,15 @@ app.get('/api/mindmaps/:id', requireAuth, (req, res) => {
   const mm = findVisibleMindmap(getMindmaps(), req.params.id, email, req.user.domain);
   if (!mm) return res.status(404).json({ error: 'Mindmap not found' });
   const mine = mm.creatorEmail === email;
-  // Only the creator sees the explicit share list.
   const out = { ...mm };
-  if (!mine) delete out.sharedWith;
+  if (!mine) {
+    // Enforce view-based access: non-creators see only the notes their granted
+    // views admit (or the whole board if no view is granted to them). Don't
+    // leak the view/group config or the explicit share list.
+    out.notes = notesVisibleToViewer(mm, grantedViewsFor(mm, email, req.user.domain));
+    delete out.sharedWith;
+    delete out.views;
+  }
   res.json({
     mindmap: out,
     mine,
@@ -2141,7 +2232,7 @@ app.put('/api/mindmaps/:id', requireAuth, (req, res) => {
   if (!mm) return res.status(404).json({ error: 'Mindmap not found' });
   if (mm.creatorEmail !== email) return res.status(404).json({ error: 'Mindmap not found' });
 
-  const { title, shared, sharedWith, notes } = req.body || {};
+  const { title, shared, sharedWith, notes, views } = req.body || {};
   if (typeof title === 'string') mm.title = (title.trim() || 'Untitled mindmap').slice(0, 200);
   if (typeof shared === 'boolean') mm.shared = shared;
   if (Array.isArray(sharedWith)) {
@@ -2153,6 +2244,7 @@ app.put('/api/mindmaps/:id', requireAuth, (req, res) => {
         .filter(e => e && e !== email.toLowerCase()),
     )).slice(0, 500);
   }
+  if (Array.isArray(views)) mm.views = sanitizeViews(views);
   if (notes !== undefined) mm.notes = sanitizeNotes(notes);
   mm.updatedAt = new Date().toISOString();
   saveMindmaps(mindmaps);
@@ -2185,6 +2277,61 @@ app.post('/api/mindmaps/:id/star', requireAuth, (req, res) => {
   const starredList = setMindmapStar(email, mm.id, star);
   if (starredList === null) return res.status(404).json({ error: 'User not found' });
   res.json({ starred: star });
+});
+
+// ---- User groups (org-scoped; managed by org admins on Settings) ----
+
+function isGroupAdmin(email) {
+  return isSuperAdmin(email) || isOrgAdmin(email);
+}
+function normalizeMemberEmails(list) {
+  if (!Array.isArray(list)) return [];
+  return Array.from(new Set(
+    list.filter(e => typeof e === 'string').map(e => e.trim().toLowerCase()).filter(Boolean),
+  )).slice(0, 2000);
+}
+
+// List groups. Admins get full membership; others get id/name/memberCount only
+// (enough to assign views without leaking who is in each group).
+app.get('/api/groups', requireAuth, (req, res) => {
+  const groups = getGroupsForDomain(req.user.domain);
+  if (isGroupAdmin(req.user.email)) {
+    return res.json({ groups, canManage: true });
+  }
+  res.json({
+    groups: groups.map(g => ({ id: g.id, name: g.name, memberCount: Array.isArray(g.memberEmails) ? g.memberEmails.length : 0 })),
+    canManage: false,
+  });
+});
+
+app.post('/api/groups', requireAuth, (req, res) => {
+  if (!isGroupAdmin(req.user.email)) return res.status(403).json({ error: 'Admin only' });
+  const name = (typeof req.body?.name === 'string' ? req.body.name.trim() : '').slice(0, 100);
+  if (!name) return res.status(400).json({ error: 'Group name is required' });
+  const groups = getGroupsForDomain(req.user.domain);
+  const group = { id: generateGroupId(), name, memberEmails: normalizeMemberEmails(req.body?.memberEmails) };
+  const saved = saveGroupsForDomain(req.user.domain, [...groups, group]);
+  if (saved === null) return res.status(400).json({ error: 'No organization for this domain' });
+  res.json({ group });
+});
+
+app.put('/api/groups/:id', requireAuth, (req, res) => {
+  if (!isGroupAdmin(req.user.email)) return res.status(403).json({ error: 'Admin only' });
+  const groups = getGroupsForDomain(req.user.domain);
+  const idx = groups.findIndex(g => g.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Group not found' });
+  if (typeof req.body?.name === 'string') groups[idx].name = req.body.name.trim().slice(0, 100) || groups[idx].name;
+  if (req.body?.memberEmails !== undefined) groups[idx].memberEmails = normalizeMemberEmails(req.body.memberEmails);
+  saveGroupsForDomain(req.user.domain, groups);
+  res.json({ group: groups[idx] });
+});
+
+app.delete('/api/groups/:id', requireAuth, (req, res) => {
+  if (!isGroupAdmin(req.user.email)) return res.status(403).json({ error: 'Admin only' });
+  const groups = getGroupsForDomain(req.user.domain);
+  if (!groups.some(g => g.id === req.params.id)) return res.status(404).json({ error: 'Group not found' });
+  saveGroupsForDomain(req.user.domain, groups.filter(g => g.id !== req.params.id));
+  res.json({ success: true });
 });
 
 // ---- Plan stages (per-organization, configurable in Settings) ----

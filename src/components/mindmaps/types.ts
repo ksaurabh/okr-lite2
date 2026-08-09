@@ -8,6 +8,24 @@ export interface MindmapNote {
   color: string; // hex
   text: string;  // markdown source
   linkedMindmapId?: string; // optional link to another mindmap
+  tags?: string[]; // free-form, lowercased
+}
+
+// A per-mindmap named tag filter, granted to zero or more user groups.
+export interface MindmapView {
+  id: string;
+  name: string;
+  mode: 'include' | 'exclude'; // include = only these tags; exclude = all but these
+  tags: string[];
+  groupIds: string[];
+}
+
+// A user group (org-scoped). Members list is admin-only.
+export interface MindmapGroup {
+  id: string;
+  name: string;
+  memberEmails?: string[];
+  memberCount?: number;
 }
 
 export interface Mindmap {
@@ -17,6 +35,7 @@ export interface Mindmap {
   creatorName: string;
   shared: boolean;
   sharedWith?: string[]; // emails (creator-only)
+  views?: MindmapView[]; // creator-only
   createdAt: string;
   updatedAt: string;
   notes: MindmapNote[];
