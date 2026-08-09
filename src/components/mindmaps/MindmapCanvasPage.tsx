@@ -20,6 +20,23 @@ const API_URL = import.meta.env.VITE_API_URL || '';
 function clamp(v: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, v)); }
 function newNoteId() { return `n_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 9)}`; }
 
+// A view "targets" a note if the note is in one of the view's frames or has one
+// of the view's tags. include = show only targeted; exclude = show all but them.
+// Mirrors the server's viewAdmitsNote so client and server agree exactly.
+function viewAdmitsNote(view: MindmapView, note: MindmapNote, frames: MindmapFrame[]): boolean {
+  const targetFrameSet = new Set(view.frameIds || []);
+  const targetTagSet = new Set(view.tags || []);
+  const inTargetedFrame = targetFrameSet.size > 0 && frames.some(
+    f => targetFrameSet.has(f.id) && f.noteIds.includes(note.id)
+  );
+  const hasTargetedTag = targetTagSet.size > 0 && (note.tags || []).some(t => targetTagSet.has(t));
+  const targeted = inTargetedFrame || hasTargetedTag;
+  return view.mode === 'include' ? targeted : !targeted;
+}
+function filterNotesByView(notes: MindmapNote[], view: MindmapView, frames: MindmapFrame[]): MindmapNote[] {
+  return notes.filter(n => viewAdmitsNote(view, n, frames));
+}
+
 // A new mindmap made from a note takes the note's first "# heading" line as its
 // title; failing that, the first non-empty line; failing that, a default.
 function titleFromNote(text: string): string {
@@ -121,15 +138,20 @@ export function MindmapCanvasPage() {
         setSharedWith(Array.isArray(d.mindmap.sharedWith) ? d.mindmap.sharedWith : []);
         const loadedViews = Array.isArray(d.mindmap.views) ? d.mindmap.views : [];
         setViews(loadedViews);
-        setFrames(Array.isArray(d.mindmap.frames) ? d.mindmap.frames : []);
+        const loadedFrames = Array.isArray(d.mindmap.frames) ? d.mindmap.frames : [];
+        setFrames(loadedFrames);
         setCanEdit(!!d.canEdit);
         setStarred(!!d.starred);
-        setNotes(Array.isArray(d.mindmap.notes) ? d.mindmap.notes : []);
+        const loadedNotes = Array.isArray(d.mindmap.notes) ? d.mindmap.notes : [];
+        setNotes(loadedNotes);
         // Open in the configured default view — but only if the viewer can access
-        // it. With no accessible default we leave no view active, which shows all
-        // notes (creators) / the union of granted notes (restricted viewers).
+        // it AND it actually shows something. If the default would render an empty
+        // board (e.g. an include view whose frame/tags match nothing), fall back to
+        // no active view, which shows all notes (creators) / the granted union.
         const defaultView = loadedViews.find(v => v.isDefault);
-        if (defaultView) setActiveViewId(defaultView.id);
+        if (defaultView && filterNotesByView(loadedNotes, defaultView, loadedFrames).length > 0) {
+          setActiveViewId(defaultView.id);
+        }
         setStatus('ready');
       })
       .catch(() => { if (!cancelled) setStatus('notfound'); });
@@ -516,27 +538,7 @@ export function MindmapCanvasPage() {
     if (!activeViewId) return notes;
     const activeView = views.find(v => v.id === activeViewId);
     if (!activeView) return notes;
-
-    const { mode, frameIds, tags } = activeView;
-    const targetFrameSet = new Set(frameIds || []);
-    const targetTagSet = new Set(tags || []);
-
-    return notes.filter(n => {
-      // A note is targeted if it's in a targeted frame OR has a targeted tag
-      const inTargetedFrame = targetFrameSet.size > 0 && frames.some(
-        f => targetFrameSet.has(f.id) && f.noteIds.includes(n.id)
-      );
-      const hasTargetedTag = targetTagSet.size > 0 && (n.tags || []).some(t => targetTagSet.has(t));
-      const isTargeted = inTargetedFrame || hasTargetedTag;
-
-      if (mode === 'include') {
-        // Include mode: show ONLY targeted notes
-        return isTargeted;
-      } else {
-        // Exclude mode: show everything EXCEPT targeted notes
-        return !isTargeted;
-      }
-    });
+    return filterNotesByView(notes, activeView, frames);
   }, [notes, activeViewId, views, frames]);
 
   const setNoteTags = (n: MindmapNote, tags: string[]) => {
