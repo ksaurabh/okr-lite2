@@ -828,13 +828,14 @@ export function MindmapCanvasPage() {
                     </button>
                   </div>
                 )}
-                {/* Linked-note badge — visible to anyone; click to follow the link. */}
+                {/* Linked-note badge — sits just outside the top-right corner so
+                    it never obscures the note's text. Click to follow the link. */}
                 {n.linkedMindmapId && editingId !== n.id && (
                   <button
                     onMouseDown={e => e.stopPropagation()}
                     onDoubleClick={e => e.stopPropagation()}
                     onClick={e => { e.stopPropagation(); openLinkedMindmap(n); }}
-                    className="absolute top-1 left-1 z-10 w-5 h-5 rounded-full bg-white/85 hover:bg-white shadow flex items-center justify-center text-blue-600"
+                    className="absolute -top-2.5 -right-2.5 z-10 w-5 h-5 rounded-full bg-white border border-gray-200 hover:bg-gray-50 shadow flex items-center justify-center text-blue-600"
                     title="Open linked mindmap"
                   >
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 015.656 0 4 4 0 010 5.656l-3 3a4 4 0 01-5.656-5.656m-1.414 5.656a4 4 0 01-5.656 0 4 4 0 010-5.656l3-3a4 4 0 015.656 5.656" /></svg>
