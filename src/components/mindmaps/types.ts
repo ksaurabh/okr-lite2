@@ -15,8 +15,9 @@ export interface MindmapNote {
 export interface MindmapView {
   id: string;
   name: string;
-  mode: 'include' | 'exclude'; // include = only these tags; exclude = all but these
-  tags: string[];
+  mode: 'include' | 'exclude'; // include = only targeted notes; exclude = all but
+  frameIds: string[];          // notes in these frames are targeted
+  tags: string[];              // …as are notes with these tags (optional)
   groupIds: string[];
 }
 

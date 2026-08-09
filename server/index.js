@@ -586,10 +586,13 @@ function sanitizeView(v) {
   const name = ((typeof o.name === 'string' ? o.name.trim() : '') || 'Untitled view').slice(0, 100);
   const mode = o.mode === 'include' ? 'include' : 'exclude';
   const tags = sanitizeTags(o.tags);
+  const frameIds = Array.isArray(o.frameIds)
+    ? Array.from(new Set(o.frameIds.filter(f => typeof f === 'string' && /^f_[A-Za-z0-9_-]+$/.test(f)))).slice(0, 200)
+    : [];
   const groupIds = Array.isArray(o.groupIds)
     ? Array.from(new Set(o.groupIds.filter(g => typeof g === 'string' && /^g_[A-Za-z0-9_-]+$/.test(g)))).slice(0, 200)
     : [];
-  return { id, name, mode, tags, groupIds };
+  return { id, name, mode, tags, frameIds, groupIds };
 }
 function sanitizeViews(views) {
   return Array.isArray(views) ? views.slice(0, 100).map(sanitizeView) : [];
@@ -620,12 +623,20 @@ function pruneFrames(frames, notes) {
     .filter(f => f.noteIds.length > 0);
 }
 
-// Does a view admit a note? include = note has any of the view's tags;
-// exclude = note has none of them.
-function viewAdmitsNote(view, noteTags) {
-  const set = new Set(Array.isArray(noteTags) ? noteTags : []);
-  const any = view.tags.some(t => set.has(t));
-  return view.mode === 'include' ? any : !any;
+// A view "targets" a note if the note is in one of the view's frames, or has one
+// of the view's tags. include = show only targeted notes; exclude = hide them.
+function viewTargetsNote(view, note, framesById) {
+  const tagSet = new Set(Array.isArray(note.tags) ? note.tags : []);
+  const byTag = Array.isArray(view.tags) && view.tags.some(t => tagSet.has(t));
+  const byFrame = Array.isArray(view.frameIds) && view.frameIds.some(fid => {
+    const f = framesById.get(fid);
+    return f && Array.isArray(f.noteIds) && f.noteIds.includes(note.id);
+  });
+  return byTag || byFrame;
+}
+function viewAdmitsNote(view, note, framesById) {
+  const targeted = viewTargetsNote(view, note, framesById);
+  return view.mode === 'include' ? targeted : !targeted;
 }
 // Notes a non-creator may see: if no views are granted to them, the whole
 // board (their access wasn't restricted); otherwise the union across granted
@@ -633,7 +644,8 @@ function viewAdmitsNote(view, noteTags) {
 function notesVisibleToViewer(mm, grantedViews) {
   const notes = Array.isArray(mm.notes) ? mm.notes : [];
   if (!grantedViews.length) return notes;
-  return notes.filter(n => grantedViews.some(v => viewAdmitsNote(v, n.tags)));
+  const framesById = new Map((Array.isArray(mm.frames) ? mm.frames : []).map(f => [f.id, f]));
+  return notes.filter(n => grantedViews.some(v => viewAdmitsNote(v, n, framesById)));
 }
 
 // ---- User groups (org-scoped, stored on the organization record) ----

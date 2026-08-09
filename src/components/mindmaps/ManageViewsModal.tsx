@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Modal } from '../common/Modal';
 import { Button } from '../common/Button';
-import type { MindmapView, MindmapGroup } from './types';
+import type { MindmapView, MindmapGroup, MindmapFrame } from './types';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -9,6 +9,7 @@ function newViewId() { return `v_${Date.now().toString(36)}${Math.random().toStr
 
 interface Props {
   initialViews: MindmapView[];
+  frames: MindmapFrame[];
   boardTags: string[];
   onSave: (views: MindmapView[]) => void;
   onClose: () => void;
@@ -16,10 +17,12 @@ interface Props {
 
 // Create/edit per-mindmap views: a named tag filter (include or exclude) granted
 // to user groups. Members of a granted group see only that view's notes.
-export function ManageViewsModal({ initialViews, boardTags, onSave, onClose }: Props) {
+export function ManageViewsModal({ initialViews, frames, boardTags, onSave, onClose }: Props) {
   const [views, setViews] = useState<MindmapView[]>(initialViews);
   const [groups, setGroups] = useState<MindmapGroup[]>([]);
   const [editing, setEditing] = useState<MindmapView | null>(null);
+
+  const frameName = (id: string) => frames.find(f => f.id === id)?.name || 'frame';
 
   useEffect(() => {
     let cancelled = false;
@@ -35,8 +38,8 @@ export function ManageViewsModal({ initialViews, boardTags, onSave, onClose }: P
 
   const groupName = (id: string) => groups.find(g => g.id === id)?.name || 'group';
 
-  const startAdd = () => setEditing({ id: newViewId(), name: '', mode: 'exclude', tags: [], groupIds: [] });
-  const startEdit = (v: MindmapView) => setEditing({ ...v, tags: [...v.tags], groupIds: [...v.groupIds] });
+  const startAdd = () => setEditing({ id: newViewId(), name: '', mode: 'exclude', frameIds: [], tags: [], groupIds: [] });
+  const startEdit = (v: MindmapView) => setEditing({ ...v, frameIds: [...(v.frameIds || [])], tags: [...(v.tags || [])], groupIds: [...v.groupIds] });
   const removeView = (id: string) => setViews(prev => prev.filter(v => v.id !== id));
 
   const commitEditing = () => {
@@ -47,6 +50,7 @@ export function ManageViewsModal({ initialViews, boardTags, onSave, onClose }: P
     setEditing(null);
   };
 
+  const toggleFrame = (id: string) => setEditing(e => e && ({ ...e, frameIds: e.frameIds.includes(id) ? e.frameIds.filter(x => x !== id) : [...e.frameIds, id] }));
   const toggleTag = (t: string) => setEditing(e => e && ({ ...e, tags: e.tags.includes(t) ? e.tags.filter(x => x !== t) : [...e.tags, t] }));
   const toggleGroup = (id: string) => setEditing(e => e && ({ ...e, groupIds: e.groupIds.includes(id) ? e.groupIds.filter(x => x !== id) : [...e.groupIds, id] }));
 
@@ -70,19 +74,38 @@ export function ManageViewsModal({ initialViews, boardTags, onSave, onClose }: P
             <div className="flex gap-4 text-sm">
               <label className="flex items-center gap-1.5">
                 <input type="radio" checked={editing.mode === 'include'} onChange={() => setEditing({ ...editing, mode: 'include' })} />
-                Only notes with these tags
+                Only the selected frames/tags
               </label>
               <label className="flex items-center gap-1.5">
                 <input type="radio" checked={editing.mode === 'exclude'} onChange={() => setEditing({ ...editing, mode: 'exclude' })} />
-                Everything except these tags
+                Everything except them
               </label>
             </div>
           </div>
 
           <div>
-            <div className="text-sm text-gray-600 mb-1">Tags</div>
+            <div className="text-sm text-gray-600 mb-1">Frames</div>
+            {frames.length === 0 ? (
+              <div className="text-xs text-gray-400">No frames on this board yet. Create frames to group notes.</div>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {frames.map(f => (
+                  <button
+                    key={f.id}
+                    onClick={() => toggleFrame(f.id)}
+                    className={`text-xs rounded px-2 py-0.5 border ${editing.frameIds.includes(f.id) ? 'bg-indigo-50 text-indigo-700 border-indigo-300' : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'}`}
+                  >
+                    {f.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <div className="text-sm text-gray-600 mb-1">Tags <span className="text-xs text-gray-400 font-normal">(optional)</span></div>
             {boardTags.length === 0 ? (
-              <div className="text-xs text-gray-400">No tags on this board yet. Add tags to notes first.</div>
+              <div className="text-xs text-gray-400">No tags on this board.</div>
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {boardTags.map(t => (
@@ -132,7 +155,10 @@ export function ManageViewsModal({ initialViews, boardTags, onSave, onClose }: P
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-gray-800">{v.name}</div>
                   <div className="text-[11px] text-gray-500">
-                    {v.mode === 'include' ? 'Only' : 'Except'}: {v.tags.length ? v.tags.join(', ') : '—'}
+                    {v.mode === 'include' ? 'Only' : 'Except'}: {[
+                      ...(v.frameIds || []).map(frameName),
+                      ...(v.tags || []),
+                    ].join(', ') || '—'}
                     {' · '}
                     {v.groupIds.length ? v.groupIds.map(groupName).join(', ') : 'no groups'}
                   </div>

@@ -974,6 +974,7 @@ export function MindmapCanvasPage() {
       {showViews && canEdit && (
         <ManageViewsModal
           initialViews={views}
+          frames={frames}
           boardTags={boardTags}
           onSave={saveViews}
           onClose={() => setShowViews(false)}
