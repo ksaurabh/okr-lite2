@@ -30,6 +30,15 @@ export interface MindmapFrame {
   noteIds: string[];
 }
 
+// A saved card size (width × height, world px). Apply a template to a note to
+// snap it to that size. Created from a note's current dimensions.
+export interface MindmapTemplate {
+  id: string;
+  name: string;
+  w: number;
+  h: number;
+}
+
 // A user group (org-scoped). Members list is admin-only.
 export interface MindmapGroup {
   id: string;
@@ -47,6 +56,7 @@ export interface Mindmap {
   sharedWith?: string[]; // emails (creator-only)
   views?: MindmapView[]; // creator-only
   frames?: MindmapFrame[];
+  templates?: MindmapTemplate[]; // creator-only
   createdAt: string;
   updatedAt: string;
   notes: MindmapNote[];

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Mindmap, MindmapNote, MindmapView, MindmapFrame } from './types';
+import type { Mindmap, MindmapNote, MindmapView, MindmapFrame, MindmapTemplate } from './types';
 import {
   PALETTE, DEFAULT_NOTE_COLOR, NOTE_MIN_W, NOTE_MIN_H,
   NEW_NOTE_W, NEW_NOTE_H, ZOOM_MIN, ZOOM_MAX,
@@ -78,6 +78,7 @@ export function MindmapCanvasPage() {
   const [activeViewId, setActiveViewId] = useState<string | null>(null);
   const [showViewSwitcher, setShowViewSwitcher] = useState(false);
   const [frames, setFrames] = useState<MindmapFrame[]>([]);
+  const [templates, setTemplates] = useState<MindmapTemplate[]>([]);
   const [showShare, setShowShare] = useState(false);
   const [showViews, setShowViews] = useState(false);
   const [linkNoteId, setLinkNoteId] = useState<string | null>(null);
@@ -85,6 +86,10 @@ export function MindmapCanvasPage() {
   // Pending frame creation from the current selection, and frame rename.
   const [framePromptNoteIds, setFramePromptNoteIds] = useState<string[] | null>(null);
   const [renameFrameId, setRenameFrameId] = useState<string | null>(null);
+  // Template creation prompt (note id whose size we're saving), and the open
+  // resize menu anchored on a note.
+  const [templatePromptNoteId, setTemplatePromptNoteId] = useState<string | null>(null);
+  const [resizeMenuNoteId, setResizeMenuNoteId] = useState<string | null>(null);
 
   const [view, setViewState] = useState<View>({ tx: 0, ty: 0, scale: 1 });
   const viewRef = useRef(view);
@@ -140,6 +145,7 @@ export function MindmapCanvasPage() {
         setViews(loadedViews);
         const loadedFrames = Array.isArray(d.mindmap.frames) ? d.mindmap.frames : [];
         setFrames(loadedFrames);
+        setTemplates(Array.isArray(d.mindmap.templates) ? d.mindmap.templates : []);
         setCanEdit(!!d.canEdit);
         setStarred(!!d.starred);
         const loadedNotes = Array.isArray(d.mindmap.notes) ? d.mindmap.notes : [];
@@ -208,7 +214,7 @@ export function MindmapCanvasPage() {
   }, [id]);
 
   // Immediate metadata save (title / shared) — creator only.
-  const putMeta = useCallback((patch: { title?: string; shared?: boolean; views?: MindmapView[] }) => {
+  const putMeta = useCallback((patch: { title?: string; shared?: boolean; views?: MindmapView[]; templates?: MindmapTemplate[] }) => {
     if (!canEditRef.current) return;
     fetch(`${API_URL}/api/mindmaps/${id}`, {
       method: 'PUT',
@@ -566,6 +572,26 @@ export function MindmapCanvasPage() {
     }
   };
 
+  // ---- Templates (saved card sizes) ----
+  const saveTemplates = (next: MindmapTemplate[]) => {
+    setTemplates(next);
+    putMeta({ templates: next });
+  };
+  const createTemplate = (note: MindmapNote, name: string) => {
+    const tpl: MindmapTemplate = {
+      id: `t_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
+      name: name.trim() || `Template ${templates.length + 1}`,
+      w: note.w,
+      h: note.h,
+    };
+    saveTemplates([...templates, tpl]);
+  };
+  const applyTemplate = (note: MindmapNote, tpl: MindmapTemplate) => {
+    setNotes(prev => prev.map(x => (x.id === note.id ? { ...x, w: tpl.w, h: tpl.h } : x)));
+    scheduleSave();
+    setResizeMenuNoteId(null);
+  };
+
   // ---- Frames ----
   const noteById = useMemo(() => new Map(notes.map(n => [n.id, n])), [notes]);
   // Filtered note map for rendering
@@ -891,6 +917,15 @@ export function MindmapCanvasPage() {
                     className="absolute -top-10 left-0 z-40 flex items-center gap-1.5 bg-white rounded-lg shadow-lg border border-gray-200 px-2 py-1"
                     style={{ cursor: 'default' }}
                   >
+                    <button
+                      onMouseDown={e => e.stopPropagation()}
+                      onClick={e => { e.stopPropagation(); beginEdit(n); }}
+                      className="p-0.5 text-gray-600 hover:text-blue-600"
+                      title="Edit text"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                    </button>
+                    <span className="w-px h-4 bg-gray-200" />
                     <div className="flex items-center gap-1">
                       {PALETTE.map(c => (
                         <button
@@ -920,6 +955,45 @@ export function MindmapCanvasPage() {
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /></svg>
                     </button>
+                    <span className="w-px h-4 bg-gray-200" />
+                    <button
+                      onMouseDown={e => e.stopPropagation()}
+                      onClick={e => { e.stopPropagation(); setTemplatePromptNoteId(n.id); }}
+                      className="p-0.5 text-gray-500 hover:text-indigo-600"
+                      title="Save this size as a template"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" /></svg>
+                    </button>
+                    <div className="relative">
+                      <button
+                        onMouseDown={e => e.stopPropagation()}
+                        onClick={e => { e.stopPropagation(); setResizeMenuNoteId(resizeMenuNoteId === n.id ? null : n.id); }}
+                        className="p-0.5 text-gray-500 hover:text-blue-600"
+                        title="Resize to a template"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l4 4m8-4h4m0 0v4m0-4l-4 4M4 16v4m0 0h4m-4 0l4-4m8 4h4m0 0v-4m0 4l-4-4" /></svg>
+                      </button>
+                      {resizeMenuNoteId === n.id && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={e => { e.stopPropagation(); setResizeMenuNoteId(null); }} />
+                          <div className="absolute top-full right-0 mt-1 z-50 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[150px]">
+                            {templates.length === 0 ? (
+                              <div className="px-3 py-2 text-xs text-gray-400">No templates yet. Use the bookmark to save this card’s size.</div>
+                            ) : templates.map(t => (
+                              <button
+                                key={t.id}
+                                onMouseDown={e => e.stopPropagation()}
+                                onClick={e => { e.stopPropagation(); applyTemplate(n, t); }}
+                                className="flex items-center justify-between w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                              >
+                                <span className="truncate">{t.name}</span>
+                                <span className="text-[10px] text-gray-400 ml-2 tabular-nums">{t.w}×{t.h}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
                     <button
                       onMouseDown={e => e.stopPropagation()}
                       onClick={e => { e.stopPropagation(); deleteNote(n); }}
@@ -1105,6 +1179,21 @@ export function MindmapCanvasPage() {
             submitLabel="Save"
             onSubmit={name => renameFrame(f.id, name)}
             onClose={() => setRenameFrameId(null)}
+          />
+        );
+      })()}
+
+      {templatePromptNoteId && (() => {
+        const n = notes.find(x => x.id === templatePromptNoteId);
+        if (!n) return null;
+        return (
+          <TextPromptModal
+            title={`Save card size (${n.w} × ${n.h}) as a template`}
+            label="Template name"
+            initial={`Template ${templates.length + 1}`}
+            submitLabel="Save"
+            onSubmit={name => { createTemplate(n, name); setTemplatePromptNoteId(null); }}
+            onClose={() => setTemplatePromptNoteId(null)}
           />
         );
       })()}

@@ -626,6 +626,21 @@ function sanitizeFrame(f) {
 function sanitizeFrames(frames) {
   return Array.isArray(frames) ? frames.slice(0, 200).map(sanitizeFrame) : [];
 }
+// A template is a saved card size (named width × height) used to resize notes.
+function generateTemplateId() {
+  return `t_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+}
+function sanitizeTemplate(t) {
+  const o = t && typeof t === 'object' ? t : {};
+  const id = typeof o.id === 'string' && /^t_[A-Za-z0-9_-]+$/.test(o.id) ? o.id : generateTemplateId();
+  const name = ((typeof o.name === 'string' ? o.name.trim() : '') || 'Template').slice(0, 100);
+  const w = Math.max(MINDMAP_NOTE_MIN_W, Math.min(2000, Math.round(Number(o.w) || 220)));
+  const h = Math.max(MINDMAP_NOTE_MIN_H, Math.min(2000, Math.round(Number(o.h) || 160)));
+  return { id, name, w, h };
+}
+function sanitizeTemplates(templates) {
+  return Array.isArray(templates) ? templates.slice(0, 100).map(sanitizeTemplate) : [];
+}
 // Drop members that no longer exist, and frames left with no members.
 function pruneFrames(frames, notes) {
   const ids = new Set((Array.isArray(notes) ? notes : []).map(n => n.id));
@@ -2296,7 +2311,7 @@ app.put('/api/mindmaps/:id', requireAuth, (req, res) => {
   if (!mm) return res.status(404).json({ error: 'Mindmap not found' });
   if (mm.creatorEmail !== email) return res.status(404).json({ error: 'Mindmap not found' });
 
-  const { title, shared, sharedWith, notes, views, frames } = req.body || {};
+  const { title, shared, sharedWith, notes, views, frames, templates } = req.body || {};
   if (typeof title === 'string') mm.title = (title.trim() || 'Untitled mindmap').slice(0, 200);
   if (typeof shared === 'boolean') mm.shared = shared;
   if (Array.isArray(sharedWith)) {
@@ -2309,6 +2324,7 @@ app.put('/api/mindmaps/:id', requireAuth, (req, res) => {
     )).slice(0, 500);
   }
   if (Array.isArray(views)) mm.views = sanitizeViews(views);
+  if (Array.isArray(templates)) mm.templates = sanitizeTemplates(templates);
   if (frames !== undefined) mm.frames = sanitizeFrames(frames);
   if (notes !== undefined) mm.notes = sanitizeNotes(notes);
   // Keep frame membership consistent with the current notes.
