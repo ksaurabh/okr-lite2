@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { MindmapListItem } from './types';
+import type { MindmapFolder, MindmapListItem } from './types';
 import { navigateTo } from './nav';
 import { Modal } from '../common/Modal';
 import { Button } from '../common/Button';
@@ -58,10 +58,88 @@ function ConfirmModal({ title, message, confirmLabel, onConfirm, onClose }: {
   );
 }
 
+// Folders come back as a flat list; these two walk it as a tree.
+function childFolders(folders: MindmapFolder[], parentId: string | null): MindmapFolder[] {
+  return folders
+    .filter(f => (f.parentId || null) === parentId)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// Depth-first order with a depth per row, for indented rendering and pickers.
+function flattenFolders(folders: MindmapFolder[], parentId: string | null = null, depth = 0): Array<{ folder: MindmapFolder; depth: number }> {
+  return childFolders(folders, parentId).flatMap(f => [
+    { folder: f, depth },
+    ...flattenFolders(folders, f.id, depth + 1),
+  ]);
+}
+
+// A folder and everything under it — a map selected in a parent folder should
+// still show when you're looking at an ancestor.
+function subtreeIds(folders: MindmapFolder[], rootId: string): Set<string> {
+  const out = new Set([rootId]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const f of folders) {
+      if (f.parentId && out.has(f.parentId) && !out.has(f.id)) {
+        out.add(f.id);
+        grew = true;
+      }
+    }
+  }
+  return out;
+}
+
+// Picks a destination folder (or "top level" / "no folder"). `excludeIds` hides
+// destinations that would create a cycle when moving a folder.
+function FolderPickerModal({ title, label, folders, initial, rootLabel, excludeIds, submitLabel, onSubmit, onClose }: {
+  title: string; label: string; folders: MindmapFolder[]; initial: string | null; rootLabel: string;
+  excludeIds?: Set<string>; submitLabel: string;
+  onSubmit: (folderId: string | null) => void; onClose: () => void;
+}) {
+  const [value, setValue] = useState<string>(initial || '');
+  const rows = flattenFolders(folders).filter(r => !excludeIds?.has(r.folder.id));
+  return (
+    <Modal isOpen onClose={onClose} title={title}>
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm text-gray-600 mb-1">{label}</label>
+          <select
+            autoFocus
+            value={value}
+            onChange={e => setValue(e.target.value)}
+            className="w-full border border-gray-300 rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">{rootLabel}</option>
+            {rows.map(({ folder, depth }) => (
+              <option key={folder.id} value={folder.id}>{`${'  '.repeat(depth)}${folder.name}`}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => onSubmit(value || null)}>{submitLabel}</Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 type PromptState =
   | { mode: 'create' }
   | { mode: 'rename'; item: MindmapListItem }
+  | { mode: 'createFolder'; parentId: string | null }
+  | { mode: 'renameFolder'; folder: MindmapFolder }
   | null;
+
+type PickerState =
+  | { mode: 'moveMindmap'; item: MindmapListItem }
+  | { mode: 'moveFolder'; folder: MindmapFolder }
+  | null;
+
+// What the folder sidebar has selected: everything, only unfiled maps, or one
+// folder (which includes its descendants).
+type FolderSelection = { kind: 'all' } | { kind: 'unfiled' } | { kind: 'folder'; id: string };
 
 export function MindmapsPage() {
   const [items, setItems] = useState<MindmapListItem[]>([]);
@@ -73,8 +151,13 @@ export function MindmapsPage() {
   const [starredOnly, setStarredOnly] = useState(false);
   const [search, setSearch] = useState('');
 
+  const [folders, setFolders] = useState<MindmapFolder[]>([]);
+  const [selection, setSelection] = useState<FolderSelection>({ kind: 'all' });
+
   const [prompt, setPrompt] = useState<PromptState>(null);
+  const [picker, setPicker] = useState<PickerState>(null);
   const [confirmDelete, setConfirmDelete] = useState<MindmapListItem | null>(null);
+  const [confirmDeleteFolder, setConfirmDeleteFolder] = useState<MindmapFolder | null>(null);
 
   // Auto-dismiss the error banner.
   useEffect(() => {
@@ -87,7 +170,7 @@ export function MindmapsPage() {
     setLoading(true);
     fetch(`${API_URL}/api/mindmaps`, { credentials: 'include' })
       .then(r => (r.ok ? r.json() : Promise.reject(new Error('Failed to load mindmaps'))))
-      .then(d => { setItems(d.mindmaps || []); setError(null); })
+      .then(d => { setItems(d.mindmaps || []); setFolders(d.folders || []); setError(null); })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
   };
@@ -106,16 +189,32 @@ export function MindmapsPage() {
     return Array.from(seen.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [items]);
 
-  // Owner AND starred AND search compose, all client-side over the fetched list.
+  // Folder AND owner AND starred AND search compose, all client-side over the
+  // fetched list. A folder selection includes its descendant folders.
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const allowedFolders = selection.kind === 'folder' ? subtreeIds(folders, selection.id) : null;
     return items.filter(m => {
+      if (selection.kind === 'unfiled' && m.folderId) return false;
+      if (allowedFolders && !(m.folderId && allowedFolders.has(m.folderId))) return false;
       if (ownerFilter && m.creatorEmail !== ownerFilter) return false;
       if (starredOnly && !m.starred) return false;
       if (q && !m.title.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [items, ownerFilter, starredOnly, search]);
+  }, [items, folders, selection, ownerFilter, starredOnly, search]);
+
+  // Count per folder (including descendants), shown next to each sidebar row.
+  const folderCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const f of folders) {
+      const ids = subtreeIds(folders, f.id);
+      counts.set(f.id, items.filter(m => m.folderId && ids.has(m.folderId)).length);
+    }
+    return counts;
+  }, [folders, items]);
+
+  const unfiledCount = useMemo(() => items.filter(m => !m.folderId).length, [items]);
 
   const submitCreate = async (raw: string) => {
     const title = raw.trim() || 'Untitled mindmap';
@@ -129,6 +228,15 @@ export function MindmapsPage() {
       });
       if (!r.ok) throw new Error('Could not create mindmap');
       const d = await r.json();
+      // Create it where the user is looking: file it into the selected folder.
+      if (selection.kind === 'folder') {
+        await fetch(`${API_URL}/api/mindmaps/${d.mindmap.id}/folder`, {
+          method: 'PUT',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ folderId: selection.id }),
+        }).catch(() => {});
+      }
       navigateTo(`/mindmap/${d.mindmap.id}`);
     } catch (err) {
       setBanner(err instanceof Error ? err.message : 'Could not create mindmap');
@@ -181,8 +289,118 @@ export function MindmapsPage() {
     }
   };
 
+  const createFolder = async (parentId: string | null, raw: string) => {
+    const name = raw.trim();
+    setPrompt(null);
+    if (!name) return;
+    try {
+      const r = await fetch(`${API_URL}/api/mindmap-folders`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, parentId }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => null))?.error);
+      const d = await r.json();
+      setFolders(d.folders || []);
+      if (d.folder) setSelection({ kind: 'folder', id: d.folder.id });
+    } catch (err) {
+      setBanner(err instanceof Error && err.message ? err.message : 'Could not create folder');
+    }
+  };
+
+  // Shared by rename and move — the server takes both fields on the same PUT.
+  const updateFolder = async (folder: MindmapFolder, patch: { name?: string; parentId?: string | null }) => {
+    setPrompt(null);
+    setPicker(null);
+    try {
+      const r = await fetch(`${API_URL}/api/mindmap-folders/${folder.id}`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => null))?.error);
+      const d = await r.json();
+      setFolders(d.folders || []);
+    } catch (err) {
+      setBanner(err instanceof Error && err.message ? err.message : 'Could not update folder');
+    }
+  };
+
+  const doDeleteFolder = async (folder: MindmapFolder) => {
+    setConfirmDeleteFolder(null);
+    try {
+      const r = await fetch(`${API_URL}/api/mindmap-folders/${folder.id}`, { method: 'DELETE', credentials: 'include' });
+      if (!r.ok) throw new Error();
+      const d = await r.json();
+      setFolders(d.folders || []);
+      // The server moved this folder's maps up to its parent; mirror that here
+      // rather than refetching the whole list.
+      setItems(prev => prev.map(m => (m.folderId === folder.id ? { ...m, folderId: folder.parentId || null } : m)));
+      setSelection(s => (s.kind === 'folder' && s.id === folder.id ? { kind: 'all' } : s));
+    } catch {
+      setBanner('Could not delete folder');
+    }
+  };
+
+  const moveMindmap = async (item: MindmapListItem, folderId: string | null) => {
+    setPicker(null);
+    const prevFolderId = item.folderId;
+    setItems(prev => prev.map(m => (m.id === item.id ? { ...m, folderId } : m)));
+    try {
+      const r = await fetch(`${API_URL}/api/mindmaps/${item.id}/folder`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folderId }),
+      });
+      if (!r.ok) throw new Error();
+    } catch {
+      setItems(prev => prev.map(m => (m.id === item.id ? { ...m, folderId: prevFolderId } : m)));
+      setBanner('Could not move mindmap');
+    }
+  };
+
+  const renderFolderRow = (folder: MindmapFolder, depth: number) => {
+    const active = selection.kind === 'folder' && selection.id === folder.id;
+    return (
+      <div
+        key={folder.id}
+        className={`group flex items-center gap-1 rounded px-2 py-1 text-sm cursor-pointer ${active ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
+        style={{ paddingLeft: 8 + depth * 12 }}
+        onClick={() => setSelection({ kind: 'folder', id: folder.id })}
+      >
+        <span className="truncate flex-1">{folder.name}</span>
+        <span className="text-xs text-gray-400 group-hover:hidden">{folderCounts.get(folder.id) ?? 0}</span>
+        <span className="hidden group-hover:flex items-center gap-0.5" onClick={e => e.stopPropagation()}>
+          <button
+            onClick={() => setPrompt({ mode: 'createFolder', parentId: folder.id })}
+            className="text-xs text-gray-400 hover:text-blue-600 px-0.5"
+            title="New subfolder"
+          >+</button>
+          <button
+            onClick={() => setPrompt({ mode: 'renameFolder', folder })}
+            className="text-xs text-gray-400 hover:text-blue-600 px-0.5"
+            title="Rename folder"
+          >✎</button>
+          <button
+            onClick={() => setPicker({ mode: 'moveFolder', folder })}
+            className="text-xs text-gray-400 hover:text-blue-600 px-0.5"
+            title="Move folder"
+          >⇄</button>
+          <button
+            onClick={() => setConfirmDeleteFolder(folder)}
+            className="text-xs text-gray-400 hover:text-red-600 px-0.5"
+            title="Delete folder"
+          >×</button>
+        </span>
+      </div>
+    );
+  };
+
   return (
-    <div className="max-w-5xl mx-auto px-4 py-6">
+    <div className="max-w-6xl mx-auto px-4 py-6">
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Mindmaps</h1>
@@ -200,6 +418,40 @@ export function MindmapsPage() {
         <div className="mb-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">{banner}</div>
       )}
 
+      <div className="flex gap-5 items-start">
+      {/* Folder tree. Folders are private to me, so they organize shared maps too. */}
+      <aside className="w-52 shrink-0">
+        <div className="flex items-center justify-between mb-1 px-2">
+          <span className="text-xs uppercase tracking-wide text-gray-400 font-medium">Folders</span>
+          <button
+            onClick={() => setPrompt({ mode: 'createFolder', parentId: null })}
+            className="text-xs text-gray-500 hover:text-blue-600"
+            title="New folder"
+          >
+            + New
+          </button>
+        </div>
+        <div
+          className={`rounded px-2 py-1 text-sm cursor-pointer ${selection.kind === 'all' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
+          onClick={() => setSelection({ kind: 'all' })}
+        >
+          All mindmaps <span className="text-xs text-gray-400">{items.length}</span>
+        </div>
+        <div
+          className={`rounded px-2 py-1 text-sm cursor-pointer ${selection.kind === 'unfiled' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
+          onClick={() => setSelection({ kind: 'unfiled' })}
+        >
+          Unfiled <span className="text-xs text-gray-400">{unfiledCount}</span>
+        </div>
+        <div className="mt-1 space-y-0.5">
+          {flattenFolders(folders).map(({ folder, depth }) => renderFolderRow(folder, depth))}
+          {folders.length === 0 && (
+            <p className="px-2 py-2 text-xs text-gray-400">No folders yet.</p>
+          )}
+        </div>
+      </aside>
+
+      <div className="flex-1 min-w-0">
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <select
           value={ownerFilter}
@@ -273,13 +525,13 @@ export function MindmapsPage() {
                     </span>
                   </td>
                   <td className="px-3 py-2 text-right whitespace-nowrap">
-                    {m.mine ? (
+                    {/* Filing is private to me, so Move is offered on shared maps too. */}
+                    <button onClick={() => setPicker({ mode: 'moveMindmap', item: m })} className="text-xs text-gray-500 hover:text-blue-600 px-1.5">Move</button>
+                    {m.mine && (
                       <>
                         <button onClick={() => setPrompt({ mode: 'rename', item: m })} className="text-xs text-gray-500 hover:text-blue-600 px-1.5">Rename</button>
                         <button onClick={() => setConfirmDelete(m)} className="text-xs text-gray-500 hover:text-red-600 px-1.5">Delete</button>
                       </>
-                    ) : (
-                      <span className="text-xs text-gray-300">—</span>
                     )}
                   </td>
                 </tr>
@@ -288,6 +540,8 @@ export function MindmapsPage() {
           </table>
         </div>
       )}
+      </div>
+      </div>
 
       {prompt?.mode === 'create' && (
         <TextPromptModal
@@ -307,6 +561,65 @@ export function MindmapsPage() {
           submitLabel="Save"
           onSubmit={value => submitRename(prompt.item, value)}
           onClose={() => setPrompt(null)}
+        />
+      )}
+      {prompt?.mode === 'createFolder' && (
+        <TextPromptModal
+          title={prompt.parentId ? 'New subfolder' : 'New folder'}
+          label="Folder name"
+          initial=""
+          submitLabel="Create"
+          onSubmit={value => createFolder(prompt.parentId, value)}
+          onClose={() => setPrompt(null)}
+        />
+      )}
+      {prompt?.mode === 'renameFolder' && (
+        <TextPromptModal
+          title="Rename folder"
+          label="Folder name"
+          initial={prompt.folder.name}
+          submitLabel="Save"
+          onSubmit={value => updateFolder(prompt.folder, { name: value.trim() })}
+          onClose={() => setPrompt(null)}
+        />
+      )}
+      {picker?.mode === 'moveMindmap' && (
+        <FolderPickerModal
+          title="Move mindmap"
+          label={`Move “${picker.item.title}” to`}
+          folders={folders}
+          initial={picker.item.folderId}
+          rootLabel="No folder"
+          submitLabel="Move"
+          onSubmit={folderId => moveMindmap(picker.item, folderId)}
+          onClose={() => setPicker(null)}
+        />
+      )}
+      {picker?.mode === 'moveFolder' && (
+        <FolderPickerModal
+          title="Move folder"
+          label={`Move “${picker.folder.name}” into`}
+          folders={folders}
+          initial={picker.folder.parentId}
+          rootLabel="Top level"
+          // A folder can't move into itself or its own descendants.
+          excludeIds={subtreeIds(folders, picker.folder.id)}
+          submitLabel="Move"
+          onSubmit={parentId => updateFolder(picker.folder, { parentId })}
+          onClose={() => setPicker(null)}
+        />
+      )}
+      {confirmDeleteFolder && (
+        <ConfirmModal
+          title="Delete folder"
+          message={
+            confirmDeleteFolder.parentId
+              ? `Delete “${confirmDeleteFolder.name}”? Its mindmaps and subfolders move up to the parent folder. No mindmaps are deleted.`
+              : `Delete “${confirmDeleteFolder.name}”? Its mindmaps become unfiled and its subfolders move to the top level. No mindmaps are deleted.`
+          }
+          confirmLabel="Delete"
+          onConfirm={() => doDeleteFolder(confirmDeleteFolder)}
+          onClose={() => setConfirmDeleteFolder(null)}
         />
       )}
       {confirmDelete && (

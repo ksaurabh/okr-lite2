@@ -62,6 +62,15 @@ export interface Mindmap {
   notes: MindmapNote[];
 }
 
+// A folder in the viewer's private mindmap tree. Folders are per-user: they
+// organize the maps you can see (including shared ones) without touching the
+// maps themselves. Nesting is by parentId; null = top level.
+export interface MindmapFolder {
+  id: string;
+  name: string;
+  parentId: string | null;
+}
+
 // Row shape returned by GET /api/mindmaps (notes omitted, count only).
 export interface MindmapListItem {
   id: string;
@@ -75,6 +84,7 @@ export interface MindmapListItem {
   noteCount: number;
   mine: boolean;
   starred: boolean;
+  folderId: string | null; // per-viewer filing; null = unfiled
 }
 
 // Ten distinct pastels for the palette: yellow, red, green, blue, violet,

@@ -735,6 +735,76 @@ function setMindmapStar(email, mindmapId, star) {
   return users[idx].starredMindmaps;
 }
 
+// ---- Mindmap folders ----
+// Folders are per-viewer, not per-map: they live on the user record, so each
+// user files the maps they can see (including shared ones) their own way, and
+// filing never mutates the mindmap or requires write access to it.
+// `mindmapFolders` is a flat list of { id, name, parentId }; nesting is by
+// parentId. `mindmapFolderMap` maps mindmapId -> folderId.
+const MINDMAP_FOLDER_MAX = 200;
+const MINDMAP_FOLDER_MAX_DEPTH = 10;
+
+function generateMindmapFolderId() {
+  return `fd_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function getMindmapFolders(email) {
+  const user = getUsers().find(u => u.email === email);
+  return Array.isArray(user?.mindmapFolders) ? user.mindmapFolders : [];
+}
+
+function getMindmapFolderMap(email) {
+  const user = getUsers().find(u => u.email === email);
+  const m = user?.mindmapFolderMap;
+  return m && typeof m === 'object' && !Array.isArray(m) ? m : {};
+}
+
+// Writes both the folder list and the assignment map in one pass so they can
+// never drift (e.g. deleting a folder must also clear its assignments).
+function saveMindmapFolderState(email, folders, folderMap) {
+  const users = getUsers();
+  const idx = users.findIndex(u => u.email === email);
+  if (idx === -1) return null;
+  if (folders !== undefined) users[idx].mindmapFolders = folders;
+  if (folderMap !== undefined) users[idx].mindmapFolderMap = folderMap;
+  saveUsers(users);
+  return { folders: users[idx].mindmapFolders || [], folderMap: users[idx].mindmapFolderMap || {} };
+}
+
+// Depth of a folder in the tree, or Infinity if its ancestry is broken/cyclic.
+function mindmapFolderDepth(folders, id) {
+  const byId = new Map(folders.map(f => [f.id, f]));
+  let depth = 1;
+  let cur = byId.get(id);
+  const seen = new Set();
+  while (cur?.parentId) {
+    if (seen.has(cur.id)) return Infinity;
+    seen.add(cur.id);
+    cur = byId.get(cur.parentId);
+    if (!cur) return Infinity;
+    depth += 1;
+    if (depth > MINDMAP_FOLDER_MAX_DEPTH) return Infinity;
+  }
+  return depth;
+}
+
+// A folder plus every folder beneath it — used to reject cyclic moves and to
+// collect the subtree when deleting.
+function mindmapFolderSubtreeIds(folders, rootId) {
+  const out = new Set([rootId]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const f of folders) {
+      if (f.parentId && out.has(f.parentId) && !out.has(f.id)) {
+        out.add(f.id);
+        grew = true;
+      }
+    }
+  }
+  return out;
+}
+
 // Denormalized display name for the creator, resolved from the user record.
 function displayNameForEmail(email, fallback) {
   const user = getUsers().find(u => u.email === email);
@@ -2213,6 +2283,9 @@ app.get('/api/mindmaps', requireAuth, (req, res) => {
   const email = req.user.email;
   const domain = req.user.domain;
   const starred = new Set(getStarredMindmapIds(email));
+  const folders = getMindmapFolders(email);
+  const folderIds = new Set(folders.map(f => f.id));
+  const folderMap = getMindmapFolderMap(email);
   const visible = getMindmaps().filter(m => isMindmapVisible(m, email, domain));
   const mindmaps = visible
     .map(m => {
@@ -2233,10 +2306,12 @@ app.get('/api/mindmaps', requireAuth, (req, res) => {
           : notesVisibleToViewer(m, grantedViewsFor(m, email, domain)).length,
         mine,
         starred: starred.has(m.id),
+        // Filing is per-viewer; ignore a stale id left by a deleted folder.
+        folderId: folderIds.has(folderMap[m.id]) ? folderMap[m.id] : null,
       };
     })
     .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
-  res.json({ mindmaps });
+  res.json({ mindmaps, folders });
 });
 
 // Create an empty mindmap and return it (client redirects straight to its canvas).
@@ -2360,6 +2435,125 @@ app.post('/api/mindmaps/:id/star', requireAuth, (req, res) => {
   const starredList = setMindmapStar(email, mm.id, star);
   if (starredList === null) return res.status(404).json({ error: 'User not found' });
   res.json({ starred: star });
+});
+
+// ---- Mindmap folders (per-user filing; see helpers above) ----
+
+app.get('/api/mindmap-folders', requireAuth, (req, res) => {
+  res.json({ folders: getMindmapFolders(req.user.email) });
+});
+
+app.post('/api/mindmap-folders', requireAuth, (req, res) => {
+  const email = req.user.email;
+  const name = (typeof req.body?.name === 'string' ? req.body.name.trim() : '').slice(0, 100);
+  if (!name) return res.status(400).json({ error: 'Folder name is required' });
+
+  const folders = getMindmapFolders(email);
+  if (folders.length >= MINDMAP_FOLDER_MAX) return res.status(400).json({ error: 'Too many folders' });
+
+  const rawParent = req.body?.parentId;
+  const parentId = typeof rawParent === 'string' && rawParent ? rawParent : null;
+  if (parentId && !folders.some(f => f.id === parentId)) {
+    return res.status(404).json({ error: 'Parent folder not found' });
+  }
+
+  const folder = { id: generateMindmapFolderId(), name, parentId };
+  const next = [...folders, folder];
+  if (mindmapFolderDepth(next, folder.id) > MINDMAP_FOLDER_MAX_DEPTH) {
+    return res.status(400).json({ error: 'Folders are nested too deeply' });
+  }
+  const saved = saveMindmapFolderState(email, next, undefined);
+  if (!saved) return res.status(404).json({ error: 'User not found' });
+  res.json({ folder, folders: saved.folders });
+});
+
+// Rename and/or re-parent. `parentId: null` moves the folder to the top level.
+app.put('/api/mindmap-folders/:id', requireAuth, (req, res) => {
+  const email = req.user.email;
+  const folders = getMindmapFolders(email);
+  const idx = folders.findIndex(f => f.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Folder not found' });
+
+  const next = folders.map(f => ({ ...f }));
+  const folder = next[idx];
+
+  if (req.body?.name !== undefined) {
+    const name = (typeof req.body.name === 'string' ? req.body.name.trim() : '').slice(0, 100);
+    if (!name) return res.status(400).json({ error: 'Folder name is required' });
+    folder.name = name;
+  }
+
+  if (req.body?.parentId !== undefined) {
+    const raw = req.body.parentId;
+    const parentId = typeof raw === 'string' && raw ? raw : null;
+    if (parentId) {
+      if (!next.some(f => f.id === parentId)) return res.status(404).json({ error: 'Parent folder not found' });
+      // A folder can't move into itself or into one of its own descendants.
+      if (mindmapFolderSubtreeIds(folders, folder.id).has(parentId)) {
+        return res.status(400).json({ error: 'Cannot move a folder into itself' });
+      }
+    }
+    folder.parentId = parentId;
+    // Re-parenting can push the whole subtree past the depth cap, not just this
+    // folder — check every descendant.
+    const subtree = mindmapFolderSubtreeIds(next, folder.id);
+    for (const id of subtree) {
+      if (mindmapFolderDepth(next, id) > MINDMAP_FOLDER_MAX_DEPTH) {
+        return res.status(400).json({ error: 'Folders are nested too deeply' });
+      }
+    }
+  }
+
+  const saved = saveMindmapFolderState(email, next, undefined);
+  if (!saved) return res.status(404).json({ error: 'User not found' });
+  res.json({ folder, folders: saved.folders });
+});
+
+// Delete a folder. Its child folders and mindmaps move up to its parent, so
+// nothing is silently lost; the mindmaps themselves are never touched.
+app.delete('/api/mindmap-folders/:id', requireAuth, (req, res) => {
+  const email = req.user.email;
+  const folders = getMindmapFolders(email);
+  const folder = folders.find(f => f.id === req.params.id);
+  if (!folder) return res.status(404).json({ error: 'Folder not found' });
+
+  const nextFolders = folders
+    .filter(f => f.id !== folder.id)
+    .map(f => (f.parentId === folder.id ? { ...f, parentId: folder.parentId || null } : f));
+
+  const folderMap = { ...getMindmapFolderMap(email) };
+  for (const [mindmapId, folderId] of Object.entries(folderMap)) {
+    if (folderId === folder.id) {
+      if (folder.parentId) folderMap[mindmapId] = folder.parentId;
+      else delete folderMap[mindmapId];
+    }
+  }
+
+  const saved = saveMindmapFolderState(email, nextFolders, folderMap);
+  if (!saved) return res.status(404).json({ error: 'User not found' });
+  res.json({ success: true, folders: saved.folders });
+});
+
+// File a mindmap into one of my folders (or unfile it with folderId: null).
+// Any mindmap I can see, not just my own — filing is my private organization.
+app.put('/api/mindmaps/:id/folder', requireAuth, (req, res) => {
+  const email = req.user.email;
+  const mm = findVisibleMindmap(getMindmaps(), req.params.id, email, req.user.domain);
+  if (!mm) return res.status(404).json({ error: 'Mindmap not found' });
+
+  const raw = req.body?.folderId;
+  const folderId = typeof raw === 'string' && raw ? raw : null;
+  if (folderId && !getMindmapFolders(email).some(f => f.id === folderId)) {
+    return res.status(404).json({ error: 'Folder not found' });
+  }
+
+  const folderMap = { ...getMindmapFolderMap(email) };
+  if (folderId) folderMap[mm.id] = folderId;
+  else delete folderMap[mm.id];
+
+  const saved = saveMindmapFolderState(email, undefined, folderMap);
+  if (!saved) return res.status(404).json({ error: 'User not found' });
+  res.json({ folderId });
 });
 
 // ---- User groups (org-scoped; managed by org admins on Settings) ----
