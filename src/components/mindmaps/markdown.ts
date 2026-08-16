@@ -12,10 +12,32 @@ function escapeHtml(s: string): string {
     .replace(/'/g, '&#39;');
 }
 
+// Marker for a finished anchor parked while the other inline rules run, so the
+// autolink rule can't chew through an href it already produced. A NUL can
+// never reach here from a note's source.
+const HOLD = '\u0000';
+
 function inline(s: string): string {
   // Inline code first, so its contents aren't re-processed as emphasis.
   let out = s.replace(/`([^`]+)`/g, (_m, c) => `<code>${c}</code>`);
-  // Autolink URLs (already HTML-escaped, so & is &amp; — valid in href).
+  // [text](target) links. `mindmap:<id>` targets navigate within the app (the
+  // canvas intercepts the click); http(s) targets open in a new tab. Anything
+  // else is left as literal text rather than becoming an arbitrary href.
+  const held: string[] = [];
+  out = out.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (whole, text: string, target: string) => {
+    let anchor: string;
+    const mindmapTarget = /^mindmap:(mm_[A-Za-z0-9_-]+)$/.exec(target);
+    if (mindmapTarget) {
+      anchor = `<a href="/mindmap/${mindmapTarget[1]}" data-mindmap-link="${mindmapTarget[1]}">${text}</a>`;
+    } else if (/^https?:\/\//.test(target)) {
+      anchor = `<a href="${target}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+    } else {
+      return whole;
+    }
+    held.push(anchor);
+    return `${HOLD}${held.length - 1}${HOLD}`;
+  });
+  // Autolink bare URLs (already HTML-escaped, so & is &amp; — valid in href).
   out = out.replace(
     /(https?:\/\/[^\s<]+)/g,
     (u) => `<a href="${u}" target="_blank" rel="noopener noreferrer">${u}</a>`,
@@ -23,6 +45,8 @@ function inline(s: string): string {
   // Bold, then italic.
   out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   out = out.replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>');
+  // Put the parked anchors back.
+  out = out.replace(new RegExp(`${HOLD}(\\d+)${HOLD}`, 'g'), (_m, i: string) => held[Number(i)]);
   return out;
 }
 

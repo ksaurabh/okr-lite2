@@ -8,6 +8,7 @@ import { renderNoteMarkdown } from './markdown';
 import { navigateTo, navigateToMindmap, navigateBackToMindmap, getMindmapBackStack } from './nav';
 import { ShareMindmapModal } from './ShareMindmapModal';
 import { NoteLinkModal } from './NoteLinkModal';
+import { LinkTextModal } from './LinkTextModal';
 import { NoteTagsModal } from './NoteTagsModal';
 import { ManageViewsModal } from './ManageViewsModal';
 import { TextPromptModal } from './TextPromptModal';
@@ -126,6 +127,11 @@ export function MindmapCanvasPage() {
   // mouseup handler), and a live handle on beginEdit for that handler to call.
   const lastNoteClickRef = useRef<{ id: string; t: number } | null>(null);
   const beginEditRef = useRef<(n: MindmapNote) => void>(() => {});
+  // Turning the selected text of the note being edited into a mindmap link. The
+  // textarea's selection range is captured up front, because opening the picker
+  // moves focus and loses it.
+  const editorRef = useRef<HTMLTextAreaElement | null>(null);
+  const [linkSelection, setLinkSelection] = useState<{ start: number; end: number; text: string } | null>(null);
   const [isSpaceDown, setIsSpaceDown] = useState(false);
   // Selected notes. A single selection shows the note's action bar and resize
   // grip; a multi-selection (from a marquee drag on empty canvas) can be moved
@@ -574,6 +580,58 @@ export function MindmapCanvasPage() {
     setNotes(prev => prev.map(n => (n.id === targetId ? { ...n, text: editingText } : n)));
     setEditingId(null);
     scheduleSave();
+  };
+
+  // ---- Linking selected text to a mindmap ----
+  // Capture the textarea's current selection and open the picker. No selection
+  // means nothing to label, so the action is a no-op.
+  const startLinkSelection = () => {
+    const el = editorRef.current;
+    if (!el) return;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    if (start === end) return;
+    setLinkSelection({ start, end, text: editingText.slice(start, end) });
+  };
+
+  // Close the picker and hand focus back to the textarea, restoring the range so
+  // editing carries on where it left off.
+  const closeLinkSelection = (caret?: number) => {
+    setLinkSelection(null);
+    requestAnimationFrame(() => {
+      const el = editorRef.current;
+      if (!el) return;
+      el.focus();
+      if (caret !== undefined) el.setSelectionRange(caret, caret);
+    });
+  };
+
+  // Replace the captured range with a markdown link the renderer turns into an
+  // in-app mindmap link.
+  const applyLinkSelection = (mindmapId: string) => {
+    const sel = linkSelection;
+    if (!sel) return;
+    const markdown = `[${sel.text}](mindmap:${mindmapId})`;
+    setEditingText(prev => prev.slice(0, sel.start) + markdown + prev.slice(sel.end));
+    closeLinkSelection(sel.start + markdown.length);
+  };
+
+  // Create a mindmap named after the selection, then link the text to it. The
+  // new map stays empty; we don't navigate away mid-edit.
+  const createAndLinkSelection = async (title: string) => {
+    try {
+      const r = await fetch(`${API_URL}/api/mindmaps`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title }),
+      });
+      if (!r.ok) throw new Error();
+      const d = await r.json();
+      applyLinkSelection(d.mindmap.id);
+    } catch {
+      closeLinkSelection();
+    }
   };
 
   const recolor = (n: MindmapNote, color: string) => {
@@ -1314,6 +1372,26 @@ export function MindmapCanvasPage() {
                     </button>
                   </div>
                 )}
+                {/* Edit-mode toolbar. mousedown is prevented, not just stopped,
+                    so pressing the button never pulls focus out of the textarea
+                    and the selection survives. */}
+                {editingId === n.id && (
+                  <div
+                    onMouseDown={e => { e.preventDefault(); e.stopPropagation(); }}
+                    onDoubleClick={e => e.stopPropagation()}
+                    className="absolute -top-10 left-0 z-40 flex items-center gap-2 bg-white rounded-lg shadow-lg border border-gray-200 px-2 py-1"
+                    style={{ cursor: 'default' }}
+                  >
+                    <button
+                      onClick={startLinkSelection}
+                      className="flex items-center gap-1 text-xs text-gray-600 hover:text-blue-600 px-0.5"
+                      title="Link the selected text to a mindmap (⌘K)"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 015.656 0 4 4 0 010 5.656l-3 3a4 4 0 01-5.656-5.656m-1.414 5.656a4 4 0 01-5.656 0 4 4 0 010-5.656l3-3a4 4 0 015.656 5.656" /></svg>
+                      Link selection
+                    </button>
+                  </div>
+                )}
                 {/* Linked-note badge — sits just outside the top-right corner so
                     it never obscures the note's text. Click to follow the link. */}
                 {n.linkedMindmapId && editingId !== n.id && (
@@ -1331,19 +1409,37 @@ export function MindmapCanvasPage() {
                   {editingId === n.id ? (
                     <textarea
                       autoFocus
+                      ref={editorRef}
                       value={editingText}
                       onChange={e => setEditingText(e.target.value)}
-                      onBlur={commitEdit}
+                      // The link picker steals focus; that blur must not end the edit.
+                      onBlur={() => { if (!linkSelection) commitEdit(); }}
                       onMouseDown={e => e.stopPropagation()}
                       onDoubleClick={e => e.stopPropagation()}
                       onKeyDown={e => {
                         if (e.key === 'Escape') { (e.target as HTMLTextAreaElement).blur(); }
                         else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); commitEdit(); }
+                        else if (e.key.toLowerCase() === 'k' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); startLinkSelection(); }
                       }}
                       className="w-full h-full box-border resize-none bg-white/70 p-2 text-sm focus:outline-none rounded-b-md"
                     />
                   ) : (
-                    <div className="note-md break-words" dangerouslySetInnerHTML={{ __html: renderNoteMarkdown(n.text) }} />
+                    <div
+                      className="note-md break-words"
+                      // In-app mindmap links: follow them here rather than
+                      // letting the browser do a full page load. External links
+                      // keep their default behaviour.
+                      onMouseDown={e => { if ((e.target as HTMLElement).closest('a')) e.stopPropagation(); }}
+                      onDoubleClick={e => { if ((e.target as HTMLElement).closest('a')) e.stopPropagation(); }}
+                      onClick={e => {
+                        const a = (e.target as HTMLElement).closest('[data-mindmap-link]') as HTMLElement | null;
+                        if (!a) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        navigateToMindmap(a.getAttribute('data-mindmap-link') || '', currentCrumb());
+                      }}
+                      dangerouslySetInnerHTML={{ __html: renderNoteMarkdown(n.text) }}
+                    />
                   )}
                 </div>
                 {/* Tag chips */}
@@ -1443,6 +1539,16 @@ export function MindmapCanvasPage() {
           />
         );
       })()}
+
+      {linkSelection && (
+        <LinkTextModal
+          selection={linkSelection.text}
+          excludeId={id}
+          onPick={applyLinkSelection}
+          onCreate={createAndLinkSelection}
+          onClose={() => closeLinkSelection()}
+        />
+      )}
 
       {tagNoteId && (() => {
         const n = notes.find(x => x.id === tagNoteId);
