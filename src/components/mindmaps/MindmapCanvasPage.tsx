@@ -73,6 +73,8 @@ const FRAME_SCALE_MAX = 5;
 // How close (screen px) the pointer must come to a frame's outline before that
 // frame reveals its resize grip.
 const FRAME_EDGE_HOVER_PX = 24;
+// Window for treating two clicks on the same note as a double-click.
+const DOUBLE_CLICK_MS = 450;
 
 export function MindmapCanvasPage() {
   const id = window.location.pathname.split('/')[2] || '';
@@ -117,7 +119,13 @@ export function MindmapCanvasPage() {
   }, []);
 
   const [editingId, setEditingId] = useState<string | null>(null);
+  const editingIdRef = useRef(editingId);
+  editingIdRef.current = editingId;
   const [editingText, setEditingText] = useState('');
+  // Last plain click on a note, for our own double-click detection (see the
+  // mouseup handler), and a live handle on beginEdit for that handler to call.
+  const lastNoteClickRef = useRef<{ id: string; t: number } | null>(null);
+  const beginEditRef = useRef<(n: MindmapNote) => void>(() => {});
   const [isSpaceDown, setIsSpaceDown] = useState(false);
   // Selected notes. A single selection shows the note's action bar and resize
   // grip; a multi-selection (from a marquee drag on empty canvas) can be moved
@@ -436,8 +444,23 @@ export function MindmapCanvasPage() {
       if (it.kind === 'marquee') {
         setMarquee(null);
       } else if (it.kind === 'drag' && !movedRef.current) {
-        setSelectedIds([it.id]); // a plain click selects the note → shows the action bar
+        // Detect the double-click ourselves rather than relying on the DOM's
+        // dblclick, which the browser withholds whenever the two clicks land on
+        // different elements — easy to hit here, since the first click brings up
+        // the action bar and the selection ring under a barely-moving pointer.
+        const now = Date.now();
+        const last = lastNoteClickRef.current;
+        if (last && last.id === it.id && now - last.t < DOUBLE_CLICK_MS) {
+          lastNoteClickRef.current = null;
+          const n = notesRef.current.find(x => x.id === it.id);
+          if (n) beginEditRef.current(n);
+        } else {
+          lastNoteClickRef.current = { id: it.id, t: now };
+          setSelectedIds([it.id]); // a plain click selects the note → shows the action bar
+        }
       } else if ((it.kind === 'drag' || it.kind === 'groupdrag' || it.kind === 'framedrag' || it.kind === 'resize' || it.kind === 'frameresize') && movedRef.current) {
+        // A gesture that moved something isn't half of a double-click.
+        lastNoteClickRef.current = null;
         scheduleSave();
       }
     };
@@ -520,12 +543,16 @@ export function MindmapCanvasPage() {
     movedRef.current = false;
   };
 
+  // Idempotent: the DOM's dblclick may arrive right after our own detection
+  // fired, and re-entering must not reset text the user has started typing.
   const beginEdit = (n: MindmapNote) => {
-    if (!canEditRef.current) return;
+    if (!canEditRef.current || editingIdRef.current === n.id) return;
+    lastNoteClickRef.current = null;
     setSelectedIds([]);
     setEditingId(n.id);
     setEditingText(n.text);
   };
+  beginEditRef.current = beginEdit;
 
   const commitEdit = () => {
     if (editingId === null) return;
