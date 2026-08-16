@@ -58,14 +58,14 @@ function ConfirmModal({ title, message, confirmLabel, onConfirm, onClose }: {
   );
 }
 
-// Folders come back as a flat list; these two walk it as a tree.
+// Folders come back as a flat list; these walk it as a tree.
 function childFolders(folders: MindmapFolder[], parentId: string | null): MindmapFolder[] {
   return folders
     .filter(f => (f.parentId || null) === parentId)
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-// Depth-first order with a depth per row, for indented rendering and pickers.
+// Depth-first order with a depth per row, for indented pickers.
 function flattenFolders(folders: MindmapFolder[], parentId: string | null = null, depth = 0): Array<{ folder: MindmapFolder; depth: number }> {
   return childFolders(folders, parentId).flatMap(f => [
     { folder: f, depth },
@@ -73,8 +73,7 @@ function flattenFolders(folders: MindmapFolder[], parentId: string | null = null
   ]);
 }
 
-// A folder and everything under it — a map selected in a parent folder should
-// still show when you're looking at an ancestor.
+// A folder and everything under it.
 function subtreeIds(folders: MindmapFolder[], rootId: string): Set<string> {
   const out = new Set([rootId]);
   let grew = true;
@@ -90,8 +89,20 @@ function subtreeIds(folders: MindmapFolder[], rootId: string): Set<string> {
   return out;
 }
 
-// Picks a destination folder (or "top level" / "no folder"). `excludeIds` hides
-// destinations that would create a cycle when moving a folder.
+// Root-to-folder chain, for the breadcrumb and for labelling search hits.
+function folderPath(folders: MindmapFolder[], id: string | null): MindmapFolder[] {
+  const byId = new Map(folders.map(f => [f.id, f]));
+  const out: MindmapFolder[] = [];
+  let cur = id ? byId.get(id) : undefined;
+  while (cur && out.length < 50) {
+    out.unshift(cur);
+    cur = cur.parentId ? byId.get(cur.parentId) : undefined;
+  }
+  return out;
+}
+
+// Picks a destination folder (or the top level). `excludeIds` hides destinations
+// that would create a cycle when moving a folder.
 function FolderPickerModal({ title, label, folders, initial, rootLabel, excludeIds, submitLabel, onSubmit, onClose }: {
   title: string; label: string; folders: MindmapFolder[]; initial: string | null; rootLabel: string;
   excludeIds?: Set<string>; submitLabel: string;
@@ -112,7 +123,7 @@ function FolderPickerModal({ title, label, folders, initial, rootLabel, excludeI
           >
             <option value="">{rootLabel}</option>
             {rows.map(({ folder, depth }) => (
-              <option key={folder.id} value={folder.id}>{`${'  '.repeat(depth)}${folder.name}`}</option>
+              <option key={folder.id} value={folder.id}>{`${'  '.repeat(depth)}${folder.name}`}</option>
             ))}
           </select>
         </div>
@@ -122,6 +133,14 @@ function FolderPickerModal({ title, label, folders, initial, rootLabel, excludeI
         </div>
       </div>
     </Modal>
+  );
+}
+
+function FolderIcon() {
+  return (
+    <svg className="w-4 h-4 text-amber-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+      <path d="M2 5a2 2 0 012-2h3.6a2 2 0 011.4.6L10.6 5H16a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V5z" />
+    </svg>
   );
 }
 
@@ -137,10 +156,6 @@ type PickerState =
   | { mode: 'moveFolder'; folder: MindmapFolder }
   | null;
 
-// What the folder sidebar has selected: everything, only unfiled maps, or one
-// folder (which includes its descendants).
-type FolderSelection = { kind: 'all' } | { kind: 'unfiled' } | { kind: 'folder'; id: string };
-
 export function MindmapsPage() {
   const [items, setItems] = useState<MindmapListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -152,7 +167,8 @@ export function MindmapsPage() {
   const [search, setSearch] = useState('');
 
   const [folders, setFolders] = useState<MindmapFolder[]>([]);
-  const [selection, setSelection] = useState<FolderSelection>({ kind: 'all' });
+  // The folder being browsed, file-explorer style; null = top level.
+  const [cwd, setCwd] = useState<string | null>(null);
 
   const [prompt, setPrompt] = useState<PromptState>(null);
   const [picker, setPicker] = useState<PickerState>(null);
@@ -189,22 +205,50 @@ export function MindmapsPage() {
     return Array.from(seen.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [items]);
 
-  // Folder AND owner AND starred AND search compose, all client-side over the
-  // fetched list. A folder selection includes its descendant folders.
-  const filtered = useMemo(() => {
+  // Filters turn the listing into a search: instead of the current folder's own
+  // contents, it shows every match beneath it, each labelled with its folder —
+  // the way a file explorer searches a directory tree.
+  const filtering = !!(search.trim() || ownerFilter || starredOnly);
+
+  const matchesFilters = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const allowedFolders = selection.kind === 'folder' ? subtreeIds(folders, selection.id) : null;
-    return items.filter(m => {
-      if (selection.kind === 'unfiled' && m.folderId) return false;
-      if (allowedFolders && !(m.folderId && allowedFolders.has(m.folderId))) return false;
+    return (m: MindmapListItem) => {
       if (ownerFilter && m.creatorEmail !== ownerFilter) return false;
       if (starredOnly && !m.starred) return false;
       if (q && !m.title.toLowerCase().includes(q)) return false;
       return true;
-    });
-  }, [items, folders, selection, ownerFilter, starredOnly, search]);
+    };
+  }, [search, ownerFilter, starredOnly]);
 
-  // Count per folder (including descendants), shown next to each sidebar row.
+  // Folders shown as rows: the current folder's children, or (while filtering)
+  // every descendant folder whose name matches the query.
+  const visibleFolders = useMemo(() => {
+    if (!filtering) return childFolders(folders, cwd);
+    const q = search.trim().toLowerCase();
+    if (!q) return [];
+    const scope = cwd ? subtreeIds(folders, cwd) : null;
+    return folders
+      .filter(f => (!scope || (scope.has(f.id) && f.id !== cwd)) && f.name.toLowerCase().includes(q))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [folders, cwd, filtering, search]);
+
+  // Mindmaps shown as rows: those filed directly in the current folder, or
+  // (while filtering) every match anywhere beneath it.
+  const visibleItems = useMemo(() => {
+    const scope = filtering && cwd ? subtreeIds(folders, cwd) : null;
+    return items
+      .filter(m => {
+        if (filtering) {
+          if (scope && !(m.folderId && scope.has(m.folderId))) return false;
+        } else if ((m.folderId || null) !== cwd) {
+          return false;
+        }
+        return matchesFilters(m);
+      })
+      .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+  }, [items, folders, cwd, filtering, matchesFilters]);
+
+  // Mindmap count per folder, including its descendants.
   const folderCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const f of folders) {
@@ -214,7 +258,8 @@ export function MindmapsPage() {
     return counts;
   }, [folders, items]);
 
-  const unfiledCount = useMemo(() => items.filter(m => !m.folderId).length, [items]);
+  const breadcrumb = useMemo(() => folderPath(folders, cwd), [folders, cwd]);
+  const foldersById = useMemo(() => new Map(folders.map(f => [f.id, f])), [folders]);
 
   const submitCreate = async (raw: string) => {
     const title = raw.trim() || 'Untitled mindmap';
@@ -228,13 +273,13 @@ export function MindmapsPage() {
       });
       if (!r.ok) throw new Error('Could not create mindmap');
       const d = await r.json();
-      // Create it where the user is looking: file it into the selected folder.
-      if (selection.kind === 'folder') {
+      // Create it where the user is looking: file it into the current folder.
+      if (cwd) {
         await fetch(`${API_URL}/api/mindmaps/${d.mindmap.id}/folder`, {
           method: 'PUT',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ folderId: selection.id }),
+          body: JSON.stringify({ folderId: cwd }),
         }).catch(() => {});
       }
       navigateTo(`/mindmap/${d.mindmap.id}`);
@@ -303,7 +348,6 @@ export function MindmapsPage() {
       if (!r.ok) throw new Error((await r.json().catch(() => null))?.error);
       const d = await r.json();
       setFolders(d.folders || []);
-      if (d.folder) setSelection({ kind: 'folder', id: d.folder.id });
     } catch (err) {
       setBanner(err instanceof Error && err.message ? err.message : 'Could not create folder');
     }
@@ -338,7 +382,8 @@ export function MindmapsPage() {
       // The server moved this folder's maps up to its parent; mirror that here
       // rather than refetching the whole list.
       setItems(prev => prev.map(m => (m.folderId === folder.id ? { ...m, folderId: folder.parentId || null } : m)));
-      setSelection(s => (s.kind === 'folder' && s.id === folder.id ? { kind: 'all' } : s));
+      // Don't strand the browser inside a folder that no longer exists.
+      if (cwd && subtreeIds(folders, folder.id).has(cwd)) setCwd(folder.parentId || null);
     } catch {
       setBanner('Could not delete folder');
     }
@@ -362,96 +407,63 @@ export function MindmapsPage() {
     }
   };
 
-  const renderFolderRow = (folder: MindmapFolder, depth: number) => {
-    const active = selection.kind === 'folder' && selection.id === folder.id;
-    return (
-      <div
-        key={folder.id}
-        className={`group flex items-center gap-1 rounded px-2 py-1 text-sm cursor-pointer ${active ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
-        style={{ paddingLeft: 8 + depth * 12 }}
-        onClick={() => setSelection({ kind: 'folder', id: folder.id })}
-      >
-        <span className="truncate flex-1">{folder.name}</span>
-        <span className="text-xs text-gray-400 group-hover:hidden">{folderCounts.get(folder.id) ?? 0}</span>
-        <span className="hidden group-hover:flex items-center gap-0.5" onClick={e => e.stopPropagation()}>
-          <button
-            onClick={() => setPrompt({ mode: 'createFolder', parentId: folder.id })}
-            className="text-xs text-gray-400 hover:text-blue-600 px-0.5"
-            title="New subfolder"
-          >+</button>
-          <button
-            onClick={() => setPrompt({ mode: 'renameFolder', folder })}
-            className="text-xs text-gray-400 hover:text-blue-600 px-0.5"
-            title="Rename folder"
-          >✎</button>
-          <button
-            onClick={() => setPicker({ mode: 'moveFolder', folder })}
-            className="text-xs text-gray-400 hover:text-blue-600 px-0.5"
-            title="Move folder"
-          >⇄</button>
-          <button
-            onClick={() => setConfirmDeleteFolder(folder)}
-            className="text-xs text-gray-400 hover:text-red-600 px-0.5"
-            title="Delete folder"
-          >×</button>
-        </span>
-      </div>
-    );
+  // Where a search hit lives, shown beside its title so a flat result list still
+  // says which folder each row came from.
+  const locationLabel = (folderId: string | null) => {
+    if (!folderId) return 'Top level';
+    return folderPath(folders, folderId).map(f => f.name).join(' / ') || 'Top level';
   };
 
+  const empty = visibleFolders.length === 0 && visibleItems.length === 0;
+
   return (
-    <div className="max-w-6xl mx-auto px-4 py-6">
+    <div className="max-w-5xl mx-auto px-4 py-6">
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Mindmaps</h1>
           <p className="text-sm text-gray-500">Sticky-note canvases for brainstorming and planning.</p>
         </div>
-        <button
-          onClick={() => setPrompt({ mode: 'create' })}
-          className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-        >
-          + New mindmap
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setPrompt({ mode: 'createFolder', parentId: cwd })}
+            className="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+          >
+            + New folder
+          </button>
+          <button
+            onClick={() => setPrompt({ mode: 'create' })}
+            className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            + New mindmap
+          </button>
+        </div>
       </div>
 
       {banner && (
         <div className="mb-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">{banner}</div>
       )}
 
-      <div className="flex gap-5 items-start">
-      {/* Folder tree. Folders are private to me, so they organize shared maps too. */}
-      <aside className="w-52 shrink-0">
-        <div className="flex items-center justify-between mb-1 px-2">
-          <span className="text-xs uppercase tracking-wide text-gray-400 font-medium">Folders</span>
-          <button
-            onClick={() => setPrompt({ mode: 'createFolder', parentId: null })}
-            className="text-xs text-gray-500 hover:text-blue-600"
-            title="New folder"
-          >
-            + New
-          </button>
-        </div>
-        <div
-          className={`rounded px-2 py-1 text-sm cursor-pointer ${selection.kind === 'all' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
-          onClick={() => setSelection({ kind: 'all' })}
+      {/* Breadcrumb trail for the folder being browsed. */}
+      <div className="flex items-center flex-wrap gap-1 mb-3 text-sm">
+        <button
+          onClick={() => setCwd(null)}
+          className={cwd === null ? 'text-gray-900 font-medium' : 'text-blue-600 hover:underline'}
         >
-          All mindmaps <span className="text-xs text-gray-400">{items.length}</span>
-        </div>
-        <div
-          className={`rounded px-2 py-1 text-sm cursor-pointer ${selection.kind === 'unfiled' ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
-          onClick={() => setSelection({ kind: 'unfiled' })}
-        >
-          Unfiled <span className="text-xs text-gray-400">{unfiledCount}</span>
-        </div>
-        <div className="mt-1 space-y-0.5">
-          {flattenFolders(folders).map(({ folder, depth }) => renderFolderRow(folder, depth))}
-          {folders.length === 0 && (
-            <p className="px-2 py-2 text-xs text-gray-400">No folders yet.</p>
-          )}
-        </div>
-      </aside>
+          Mindmaps
+        </button>
+        {breadcrumb.map((f, i) => (
+          <span key={f.id} className="flex items-center gap-1">
+            <span className="text-gray-300">/</span>
+            <button
+              onClick={() => setCwd(f.id)}
+              className={i === breadcrumb.length - 1 ? 'text-gray-900 font-medium' : 'text-blue-600 hover:underline'}
+            >
+              {f.name}
+            </button>
+          </span>
+        ))}
+      </div>
 
-      <div className="flex-1 min-w-0">
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <select
           value={ownerFilter}
@@ -471,7 +483,7 @@ export function MindmapsPage() {
           type="text"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          placeholder="Search titles…"
+          placeholder={cwd ? 'Search this folder…' : 'Search titles…'}
           className="text-sm border border-gray-300 rounded px-3 py-1.5 flex-1 min-w-[160px] focus:outline-none focus:ring-1 focus:ring-blue-500"
         />
       </div>
@@ -480,17 +492,13 @@ export function MindmapsPage() {
         <div className="text-sm text-gray-400 py-10 text-center">Loading…</div>
       ) : error ? (
         <div className="text-sm text-red-600 py-10 text-center">{error}</div>
-      ) : filtered.length === 0 ? (
-        <div className="text-sm text-gray-400 py-10 text-center">
-          {items.length === 0 ? 'No mindmaps yet. Create one to get started.' : 'No mindmaps match your filters.'}
-        </div>
       ) : (
         <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
               <tr>
                 <th className="w-8" />
-                <th className="text-left font-medium px-3 py-2">Title</th>
+                <th className="text-left font-medium px-3 py-2">Name</th>
                 <th className="text-left font-medium px-3 py-2">Creator</th>
                 <th className="text-right font-medium px-3 py-2">Notes</th>
                 <th className="text-left font-medium px-3 py-2">Updated</th>
@@ -499,7 +507,47 @@ export function MindmapsPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map(m => (
+              {/* Up one level, like ".." in a file explorer. */}
+              {!filtering && cwd && (
+                <tr className="border-t border-gray-100 hover:bg-gray-50">
+                  <td />
+                  <td className="px-3 py-2" colSpan={6}>
+                    <button
+                      onClick={() => setCwd(foldersById.get(cwd)?.parentId || null)}
+                      className="text-gray-500 hover:text-blue-600"
+                    >
+                      ← Up one level
+                    </button>
+                  </td>
+                </tr>
+              )}
+
+              {/* Folders first, then mindmaps — file-explorer ordering. */}
+              {visibleFolders.map(f => (
+                <tr key={f.id} className="border-t border-gray-100 hover:bg-gray-50">
+                  <td />
+                  <td className="px-3 py-2">
+                    <button onClick={() => { setSearch(''); setCwd(f.id); }} className="flex items-center gap-2 text-gray-900 font-medium hover:text-blue-600">
+                      <FolderIcon />
+                      <span className="truncate">{f.name}</span>
+                    </button>
+                    {filtering && (
+                      <div className="text-[11px] text-gray-400 pl-6">in {locationLabel(f.parentId)}</div>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-gray-300">—</td>
+                  <td className="px-3 py-2 text-right text-gray-500">{folderCounts.get(f.id) ?? 0}</td>
+                  <td className="px-3 py-2 text-gray-300">—</td>
+                  <td className="px-3 py-2 text-gray-300">—</td>
+                  <td className="px-3 py-2 text-right whitespace-nowrap">
+                    <button onClick={() => setPicker({ mode: 'moveFolder', folder: f })} className="text-xs text-gray-500 hover:text-blue-600 px-1.5">Move</button>
+                    <button onClick={() => setPrompt({ mode: 'renameFolder', folder: f })} className="text-xs text-gray-500 hover:text-blue-600 px-1.5">Rename</button>
+                    <button onClick={() => setConfirmDeleteFolder(f)} className="text-xs text-gray-500 hover:text-red-600 px-1.5">Delete</button>
+                  </td>
+                </tr>
+              ))}
+
+              {visibleItems.map(m => (
                 <tr key={m.id} className="border-t border-gray-100 hover:bg-gray-50">
                   <td className="pl-3 py-2">
                     <button
@@ -515,6 +563,9 @@ export function MindmapsPage() {
                     <button onClick={() => navigateTo(`/mindmap/${m.id}`)} className="text-blue-600 hover:underline font-medium">
                       {m.title}
                     </button>
+                    {filtering && (
+                      <div className="text-[11px] text-gray-400">in {locationLabel(m.folderId)}</div>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-gray-600">{m.creatorName}</td>
                   <td className="px-3 py-2 text-right text-gray-600">{m.noteCount}</td>
@@ -536,12 +587,22 @@ export function MindmapsPage() {
                   </td>
                 </tr>
               ))}
+
+              {empty && (
+                <tr className="border-t border-gray-100">
+                  <td colSpan={7} className="px-3 py-10 text-center text-sm text-gray-400">
+                    {filtering
+                      ? 'Nothing matches your filters.'
+                      : cwd
+                        ? 'This folder is empty.'
+                        : 'No mindmaps yet. Create one to get started.'}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
       )}
-      </div>
-      </div>
 
       {prompt?.mode === 'create' && (
         <TextPromptModal
@@ -565,7 +626,7 @@ export function MindmapsPage() {
       )}
       {prompt?.mode === 'createFolder' && (
         <TextPromptModal
-          title={prompt.parentId ? 'New subfolder' : 'New folder'}
+          title="New folder"
           label="Folder name"
           initial=""
           submitLabel="Create"
@@ -589,7 +650,7 @@ export function MindmapsPage() {
           label={`Move “${picker.item.title}” to`}
           folders={folders}
           initial={picker.item.folderId}
-          rootLabel="No folder"
+          rootLabel="Top level"
           submitLabel="Move"
           onSubmit={folderId => moveMindmap(picker.item, folderId)}
           onClose={() => setPicker(null)}
@@ -615,7 +676,7 @@ export function MindmapsPage() {
           message={
             confirmDeleteFolder.parentId
               ? `Delete “${confirmDeleteFolder.name}”? Its mindmaps and subfolders move up to the parent folder. No mindmaps are deleted.`
-              : `Delete “${confirmDeleteFolder.name}”? Its mindmaps become unfiled and its subfolders move to the top level. No mindmaps are deleted.`
+              : `Delete “${confirmDeleteFolder.name}”? Its mindmaps move to the top level, along with its subfolders. No mindmaps are deleted.`
           }
           confirmLabel="Delete"
           onConfirm={() => doDeleteFolder(confirmDeleteFolder)}
