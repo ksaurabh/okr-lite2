@@ -14,6 +14,7 @@ import { TextPromptModal } from './TextPromptModal';
 import { useAuth } from '../../context/AuthContext';
 
 const FRAME_PAD = 20; // world px of padding between a frame's edge and its notes
+const UNDO_WINDOW_MS = 30000; // how long the "undo delete" banner sticks around
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -57,9 +58,18 @@ type Interaction =
   | { kind: 'groupdrag'; startX: number; startY: number; origins: Record<string, { x: number; y: number }> }
   | { kind: 'framedrag'; frameId: string; startX: number; startY: number; origins: Record<string, { x: number; y: number }> }
   | { kind: 'resize'; id: string; startX: number; startY: number; origW: number; origH: number }
+  | {
+      kind: 'frameresize'; frameId: string; startX: number; startY: number;
+      origRect: FrameRect; origins: Record<string, { x: number; y: number; w: number; h: number }>;
+    }
   | null;
 
 interface FrameRect { x: number; y: number; w: number; h: number; }
+
+// Bounds on how far one drag may scale a frame's contents, so a frame can't be
+// collapsed to nothing or blown up off-screen in a single gesture.
+const FRAME_SCALE_MIN = 0.2;
+const FRAME_SCALE_MAX = 5;
 
 export function MindmapCanvasPage() {
   const id = window.location.pathname.split('/')[2] || '';
@@ -90,6 +100,8 @@ export function MindmapCanvasPage() {
   // resize menu anchored on a note.
   const [templatePromptNoteId, setTemplatePromptNoteId] = useState<string | null>(null);
   const [resizeMenuNoteId, setResizeMenuNoteId] = useState<string | null>(null);
+  // Open frame-membership menu, anchored on a note's action bar.
+  const [frameMenuNoteId, setFrameMenuNoteId] = useState<string | null>(null);
 
   const [view, setViewState] = useState<View>({ tx: 0, ty: 0, scale: 1 });
   const viewRef = useRef(view);
@@ -114,6 +126,11 @@ export function MindmapCanvasPage() {
   const soleSelected = selectedIds.length === 1 ? selectedIds[0] : null;
   // Rubber-band rectangle in canvas-relative pixels while marquee-selecting.
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  // Last deletion, offered as an undo banner for 30s. Holds the deleted notes
+  // and the frame list as it was before the delete, so frame membership (and
+  // frames emptied by the delete) can be put back too.
+  const [undoDelete, setUndoDelete] = useState<{ notes: MindmapNote[]; frames: MindmapFrame[] } | null>(null);
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const notesRef = useRef(notes);
@@ -387,6 +404,26 @@ export function MindmapCanvasPage() {
         setNotes(prev => prev.map(n => (n.id === it.id
           ? { ...n, w: Math.max(NOTE_MIN_W, it.origW + dx), h: Math.max(NOTE_MIN_H, it.origH + dy) }
           : n)));
+      } else if (it.kind === 'frameresize') {
+        // Scale the members about the frame's content origin (its top-left plus
+        // the frame padding) so the derived rectangle tracks the pointer.
+        const inner = { w: it.origRect.w - FRAME_PAD * 2, h: it.origRect.h - FRAME_PAD * 2 };
+        if (inner.w <= 0 || inner.h <= 0) return;
+        const fx = clamp((inner.w + dx) / inner.w, FRAME_SCALE_MIN, FRAME_SCALE_MAX);
+        const fy = clamp((inner.h + dy) / inner.h, FRAME_SCALE_MIN, FRAME_SCALE_MAX);
+        const ox = it.origRect.x + FRAME_PAD;
+        const oy = it.origRect.y + FRAME_PAD;
+        setNotes(prev => prev.map(n => {
+          const o = it.origins[n.id];
+          if (!o) return n;
+          return {
+            ...n,
+            x: ox + (o.x - ox) * fx,
+            y: oy + (o.y - oy) * fy,
+            w: Math.max(NOTE_MIN_W, o.w * fx),
+            h: Math.max(NOTE_MIN_H, o.h * fy),
+          };
+        }));
       }
     };
     const onUp = () => {
@@ -397,7 +434,7 @@ export function MindmapCanvasPage() {
         setMarquee(null);
       } else if (it.kind === 'drag' && !movedRef.current) {
         setSelectedIds([it.id]); // a plain click selects the note → shows the action bar
-      } else if ((it.kind === 'drag' || it.kind === 'groupdrag' || it.kind === 'framedrag' || it.kind === 'resize') && movedRef.current) {
+      } else if ((it.kind === 'drag' || it.kind === 'groupdrag' || it.kind === 'framedrag' || it.kind === 'resize' || it.kind === 'frameresize') && movedRef.current) {
         scheduleSave();
       }
     };
@@ -500,14 +537,88 @@ export function MindmapCanvasPage() {
     scheduleSave();
   };
 
-  const deleteNote = (n: MindmapNote) => {
-    setNotes(prev => prev.filter(x => x.id !== n.id));
-    // Drop the note from any frame; remove frames left empty.
+  const dismissUndo = useCallback(() => {
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    undoTimer.current = null;
+    setUndoDelete(null);
+  }, []);
+
+  // Delete one or more notes, keeping a 30-second undo snapshot. A second
+  // delete replaces the snapshot — only the most recent one is undoable.
+  const deleteNotes = useCallback((ids: string[]) => {
+    if (!canEditRef.current || ids.length === 0) return;
+    const idSet = new Set(ids);
+    const removed = notesRef.current.filter(n => idSet.has(n.id));
+    if (removed.length === 0) return;
+    const framesBefore = framesRef.current;
+
+    setNotes(prev => prev.filter(x => !idSet.has(x.id)));
+    // Drop the notes from any frame; remove frames left empty.
     setFrames(prev => prev
-      .map(f => ({ ...f, noteIds: f.noteIds.filter(id => id !== n.id) }))
+      .map(f => ({ ...f, noteIds: f.noteIds.filter(nid => !idSet.has(nid)) }))
       .filter(f => f.noteIds.length > 0));
+    setSelectedIds(prev => prev.filter(sid => !idSet.has(sid)));
+
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    setUndoDelete({ notes: removed, frames: framesBefore });
+    undoTimer.current = setTimeout(() => { undoTimer.current = null; setUndoDelete(null); }, UNDO_WINDOW_MS);
     scheduleSave();
-  };
+  }, [scheduleSave]);
+
+  const deleteNote = (n: MindmapNote) => deleteNotes([n.id]);
+
+  const undoLastDelete = useCallback(() => {
+    const snap = undoDelete;
+    if (!snap) return;
+    dismissUndo();
+    const restoredIds = new Set(snap.notes.map(n => n.id));
+
+    setNotes(prev => {
+      const present = new Set(prev.map(n => n.id));
+      return [...prev, ...snap.notes.filter(n => !present.has(n.id))];
+    });
+    // Put the restored notes back into the frames they belonged to, recreating
+    // any frame that was dropped when the delete emptied it. Members that were
+    // deleted some other way in the meantime stay gone.
+    setFrames(prev => {
+      const alive = new Set([...notesRef.current.map(n => n.id), ...restoredIds]);
+      const out = prev.map(f => ({ ...f }));
+      for (const old of snap.frames) {
+        const members = old.noteIds.filter(nid => restoredIds.has(nid));
+        if (members.length === 0) continue;
+        const cur = out.find(f => f.id === old.id);
+        if (cur) cur.noteIds = Array.from(new Set([...cur.noteIds, ...members]));
+        else out.push({ ...old, noteIds: old.noteIds.filter(nid => alive.has(nid)) });
+      }
+      return out.filter(f => f.noteIds.length > 0);
+    });
+    setSelectedIds(snap.notes.map(n => n.id));
+    scheduleSave();
+  }, [undoDelete, dismissUndo, scheduleSave]);
+
+  // ---- Delete key removes the selected notes (undoable for 30s) ----
+  // Skipped while editing a note or typing in a field, where Delete/Backspace
+  // must keep editing text. Backspace counts too: it's the key labeled "delete"
+  // on Mac keyboards.
+  useEffect(() => {
+    const isField = (t: EventTarget | null) => {
+      const el = t as HTMLElement | null;
+      return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA');
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (editingId !== null || isField(e.target)) return;
+      if (!canEditRef.current || selectedRef.current.length === 0) return;
+      e.preventDefault();
+      deleteNotes(selectedRef.current);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [editingId, deleteNotes]);
+
+  // Don't leave the undo timer running after navigating away.
+  useEffect(() => () => { if (undoTimer.current) clearTimeout(undoTimer.current); }, []);
 
   // ---- Note ↔ mindmap links ----
   const currentCrumb = () => ({ id, title });
@@ -593,7 +704,6 @@ export function MindmapCanvasPage() {
   };
 
   // ---- Frames ----
-  const noteById = useMemo(() => new Map(notes.map(n => [n.id, n])), [notes]);
   // Filtered note map for rendering
   const filteredNoteById = useMemo(() => new Map(filteredNotes.map(n => [n.id, n])), [filteredNotes]);
   // Each frame's rectangle = bounding box of its member notes, padded. Derived,
@@ -635,6 +745,43 @@ export function MindmapCanvasPage() {
   const deleteFrame = (frameId: string) => {
     setFrames(prev => prev.filter(f => f.id !== frameId));
     scheduleSave();
+  };
+
+  // ---- Frame membership ----
+  // A note can belong to more than one frame; the frame's rectangle simply grows
+  // to cover whatever it holds. Removing the last member deletes the frame,
+  // matching the "frames never render empty" rule elsewhere.
+  const addNoteToFrame = (noteId: string, frameId: string) => {
+    if (!canEditRef.current) return;
+    setFrames(prev => prev.map(f => (
+      f.id === frameId && !f.noteIds.includes(noteId) ? { ...f, noteIds: [...f.noteIds, noteId] } : f
+    )));
+    scheduleSave();
+  };
+  const removeNoteFromFrame = (noteId: string, frameId: string) => {
+    if (!canEditRef.current) return;
+    setFrames(prev => prev
+      .map(f => (f.id === frameId ? { ...f, noteIds: f.noteIds.filter(nid => nid !== noteId) } : f))
+      .filter(f => f.noteIds.length > 0));
+    scheduleSave();
+  };
+
+  // Resize a frame by a corner grip. The rectangle is derived from its members,
+  // so resizing scales the members themselves — their offsets from the frame's
+  // top-left and their own sizes — and the box follows.
+  const startFrameResize = (e: React.MouseEvent, frame: MindmapFrame, rect: FrameRect) => {
+    if (!canEditRef.current || spaceRef.current) return;
+    e.stopPropagation();
+    setSelectedIds([]);
+    const origins: Record<string, { x: number; y: number; w: number; h: number }> = {};
+    for (const nid of frame.noteIds) {
+      const n = notesRef.current.find(x => x.id === nid);
+      if (n) origins[nid] = { x: n.x, y: n.y, w: n.w, h: n.h };
+    }
+    interactionRef.current = {
+      kind: 'frameresize', frameId: frame.id, startX: e.clientX, startY: e.clientY, origRect: rect, origins,
+    };
+    movedRef.current = false;
   };
 
   // Drag a frame by its boundary/title: moves every member note together,
@@ -836,6 +983,17 @@ export function MindmapCanvasPage() {
         </div>
       </div>
 
+      {/* Undo banner for the last delete — self-dismisses after 30 seconds. */}
+      {undoDelete && (
+        <div className="flex items-center justify-center gap-3 px-3 py-1.5 bg-gray-800 text-white text-xs z-20 flex-shrink-0">
+          <span>
+            {undoDelete.notes.length === 1 ? 'Note deleted.' : `${undoDelete.notes.length} notes deleted.`}
+          </span>
+          <button onClick={undoLastDelete} className="underline font-medium hover:text-blue-200">Undo</button>
+          <button onClick={dismissUndo} className="text-gray-400 hover:text-white" title="Hide">✕</button>
+        </div>
+      )}
+
       {/* Canvas */}
       <div className="relative flex-1 overflow-hidden">
         <div
@@ -888,6 +1046,14 @@ export function MindmapCanvasPage() {
                       <div data-frame onMouseDown={e => startFrameDrag(e, frame)} style={{ position: 'absolute', left: 0, right: 0, bottom: -7, height: 14, pointerEvents: 'auto', cursor: 'move' }} />
                       <div data-frame onMouseDown={e => startFrameDrag(e, frame)} style={{ position: 'absolute', top: 0, bottom: 0, left: -7, width: 14, pointerEvents: 'auto', cursor: 'move' }} />
                       <div data-frame onMouseDown={e => startFrameDrag(e, frame)} style={{ position: 'absolute', top: 0, bottom: 0, right: -7, width: 14, pointerEvents: 'auto', cursor: 'move' }} />
+                      {/* Bottom-right grip: scales the frame's notes with it. */}
+                      <div
+                        data-frame
+                        onMouseDown={e => startFrameResize(e, frame, rect)}
+                        style={{ position: 'absolute', right: -8, bottom: -8, width: 16, height: 16, pointerEvents: 'auto', cursor: 'nwse-resize' }}
+                        className="rounded-sm bg-white border-2 border-gray-400/70"
+                        title="Resize frame"
+                      />
                     </>
                   )}
                 </div>
@@ -990,6 +1156,45 @@ export function MindmapCanvasPage() {
                                 <span className="text-[10px] text-gray-400 ml-2 tabular-nums">{t.w}×{t.h}</span>
                               </button>
                             ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                    {/* Frame membership: toggle this note in or out of any frame. */}
+                    <div className="relative">
+                      <button
+                        onMouseDown={e => e.stopPropagation()}
+                        onClick={e => { e.stopPropagation(); setFrameMenuNoteId(frameMenuNoteId === n.id ? null : n.id); }}
+                        className={`p-0.5 ${frames.some(f => f.noteIds.includes(n.id)) ? 'text-gray-700 hover:text-blue-600' : 'text-gray-500 hover:text-blue-600'}`}
+                        title="Add to / remove from a frame"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4h16v16H4z" strokeDasharray="4 3" /></svg>
+                      </button>
+                      {frameMenuNoteId === n.id && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={e => { e.stopPropagation(); setFrameMenuNoteId(null); }} />
+                          <div className="absolute top-full right-0 mt-1 z-50 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[170px]">
+                            {frames.length === 0 ? (
+                              <div className="px-3 py-2 text-xs text-gray-400">No frames yet. Select two or more notes to create one.</div>
+                            ) : frames.map(f => {
+                              const member = f.noteIds.includes(n.id);
+                              return (
+                                <button
+                                  key={f.id}
+                                  onMouseDown={e => e.stopPropagation()}
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    if (member) removeNoteFromFrame(n.id, f.id); else addNoteToFrame(n.id, f.id);
+                                    setFrameMenuNoteId(null);
+                                  }}
+                                  className="flex items-center justify-between gap-2 w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                                  title={member ? 'Remove from this frame' : 'Add to this frame'}
+                                >
+                                  <span className="truncate">{f.name}</span>
+                                  <span className={`text-xs ${member ? 'text-blue-600' : 'text-gray-300'}`}>{member ? '✓' : '+'}</span>
+                                </button>
+                              );
+                            })}
                           </div>
                         </>
                       )}
