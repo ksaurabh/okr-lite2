@@ -70,6 +70,9 @@ interface FrameRect { x: number; y: number; w: number; h: number; }
 // collapsed to nothing or blown up off-screen in a single gesture.
 const FRAME_SCALE_MIN = 0.2;
 const FRAME_SCALE_MAX = 5;
+// How close (screen px) the pointer must come to a frame's outline before that
+// frame reveals its resize grip.
+const FRAME_EDGE_HOVER_PX = 24;
 
 export function MindmapCanvasPage() {
   const id = window.location.pathname.split('/')[2] || '';
@@ -722,6 +725,44 @@ export function MindmapCanvasPage() {
     return out;
   }, [frames, filteredNoteById]);
 
+  // The frame whose edge the pointer is near — only that frame shows its resize
+  // grip, so grips don't litter the board.
+  const frameRectsRef = useRef(frameRects);
+  frameRectsRef.current = frameRects;
+  const [edgeHoverFrameId, setEdgeHoverFrameId] = useState<string | null>(null);
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      const it = interactionRef.current;
+      // Keep the grip up for the whole resize drag, however far it strays.
+      if (it?.kind === 'frameresize') {
+        setEdgeHoverFrameId(prev => (prev === it.frameId ? prev : it.frameId));
+        return;
+      }
+      if (!canEditRef.current || !canvasRef.current || frameRectsRef.current.length === 0) {
+        setEdgeHoverFrameId(prev => (prev === null ? prev : null));
+        return;
+      }
+      const { wx, wy } = screenToWorld(e.clientX, e.clientY);
+      const pad = FRAME_EDGE_HOVER_PX / viewRef.current.scale;
+      let hit: string | null = null;
+      for (const { frame, rect } of frameRectsRef.current) {
+        // Inside the band that straddles the outline: within `pad` outside it,
+        // and not `pad` deep into the middle. Later frames win, matching paint
+        // order when frames overlap.
+        const nearOuter = wx >= rect.x - pad && wx <= rect.x + rect.w + pad
+          && wy >= rect.y - pad && wy <= rect.y + rect.h + pad;
+        if (!nearOuter) continue;
+        const deepInside = wx > rect.x + pad && wx < rect.x + rect.w - pad
+          && wy > rect.y + pad && wy < rect.y + rect.h - pad;
+        if (deepInside) continue;
+        hit = frame.id;
+      }
+      setEdgeHoverFrameId(prev => (prev === hit ? prev : hit));
+    };
+    window.addEventListener('mousemove', onMove);
+    return () => window.removeEventListener('mousemove', onMove);
+  }, [screenToWorld]);
+
   // Top-left of the current multi-selection's bounding box (world coords), used
   // to anchor the "Create a Frame" action above the selection.
   const selectionOrigin = useMemo(() => {
@@ -1047,9 +1088,10 @@ export function MindmapCanvasPage() {
                       <div data-frame onMouseDown={e => startFrameDrag(e, frame)} style={{ position: 'absolute', top: 0, bottom: 0, left: -7, width: 14, pointerEvents: 'auto', cursor: 'move' }} />
                       <div data-frame onMouseDown={e => startFrameDrag(e, frame)} style={{ position: 'absolute', top: 0, bottom: 0, right: -7, width: 14, pointerEvents: 'auto', cursor: 'move' }} />
                       {/* Bottom-right grip: scales the frame's notes with it.
-                          Counter-scaled against the zoom and centred on the
-                          corner, so it stays the same size on screen and is
-                          always visible — not a few pixels wide when zoomed out. */}
+                          Shown only while the pointer is near this frame's
+                          outline, and counter-scaled against the zoom so it
+                          stays the same size on screen at any zoom level. */}
+                      {edgeHoverFrameId === frame.id && (
                       <div
                         data-frame
                         onMouseDown={e => startFrameResize(e, frame, rect)}
@@ -1062,6 +1104,7 @@ export function MindmapCanvasPage() {
                         className="rounded-sm bg-white border-2 border-gray-500 shadow hover:bg-blue-50 hover:border-blue-500"
                         title="Drag to resize frame"
                       />
+                      )}
                     </>
                   )}
                 </div>
