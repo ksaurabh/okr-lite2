@@ -164,7 +164,7 @@ export function MindmapCanvasPage() {
     let cancelled = false;
     fetch(`${API_URL}/api/mindmaps/${id}`, { credentials: 'include' })
       .then(r => (r.ok ? r.json() : Promise.reject(r.status)))
-      .then((d: { mindmap: Mindmap; canEdit: boolean; starred: boolean }) => {
+      .then((d: { mindmap: Mindmap; canEdit: boolean; starred: boolean; hasLastView?: boolean; lastViewId?: string | null }) => {
         if (cancelled) return;
         setTitle(d.mindmap.title);
         setShared(!!d.mindmap.shared);
@@ -178,13 +178,27 @@ export function MindmapCanvasPage() {
         setStarred(!!d.starred);
         const loadedNotes = Array.isArray(d.mindmap.notes) ? d.mindmap.notes : [];
         setNotes(loadedNotes);
-        // Open in the configured default view — but only if the viewer can access
-        // it AND it actually shows something. If the default would render an empty
-        // board (e.g. an include view whose frame/tags match nothing), fall back to
-        // no active view, which shows all notes (creators) / the granted union.
-        const defaultView = loadedViews.find(v => v.isDefault);
-        if (defaultView && filterNotesByView(loadedNotes, defaultView, loadedFrames).length > 0) {
-          setActiveViewId(defaultView.id);
+        // Reopen where this viewer left off: the view they last had active on
+        // this map wins over the map's default. A remembered "All" (null) counts
+        // as a choice and is honoured as-is; the server already dropped a
+        // remembered view they can no longer use.
+        const remembered = d.hasLastView
+          ? loadedViews.find(v => v.id === d.lastViewId) || null
+          : undefined;
+        if (remembered !== undefined) {
+          // …but never open onto a blank board, same rule as the default below.
+          if (remembered && filterNotesByView(loadedNotes, remembered, loadedFrames).length > 0) {
+            setActiveViewId(remembered.id);
+          }
+        } else {
+          // Open in the configured default view — but only if the viewer can access
+          // it AND it actually shows something. If the default would render an empty
+          // board (e.g. an include view whose frame/tags match nothing), fall back to
+          // no active view, which shows all notes (creators) / the granted union.
+          const defaultView = loadedViews.find(v => v.isDefault);
+          if (defaultView && filterNotesByView(loadedNotes, defaultView, loadedFrames).length > 0) {
+            setActiveViewId(defaultView.id);
+          }
         }
         setStatus('ready');
       })
@@ -701,6 +715,19 @@ export function MindmapCanvasPage() {
     scheduleSave();
   };
 
+  // Switch views and remember the choice for this viewer, so reopening the map
+  // lands on the same view. null = "All", and that's a choice worth remembering
+  // too — it must survive over the map's default view.
+  const chooseView = useCallback((viewId: string | null) => {
+    setActiveViewId(viewId);
+    fetch(`${API_URL}/api/mindmaps/${id}/view`, {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ viewId }),
+    }).catch(() => {});
+  }, [id]);
+
   // Views are persisted with their own immediate PUT (separate from the notes
   // debounce) so an in-flight notes save can't clobber them.
   const saveViews = (next: MindmapView[]) => {
@@ -709,7 +736,7 @@ export function MindmapCanvasPage() {
     // If the active view was deleted, reset to Everything
     if (activeViewId && !next.find(v => v.id === activeViewId)) {
       const everythingView = next.find(v => v.name === 'Everything');
-      if (everythingView) setActiveViewId(everythingView.id);
+      if (everythingView) chooseView(everythingView.id);
     }
   };
 
@@ -1020,7 +1047,7 @@ export function MindmapCanvasPage() {
             {showViewSwitcher && (
               <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[140px] z-30">
                 <button
-                  onClick={() => { setActiveViewId(null); setShowViewSwitcher(false); }}
+                  onClick={() => { chooseView(null); setShowViewSwitcher(false); }}
                   className={`block w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 ${
                     !activeViewId ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
                   }`}
@@ -1030,7 +1057,7 @@ export function MindmapCanvasPage() {
                 {views.map(v => (
                   <button
                     key={v.id}
-                    onClick={() => { setActiveViewId(v.id); setShowViewSwitcher(false); }}
+                    onClick={() => { chooseView(v.id); setShowViewSwitcher(false); }}
                     className={`block w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 ${
                       v.id === activeViewId ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
                     }`}

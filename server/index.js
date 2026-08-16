@@ -735,6 +735,27 @@ function setMindmapStar(email, mindmapId, star) {
   return users[idx].starredMindmaps;
 }
 
+// Last view a user had active on a given mindmap, so reopening the map lands
+// where they left off. Per-user (on the user record), like stars and folders:
+// remembering a view must never mutate the map. The value may be null, meaning
+// "All" was explicitly chosen — distinct from having no memory at all, which
+// falls back to the map's default view.
+function getMindmapLastViews(email) {
+  const user = getUsers().find(u => u.email === email);
+  const m = user?.mindmapLastViews;
+  return m && typeof m === 'object' && !Array.isArray(m) ? m : {};
+}
+
+function setMindmapLastView(email, mindmapId, viewId) {
+  const users = getUsers();
+  const idx = users.findIndex(u => u.email === email);
+  if (idx === -1) return null;
+  const current = { ...getMindmapLastViews(email), [mindmapId]: viewId };
+  users[idx].mindmapLastViews = current;
+  saveUsers(users);
+  return current;
+}
+
 // ---- Mindmap folders ----
 // Folders are per-viewer, not per-map: they live on the user record, so each
 // user files the maps they can see (including shared ones) their own way, and
@@ -2370,12 +2391,43 @@ app.get('/api/mindmaps/:id', requireAuth, (req, res) => {
     }
     delete out.sharedWith;
   }
+  // Where this user left off. Only honour a remembered view they can still use.
+  const lastViews = getMindmapLastViews(email);
+  const hasLastView = Object.prototype.hasOwnProperty.call(lastViews, mm.id);
+  const rememberedId = hasLastView ? lastViews[mm.id] : null;
+  const usable = rememberedId === null
+    || (Array.isArray(out.views) && out.views.some(v => v.id === rememberedId));
   res.json({
     mindmap: out,
     mine,
     canEdit: mine,
     starred: getStarredMindmapIds(email).includes(mm.id),
+    hasLastView: hasLastView && usable,
+    lastViewId: hasLastView && usable ? rememberedId : null,
   });
+});
+
+// Remember the view this user is looking at (null = "All"). Any viewer; stored
+// per-user, so it never touches the mindmap record.
+app.put('/api/mindmaps/:id/view', requireAuth, (req, res) => {
+  const email = req.user.email;
+  const mm = findVisibleMindmap(getMindmaps(), req.params.id, email, req.user.domain);
+  if (!mm) return res.status(404).json({ error: 'Mindmap not found' });
+
+  const raw = req.body?.viewId;
+  const viewId = typeof raw === 'string' && raw ? raw : null;
+  if (viewId) {
+    // Creators may use any of the map's views; everyone else only those granted
+    // to a group they belong to.
+    const usable = mm.creatorEmail === email
+      ? (Array.isArray(mm.views) ? mm.views : [])
+      : grantedViewsFor(mm, email, req.user.domain);
+    if (!usable.some(v => v.id === viewId)) return res.status(404).json({ error: 'View not found' });
+  }
+  if (setMindmapLastView(email, mm.id, viewId) === null) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+  res.json({ viewId });
 });
 
 // Update title/shared/sharedWith/notes. Creator only; anyone else gets 404.
