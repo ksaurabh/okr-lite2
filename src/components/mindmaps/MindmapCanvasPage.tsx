@@ -1046,13 +1046,21 @@ export function MindmapCanvasPage() {
                       <div data-frame onMouseDown={e => startFrameDrag(e, frame)} style={{ position: 'absolute', left: 0, right: 0, bottom: -7, height: 14, pointerEvents: 'auto', cursor: 'move' }} />
                       <div data-frame onMouseDown={e => startFrameDrag(e, frame)} style={{ position: 'absolute', top: 0, bottom: 0, left: -7, width: 14, pointerEvents: 'auto', cursor: 'move' }} />
                       <div data-frame onMouseDown={e => startFrameDrag(e, frame)} style={{ position: 'absolute', top: 0, bottom: 0, right: -7, width: 14, pointerEvents: 'auto', cursor: 'move' }} />
-                      {/* Bottom-right grip: scales the frame's notes with it. */}
+                      {/* Bottom-right grip: scales the frame's notes with it.
+                          Counter-scaled against the zoom and centred on the
+                          corner, so it stays the same size on screen and is
+                          always visible — not a few pixels wide when zoomed out. */}
                       <div
                         data-frame
                         onMouseDown={e => startFrameResize(e, frame, rect)}
-                        style={{ position: 'absolute', right: -8, bottom: -8, width: 16, height: 16, pointerEvents: 'auto', cursor: 'nwse-resize' }}
-                        className="rounded-sm bg-white border-2 border-gray-400/70"
-                        title="Resize frame"
+                        style={{
+                          position: 'absolute', right: 0, bottom: 0, width: 14, height: 14,
+                          transform: `translate(50%, 50%) scale(${1 / view.scale})`,
+                          transformOrigin: 'center',
+                          pointerEvents: 'auto', cursor: 'nwse-resize',
+                        }}
+                        className="rounded-sm bg-white border-2 border-gray-500 shadow hover:bg-blue-50 hover:border-blue-500"
+                        title="Drag to resize frame"
                       />
                     </>
                   )}
