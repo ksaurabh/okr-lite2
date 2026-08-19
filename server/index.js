@@ -609,8 +609,9 @@ function sanitizeViews(views) {
   return out;
 }
 
-// A frame is a named rectangle grouping a set of notes (by id). Its geometry is
-// derived client-side from the member notes' bounding box.
+// A frame is a named rectangle grouping a set of notes (by id). Its position is
+// derived client-side from the member notes' bounding box; w/h are the manual
+// size from the resize grip, absent until the frame has been resized.
 function generateFrameId() {
   return `f_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 }
@@ -621,7 +622,12 @@ function sanitizeFrame(f) {
   const noteIds = Array.isArray(o.noteIds)
     ? Array.from(new Set(o.noteIds.filter(x => typeof x === 'string').map(x => x.slice(0, 64)))).slice(0, 1000)
     : [];
-  return { id, name, noteIds };
+  const frame = { id, name, noteIds };
+  if (Number.isFinite(Number(o.w)) && Number.isFinite(Number(o.h))) {
+    frame.w = Math.max(0, Math.min(20000, Math.round(Number(o.w))));
+    frame.h = Math.max(0, Math.min(20000, Math.round(Number(o.h))));
+  }
+  return frame;
 }
 function sanitizeFrames(frames) {
   return Array.isArray(frames) ? frames.slice(0, 200).map(sanitizeFrame) : [];

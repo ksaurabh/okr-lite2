@@ -61,16 +61,12 @@ type Interaction =
   | { kind: 'resize'; id: string; startX: number; startY: number; origW: number; origH: number }
   | {
       kind: 'frameresize'; frameId: string; startX: number; startY: number;
-      origRect: FrameRect; origins: Record<string, { x: number; y: number; w: number; h: number }>;
+      origRect: FrameRect; contentW: number; contentH: number;
     }
   | null;
 
 interface FrameRect { x: number; y: number; w: number; h: number; }
 
-// Bounds on how far one drag may scale a frame's contents, so a frame can't be
-// collapsed to nothing or blown up off-screen in a single gesture.
-const FRAME_SCALE_MIN = 0.2;
-const FRAME_SCALE_MAX = 5;
 // How close (screen px) the pointer must come to a frame's outline before that
 // frame reveals its resize grip.
 const FRAME_EDGE_HOVER_PX = 24;
@@ -436,25 +432,12 @@ export function MindmapCanvasPage() {
           ? { ...n, w: Math.max(NOTE_MIN_W, it.origW + dx), h: Math.max(NOTE_MIN_H, it.origH + dy) }
           : n)));
       } else if (it.kind === 'frameresize') {
-        // Scale the members about the frame's content origin (its top-left plus
-        // the frame padding) so the derived rectangle tracks the pointer.
-        const inner = { w: it.origRect.w - FRAME_PAD * 2, h: it.origRect.h - FRAME_PAD * 2 };
-        if (inner.w <= 0 || inner.h <= 0) return;
-        const fx = clamp((inner.w + dx) / inner.w, FRAME_SCALE_MIN, FRAME_SCALE_MAX);
-        const fy = clamp((inner.h + dy) / inner.h, FRAME_SCALE_MIN, FRAME_SCALE_MAX);
-        const ox = it.origRect.x + FRAME_PAD;
-        const oy = it.origRect.y + FRAME_PAD;
-        setNotes(prev => prev.map(n => {
-          const o = it.origins[n.id];
-          if (!o) return n;
-          return {
-            ...n,
-            x: ox + (o.x - ox) * fx,
-            y: oy + (o.y - oy) * fy,
-            w: Math.max(NOTE_MIN_W, o.w * fx),
-            h: Math.max(NOTE_MIN_H, o.h * fy),
-          };
-        }));
+        // Only the box changes — the notes keep their positions and sizes, so
+        // they stay put relative to the frame's (content-derived) top-left. The
+        // box can't shrink below the notes it holds.
+        const w = Math.max(it.contentW, it.origRect.w + dx);
+        const h = Math.max(it.contentH, it.origRect.h + dy);
+        setFrames(prev => prev.map(f => (f.id === it.frameId ? { ...f, w, h } : f)));
       }
     };
     const onUp = () => {
@@ -821,10 +804,12 @@ export function MindmapCanvasPage() {
   // ---- Frames ----
   // Filtered note map for rendering
   const filteredNoteById = useMemo(() => new Map(filteredNotes.map(n => [n.id, n])), [filteredNotes]);
-  // Each frame's rectangle = bounding box of its member notes, padded. Derived,
-  // so it always hugs the notes as they move/resize.
+  // Each frame's rectangle: top-left from the member notes' padded bounding box,
+  // so the box follows the notes as they move. Its size is that same bounding
+  // box unless the frame has been resized by hand, in which case the manual
+  // size wins — but never shrinks below the content.
   const frameRects = useMemo(() => {
-    const out: { frame: MindmapFrame; rect: FrameRect }[] = [];
+    const out: { frame: MindmapFrame; rect: FrameRect; contentW: number; contentH: number }[] = [];
     for (const f of frames) {
       const members = f.noteIds.map(nid => filteredNoteById.get(nid)).filter((n): n is MindmapNote => !!n);
       if (!members.length) continue;
@@ -832,7 +817,11 @@ export function MindmapCanvasPage() {
       const minY = Math.min(...members.map(n => n.y)) - FRAME_PAD;
       const maxX = Math.max(...members.map(n => n.x + n.w)) + FRAME_PAD;
       const maxY = Math.max(...members.map(n => n.y + n.h)) + FRAME_PAD;
-      out.push({ frame: f, rect: { x: minX, y: minY, w: maxX - minX, h: maxY - minY } });
+      const contentW = maxX - minX;
+      const contentH = maxY - minY;
+      const w = Math.max(contentW, f.w ?? 0);
+      const h = Math.max(contentH, f.h ?? 0);
+      out.push({ frame: f, rect: { x: minX, y: minY, w, h }, contentW, contentH });
     }
     return out;
   }, [frames, filteredNoteById]);
@@ -919,20 +908,18 @@ export function MindmapCanvasPage() {
     scheduleSave();
   };
 
-  // Resize a frame by a corner grip. The rectangle is derived from its members,
-  // so resizing scales the members themselves — their offsets from the frame's
-  // top-left and their own sizes — and the box follows.
-  const startFrameResize = (e: React.MouseEvent, frame: MindmapFrame, rect: FrameRect) => {
+  // Resize a frame by a corner grip. This resizes the box alone: the member
+  // notes keep their positions and sizes, staying anchored to the frame's
+  // top-left corner. The box stops at the members' bounding box.
+  const startFrameResize = (
+    e: React.MouseEvent, frame: MindmapFrame, rect: FrameRect, contentW: number, contentH: number,
+  ) => {
     if (!canEditRef.current || spaceRef.current) return;
     e.stopPropagation();
     setSelectedIds([]);
-    const origins: Record<string, { x: number; y: number; w: number; h: number }> = {};
-    for (const nid of frame.noteIds) {
-      const n = notesRef.current.find(x => x.id === nid);
-      if (n) origins[nid] = { x: n.x, y: n.y, w: n.w, h: n.h };
-    }
     interactionRef.current = {
-      kind: 'frameresize', frameId: frame.id, startX: e.clientX, startY: e.clientY, origRect: rect, origins,
+      kind: 'frameresize', frameId: frame.id, startX: e.clientX, startY: e.clientY,
+      origRect: rect, contentW, contentH,
     };
     movedRef.current = false;
   };
@@ -1167,7 +1154,7 @@ export function MindmapCanvasPage() {
           <div style={{ position: 'absolute', left: 0, top: 0, transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`, transformOrigin: '0 0' }}>
             {/* Frames — rendered behind notes. Fill is click-through; only the
                 edge bands and title grab to move the frame. */}
-            {frameRects.map(({ frame, rect }) => (
+            {frameRects.map(({ frame, rect, contentW, contentH }) => (
               <div key={frame.id}>
                 <div
                   data-frame
@@ -1206,7 +1193,7 @@ export function MindmapCanvasPage() {
                       {edgeHoverFrameId === frame.id && (
                       <div
                         data-frame
-                        onMouseDown={e => startFrameResize(e, frame, rect)}
+                        onMouseDown={e => startFrameResize(e, frame, rect, contentW, contentH)}
                         style={{
                           position: 'absolute', right: 0, bottom: 0, width: 14, height: 14,
                           transform: `translate(50%, 50%) scale(${1 / view.scale})`,

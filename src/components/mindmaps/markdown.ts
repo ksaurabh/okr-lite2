@@ -66,6 +66,15 @@ export function renderNoteMarkdown(src: string): string {
   const lines = escaped.split(/\r?\n/);
   const html: string[] = [];
 
+  // Consecutive non-blank text lines belong to one paragraph (joined by <br>),
+  // so a blank line between them is a real paragraph break rather than nothing.
+  let para: string[] = [];
+  const flushPara = () => {
+    if (!para.length) return;
+    html.push(`<p>${para.join('<br>')}</p>`);
+    para = [];
+  };
+
   // Stack of open lists, one per nesting level. `liOpen` tracks whether the
   // <li> at each level is still open (a child list nests inside an open <li>).
   const stack: Array<'ul' | 'ol'> = [];
@@ -82,6 +91,7 @@ export function renderNoteMarkdown(src: string): string {
   for (const line of lines) {
     const item = matchListItem(line);
     if (item) {
+      flushPara();
       // Can't nest deeper than one level below what's currently open.
       const depth = Math.min(item.depth, stack.length);
       while (stack.length > depth + 1) closeList();     // came back out
@@ -98,16 +108,19 @@ export function renderNoteMarkdown(src: string): string {
 
     let m: RegExpExecArray | null;
     if ((m = /^(#{1,6})\s+(.*)$/.exec(line))) {
+      flushPara();
       closeAllLists();
       const level = m[1].length;
       html.push(`<h${level}>${inline(m[2])}</h${level}>`);
     } else if (line.trim() === '') {
+      flushPara();
       closeAllLists();
     } else {
       closeAllLists();
-      html.push(`<p>${inline(line)}</p>`);
+      para.push(inline(line));
     }
   }
+  flushPara();
   closeAllLists();
   return html.join('');
 }

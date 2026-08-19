@@ -22,12 +22,17 @@ export interface MindmapView {
   isDefault?: boolean;         // if true, this view is applied on load
 }
 
-// A named rectangle grouping a set of notes. Its geometry is derived from the
+// A named rectangle grouping a set of notes. Its top-left is derived from the
 // member notes' bounding box; moving the frame moves all members together.
+// Resizing it only changes the box: `w`/`h` (world px, unset until someone
+// drags the grip) hold that manual size, and the box still grows past it if the
+// notes need the room.
 export interface MindmapFrame {
   id: string;
   name: string;
   noteIds: string[];
+  w?: number;
+  h?: number;
 }
 
 // A saved card size (width × height, world px). Apply a template to a note to
