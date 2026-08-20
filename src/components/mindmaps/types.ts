@@ -6,7 +6,10 @@ export interface MindmapNote {
   w: number;
   h: number;
   color: string; // hex
-  text: string;  // markdown source
+  text: string;  // markdown source, or sanitized HTML when format is 'html'
+  // 'html' = a rich-text note, entered when formatted content is pasted in.
+  // Absent means markdown, which is what every note starts as.
+  format?: 'markdown' | 'html';
   linkedMindmapId?: string; // optional link to another mindmap
   tags?: string[]; // free-form, lowercased
 }

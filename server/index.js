@@ -503,6 +503,7 @@ const MINDMAP_DEFAULT_COLOR = '#fde68a';
 const MINDMAP_NOTE_MIN_W = 80;
 const MINDMAP_NOTE_MIN_H = 60;
 const MINDMAP_TEXT_CAP = 20000;
+const MINDMAP_RICH_TEXT_CAP = 100000;
 
 function getMindmaps() {
   try {
@@ -538,7 +539,12 @@ function sanitizeNote(note) {
   const color = typeof n.color === 'string' && /^#[0-9a-f]{3,8}$/i.test(n.color.trim())
     ? n.color.trim()
     : MINDMAP_DEFAULT_COLOR;
-  const text = typeof n.text === 'string' ? n.text.slice(0, MINDMAP_TEXT_CAP) : '';
+  // Rich-text notes hold sanitized HTML, which runs far longer than the same
+  // content as markdown — and is re-sanitized in the browser before it renders,
+  // so what lands here never has to be trusted.
+  const format = n.format === 'html' ? 'html' : 'markdown';
+  const cap = format === 'html' ? MINDMAP_RICH_TEXT_CAP : MINDMAP_TEXT_CAP;
+  const text = typeof n.text === 'string' ? n.text.slice(0, cap) : '';
   // Optional link to another mindmap; keep only a well-formed mindmap id.
   const linkedMindmapId = typeof n.linkedMindmapId === 'string' && /^mm_[A-Za-z0-9_-]+$/.test(n.linkedMindmapId)
     ? n.linkedMindmapId
@@ -552,6 +558,7 @@ function sanitizeNote(note) {
     h: Math.max(MINDMAP_NOTE_MIN_H, toFiniteNumber(n.h, 160)),
     color,
     text,
+    ...(format === 'html' ? { format } : {}),
     ...(linkedMindmapId ? { linkedMindmapId } : {}),
     ...(tags.length ? { tags } : {}),
   };

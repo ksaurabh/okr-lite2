@@ -5,6 +5,7 @@ import {
   NEW_NOTE_W, NEW_NOTE_H, ZOOM_MIN, ZOOM_MAX,
 } from './types';
 import { renderNoteMarkdown } from './markdown';
+import { isRichHtml, sanitizeNoteHtml, renderNoteHtml, htmlToPlainText, richTextTitle } from './richtext';
 import { navigateTo, navigateToMindmap, navigateBackToMindmap, getMindmapBackStack } from './nav';
 import { ShareMindmapModal } from './ShareMindmapModal';
 import { NoteLinkModal } from './NoteLinkModal';
@@ -119,6 +120,20 @@ export function MindmapCanvasPage() {
   const editingIdRef = useRef(editingId);
   editingIdRef.current = editingId;
   const [editingText, setEditingText] = useState('');
+  // Which editor the note being edited uses. Markdown notes switch to 'html'
+  // the moment formatted content is pasted into them (and can be switched back
+  // by hand); the rich editor is a contenteditable, so its content lives in the
+  // DOM rather than in state — `richSeedRef` is what it opens with.
+  const [editingFormat, setEditingFormat] = useState<'markdown' | 'html'>('markdown');
+  // Kept in a ref as well, and set the instant a switch starts: swapping
+  // editors unmounts one of them, and whichever handler runs during that swap
+  // must act on the format the note is landing in, not the one it left.
+  const editingFormatRef = useRef(editingFormat);
+  editingFormatRef.current = editingFormat;
+  const richRef = useRef<HTMLDivElement | null>(null);
+  const richSeedRef = useRef('');
+  // The rich editor's selection, captured before the link picker takes focus.
+  const richRangeRef = useRef<Range | null>(null);
   // Last plain click on a note, for our own double-click detection (see the
   // mouseup handler), and a live handle on beginEdit for that handler to call.
   const lastNoteClickRef = useRef<{ id: string; t: number } | null>(null);
@@ -360,7 +375,7 @@ export function MindmapCanvasPage() {
         const copied = selectedRef.current
           .map(sid => byId.get(sid))
           .filter((n): n is MindmapNote => !!n)
-          .map(({ x, y, w, h, color, text }) => ({ x, y, w, h, color, text }));
+          .map(({ x, y, w, h, color, text, format }) => ({ x, y, w, h, color, text, format }));
         if (copied.length === 0) return;
         e.preventDefault();
         clipboardRef.current = copied;
@@ -381,6 +396,41 @@ export function MindmapCanvasPage() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [editingId, scheduleSave]);
+
+  // ---- Pasting from outside the app: drop the clipboard into a new note ----
+  // Only reached when the in-app clipboard is empty (⌘V prefers copied notes)
+  // and nothing is being edited, so it never competes with editing a note.
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      if (!canEditRef.current || editingIdRef.current !== null) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      const html = e.clipboardData?.getData('text/html') || '';
+      const plain = e.clipboardData?.getData('text/plain') || '';
+      const rich = !!html && isRichHtml(html);
+      if (!rich && !plain.trim()) return;
+      e.preventDefault();
+      const rect = canvasRef.current?.getBoundingClientRect();
+      const { wx, wy } = rect
+        ? screenToWorld(rect.left + rect.width / 2, rect.top + rect.height / 2)
+        : { wx: 0, wy: 0 };
+      const note: MindmapNote = {
+        id: newNoteId(),
+        x: wx - NEW_NOTE_W / 2,
+        y: wy - NEW_NOTE_H / 2,
+        w: NEW_NOTE_W,
+        h: NEW_NOTE_H,
+        color: DEFAULT_NOTE_COLOR,
+        text: rich ? sanitizeNoteHtml(html) : plain,
+        ...(rich ? { format: 'html' as const } : {}),
+      };
+      setNotes(prev => [...prev, note]);
+      setSelectedIds([note.id]);
+      scheduleSave();
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, [scheduleSave, screenToWorld]);
 
   // ---- Global move/up handlers for the active interaction ----
   useEffect(() => {
@@ -553,22 +603,100 @@ export function MindmapCanvasPage() {
     lastNoteClickRef.current = null;
     setSelectedIds([]);
     setEditingId(n.id);
-    setEditingText(n.text);
+    const rich = n.format === 'html';
+    setEditingFormat(rich ? 'html' : 'markdown');
+    setEditingText(rich ? '' : n.text);
+    richSeedRef.current = rich ? renderNoteHtml(n.text) : '';
   };
   beginEditRef.current = beginEdit;
 
   const commitEdit = () => {
     if (editingId === null) return;
     const targetId = editingId;
-    setNotes(prev => prev.map(n => (n.id === targetId ? { ...n, text: editingText } : n)));
+    // The rich editor's content is whatever is in the DOM — sanitized again on
+    // the way in, since the browser's own editing commands put it there.
+    const rich = editingFormatRef.current === 'html';
+    const text = rich ? sanitizeNoteHtml(richRef.current?.innerHTML || '') : editingText;
+    setNotes(prev => prev.map(n => (n.id === targetId
+      ? { ...n, text, format: rich ? 'html' as const : undefined }
+      : n)));
     setEditingId(null);
     scheduleSave();
+  };
+
+  // Seed the rich editor when it opens (and when a paste promotes a markdown
+  // note into one). React never re-renders its children afterwards, so typing
+  // and the caret are left alone.
+  useEffect(() => {
+    if (editingId === null || editingFormat !== 'html') return;
+    const el = richRef.current;
+    if (!el) return;
+    el.innerHTML = richSeedRef.current;
+    el.focus();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(false); // caret at the end, past what was just pasted
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  }, [editingId, editingFormat]);
+
+  // ---- Pasting formatted content ----
+  // Pasting into the plain editor: anything carrying real formatting turns the
+  // note into a rich-text one, keeping what was already typed (run through the
+  // markdown renderer so it doesn't lose its own formatting on the way).
+  const handlePlainPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const html = e.clipboardData.getData('text/html');
+    if (!html || !isRichHtml(html)) return; // plain text: let the textarea handle it
+    e.preventDefault();
+    const el = e.currentTarget;
+    const before = editingText.slice(0, el.selectionStart);
+    const after = editingText.slice(el.selectionEnd);
+    richSeedRef.current = renderNoteMarkdown(before) + sanitizeNoteHtml(html) + renderNoteMarkdown(after);
+    editingFormatRef.current = 'html';
+    setEditingFormat('html');
+  };
+
+  // Pasting into the rich editor: insert the sanitized markup ourselves rather
+  // than letting the browser drop the source document's markup in whole.
+  const handleRichPaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const html = e.clipboardData.getData('text/html');
+    if (html && isRichHtml(html)) {
+      document.execCommand('insertHTML', false, sanitizeNoteHtml(html));
+    } else {
+      document.execCommand('insertText', false, e.clipboardData.getData('text/plain'));
+    }
+  };
+
+  // Manual switch between the two editors, for when the auto-detection guessed
+  // wrong or a rich note is better off as plain markdown again.
+  const toggleEditingFormat = () => {
+    if (editingFormat === 'html') {
+      setEditingText(htmlToPlainText(richRef.current?.innerHTML || ''));
+      richSeedRef.current = '';
+      editingFormatRef.current = 'markdown';
+      setEditingFormat('markdown');
+    } else {
+      richSeedRef.current = renderNoteMarkdown(editingText);
+      editingFormatRef.current = 'html';
+      setEditingFormat('html');
+    }
   };
 
   // ---- Linking selected text to a mindmap ----
   // Capture the textarea's current selection and open the picker. No selection
   // means nothing to label, so the action is a no-op.
   const startLinkSelection = () => {
+    if (editingFormat === 'html') {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
+      const range = sel.getRangeAt(0);
+      if (!richRef.current?.contains(range.commonAncestorContainer)) return;
+      richRangeRef.current = range.cloneRange();
+      setLinkSelection({ start: 0, end: 0, text: sel.toString() });
+      return;
+    }
     const el = editorRef.current;
     if (!el) return;
     const start = el.selectionStart;
@@ -582,6 +710,7 @@ export function MindmapCanvasPage() {
   const closeLinkSelection = (caret?: number) => {
     setLinkSelection(null);
     requestAnimationFrame(() => {
+      if (editingFormat === 'html') { richRef.current?.focus(); return; }
       const el = editorRef.current;
       if (!el) return;
       el.focus();
@@ -594,6 +723,22 @@ export function MindmapCanvasPage() {
   const applyLinkSelection = (mindmapId: string) => {
     const sel = linkSelection;
     if (!sel) return;
+    if (editingFormat === 'html') {
+      // Rich text has no source to splice: swap the captured range for an
+      // anchor carrying the same marker the markdown renderer emits.
+      const range = richRangeRef.current;
+      if (range) {
+        const a = document.createElement('a');
+        a.setAttribute('data-mindmap-link', mindmapId);
+        a.setAttribute('href', `/mindmap/${mindmapId}`);
+        a.textContent = sel.text;
+        range.deleteContents();
+        range.insertNode(a);
+        richRangeRef.current = null;
+      }
+      closeLinkSelection();
+      return;
+    }
     const markdown = `[${sel.text}](mindmap:${mindmapId})`;
     setEditingText(prev => prev.slice(0, sel.start) + markdown + prev.slice(sel.end));
     closeLinkSelection(sel.start + markdown.length);
@@ -947,7 +1092,7 @@ export function MindmapCanvasPage() {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: titleFromNote(n.text) }),
+        body: JSON.stringify({ title: n.format === 'html' ? richTextTitle(n.text) || 'Untitled mindmap' : titleFromNote(n.text) }),
       });
       if (!r.ok) throw new Error();
       const d = await r.json();
@@ -1377,6 +1522,17 @@ export function MindmapCanvasPage() {
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 015.656 0 4 4 0 010 5.656l-3 3a4 4 0 01-5.656-5.656m-1.414 5.656a4 4 0 01-5.656 0 4 4 0 010-5.656l3-3a4 4 0 015.656 5.656" /></svg>
                       Link selection
                     </button>
+                    <span className="w-px h-4 bg-gray-200" />
+                    <button
+                      onClick={toggleEditingFormat}
+                      className="flex items-center gap-1 text-xs text-gray-600 hover:text-blue-600 px-0.5"
+                      title={editingFormat === 'html'
+                        ? 'Store this note as plain markdown instead (formatting is flattened)'
+                        : 'Store this note as rich text, keeping pasted formatting'}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h10M4 18h7" /></svg>
+                      {editingFormat === 'html' ? 'Rich text' : 'Plain text'}
+                    </button>
                   </div>
                 )}
                 {/* Linked-note badge — sits just outside the top-right corner so
@@ -1393,14 +1549,32 @@ export function MindmapCanvasPage() {
                   </button>
                 )}
                 <div className={`flex-1 min-h-0 text-sm text-gray-800 ${editingId === n.id ? 'overflow-hidden' : 'overflow-auto p-2'}`}>
-                  {editingId === n.id ? (
+                  {editingId === n.id && editingFormat === 'html' ? (
+                    <div
+                      ref={richRef}
+                      contentEditable
+                      suppressContentEditableWarning
+                      // The link picker steals focus; that blur must not end the
+                      // edit — nor must the blur of an editor being swapped out.
+                      onBlur={() => { if (!linkSelection && editingFormatRef.current === 'html') commitEdit(); }}
+                      onMouseDown={e => e.stopPropagation()}
+                      onDoubleClick={e => e.stopPropagation()}
+                      onPaste={handleRichPaste}
+                      onKeyDown={e => {
+                        if (e.key === 'Escape') { (e.target as HTMLElement).blur(); }
+                        else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); commitEdit(); }
+                        else if (e.key.toLowerCase() === 'k' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); startLinkSelection(); }
+                      }}
+                      className="note-md note-rich note-rich-editor w-full h-full box-border overflow-auto bg-white/70 p-2 text-sm break-words rounded-b-md"
+                    />
+                  ) : editingId === n.id ? (
                     <textarea
                       autoFocus
                       ref={editorRef}
                       value={editingText}
                       onChange={e => setEditingText(e.target.value)}
-                      // The link picker steals focus; that blur must not end the edit.
-                      onBlur={() => { if (!linkSelection) commitEdit(); }}
+                      onPaste={handlePlainPaste}
+                      onBlur={() => { if (!linkSelection && editingFormatRef.current === 'markdown') commitEdit(); }}
                       onMouseDown={e => e.stopPropagation()}
                       onDoubleClick={e => e.stopPropagation()}
                       onKeyDown={e => {
@@ -1412,7 +1586,7 @@ export function MindmapCanvasPage() {
                     />
                   ) : (
                     <div
-                      className="note-md break-words"
+                      className={`note-md break-words${n.format === 'html' ? ' note-rich' : ''}`}
                       // In-app mindmap links: follow them here rather than
                       // letting the browser do a full page load. External links
                       // keep their default behaviour.
@@ -1425,7 +1599,11 @@ export function MindmapCanvasPage() {
                         e.stopPropagation();
                         navigateToMindmap(a.getAttribute('data-mindmap-link') || '', currentCrumb());
                       }}
-                      dangerouslySetInnerHTML={{ __html: renderNoteMarkdown(n.text) }}
+                      // Rich text is sanitized here, not just where it was
+                      // pasted: stored HTML from any other client is untrusted.
+                      dangerouslySetInnerHTML={{
+                        __html: n.format === 'html' ? renderNoteHtml(n.text) : renderNoteMarkdown(n.text),
+                      }}
                     />
                   )}
                 </div>

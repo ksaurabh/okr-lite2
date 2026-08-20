@@ -122,6 +122,23 @@ body {
 .note-md ul ul ul { list-style-type: square; }
 .note-md ol { list-style: decimal; padding-left: 1.2em; margin: 0.15em 0; }
 .note-md li { margin: 0.05em 0; }
+/* Rich-text notes: sanitized HTML pasted from mail or a document. Shares the
+   .note-md rules above for headings, lists, links and code; these add what
+   pasted content brings along that markdown notes never produce. */
+.note-rich table { border-collapse: collapse; max-width: 100%; }
+.note-rich td, .note-rich th { border: 1px solid #d1d5db; padding: 0.15em 0.35em; text-align: left; }
+.note-rich th { font-weight: 600; background: rgba(0, 0, 0, 0.04); }
+.note-rich img { max-width: 100%; height: auto; }
+.note-rich blockquote {
+  border-left: 3px solid rgba(0, 0, 0, 0.15);
+  padding-left: 0.6em;
+  margin: 0.4em 0;
+  color: #4b5563;
+}
+.note-rich pre { white-space: pre-wrap; margin: 0.4em 0; }
+.note-rich hr { border-top: 1px solid rgba(0, 0, 0, 0.15); margin: 0.5em 0; }
+/* The rich-text editor is the same surface, just editable. */
+.note-rich-editor:focus { outline: none; }
 .note-md code {
   background: rgba(0, 0, 0, 0.08);
   border-radius: 3px;
