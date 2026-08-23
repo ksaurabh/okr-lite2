@@ -61,6 +61,23 @@ function matchListItem(line: string): { depth: number; type: 'ul' | 'ol'; conten
   return { depth, type, content: m[3] };
 }
 
+// A markdown pipe table: a header row, a `|---|---|` divider, then body rows.
+// Recognised so that a table note switched back to markdown still reads as a
+// table, and so a hand-typed one renders like one.
+const TABLE_DIVIDER = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
+
+function splitTableRow(line: string): string[] {
+  return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
+}
+
+function renderTableBlock(rows: string[][]): string {
+  const cells = (row: string[], tag: 'td' | 'th') =>
+    row.map(c => `<${tag}>${inline(c)}</${tag}>`).join('');
+  const head = `<tr>${cells(rows[0], 'th')}</tr>`;
+  const body = rows.slice(1).map(r => `<tr>${cells(r, 'td')}</tr>`).join('');
+  return `<table class="note-table md-table"><tbody>${head}${body}</tbody></table>`;
+}
+
 export function renderNoteMarkdown(src: string): string {
   const escaped = escapeHtml(src ?? '');
   const lines = escaped.split(/\r?\n/);
@@ -88,7 +105,26 @@ export function renderNoteMarkdown(src: string): string {
   const closeList = () => { closeItem(); html.push(`</${stack.pop()}>`); liOpen.pop(); };
   const closeAllLists = () => { while (stack.length) closeList(); };
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    // Table block: this line plus the divider under it start one, and it runs
+    // to the first line that isn't a pipe row.
+    if (line.includes('|') && i + 1 < lines.length && TABLE_DIVIDER.test(lines[i + 1])) {
+      flushPara();
+      closeAllLists();
+      const rows = [splitTableRow(line)];
+      let j = i + 2;
+      for (; j < lines.length && lines[j].includes('|') && lines[j].trim() !== ''; j++) {
+        rows.push(splitTableRow(lines[j]));
+      }
+      // Every row padded to the header's width, so the grid stays rectangular.
+      const width = rows.reduce((m, r) => Math.max(m, r.length), 0);
+      for (const r of rows) while (r.length < width) r.push('');
+      html.push(renderTableBlock(rows));
+      i = j - 1;
+      continue;
+    }
+
     const item = matchListItem(line);
     if (item) {
       flushPara();

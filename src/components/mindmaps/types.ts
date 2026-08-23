@@ -6,10 +6,14 @@ export interface MindmapNote {
   w: number;
   h: number;
   color: string; // hex
-  text: string;  // markdown source, or sanitized HTML when format is 'html'
+  // markdown source; sanitized HTML when format is 'html'; a JSON NoteTable
+  // (see table.ts) when format is 'table'.
+  text: string;
   // 'html' = a rich-text note, entered when formatted content is pasted in.
-  // Absent means markdown, which is what every note starts as.
-  format?: 'markdown' | 'html';
+  // 'table' = a grid of cells with resizable columns, entered by adding a table
+  // or by pasting spreadsheet cells. Absent means markdown, which is what every
+  // note starts as.
+  format?: 'markdown' | 'html' | 'table';
   linkedMindmapId?: string; // optional link to another mindmap
   tags?: string[]; // free-form, lowercased
 }

@@ -6,6 +6,12 @@ import {
 } from './types';
 import { renderNoteMarkdown } from './markdown';
 import { isRichHtml, sanitizeNoteHtml, renderNoteHtml, htmlToPlainText, richTextTitle } from './richtext';
+import type { NoteTable } from './table';
+import {
+  parseNoteTable, serializeNoteTable, emptyTable, renderNoteTable, tableTitle,
+  tableFromClipboard, tableToMarkdown, tableNoteWidth, tableNoteHeight,
+} from './table';
+import { TableNoteEditor } from './TableNoteEditor';
 import { navigateTo, navigateToMindmap, navigateBackToMindmap, getMindmapBackStack } from './nav';
 import { ShareMindmapModal } from './ShareMindmapModal';
 import { NoteLinkModal } from './NoteLinkModal';
@@ -124,7 +130,7 @@ export function MindmapCanvasPage() {
   // the moment formatted content is pasted into them (and can be switched back
   // by hand); the rich editor is a contenteditable, so its content lives in the
   // DOM rather than in state — `richSeedRef` is what it opens with.
-  const [editingFormat, setEditingFormat] = useState<'markdown' | 'html'>('markdown');
+  const [editingFormat, setEditingFormat] = useState<'markdown' | 'html' | 'table'>('markdown');
   // Kept in a ref as well, and set the instant a switch starts: swapping
   // editors unmounts one of them, and whichever handler runs during that swap
   // must act on the format the note is landing in, not the one it left.
@@ -132,6 +138,11 @@ export function MindmapCanvasPage() {
   editingFormatRef.current = editingFormat;
   const richRef = useRef<HTMLDivElement | null>(null);
   const richSeedRef = useRef('');
+  // The grid being edited in a table note, mirrored into a ref so the commit
+  // that runs as the editor unmounts sees the latest cells.
+  const [editingTable, setEditingTable] = useState<NoteTable | null>(null);
+  const editingTableRef = useRef<NoteTable | null>(null);
+  editingTableRef.current = editingTable;
   // The rich editor's selection, captured before the link picker takes focus.
   const richRangeRef = useRef<Range | null>(null);
   // Last plain click on a note, for our own double-click detection (see the
@@ -414,7 +425,21 @@ export function MindmapCanvasPage() {
       const { wx, wy } = rect
         ? screenToWorld(rect.left + rect.width / 2, rect.top + rect.height / 2)
         : { wx: 0, wy: 0 };
-      const note: MindmapNote = {
+      // Spreadsheet cells (a real <table> on the clipboard, or tab-separated
+      // rows) become a table note rather than a wall of text.
+      const grid = tableFromClipboard(html, plain);
+      const gridW = grid ? Math.min(tableNoteWidth(grid) + 16, 1200) : 0;
+      const gridH = grid ? Math.min(tableNoteHeight(grid) + 34, 900) : 0;
+      const note: MindmapNote = grid ? {
+        id: newNoteId(),
+        x: wx - gridW / 2,
+        y: wy - gridH / 2,
+        w: Math.max(NOTE_MIN_W, gridW),
+        h: Math.max(NOTE_MIN_H, gridH),
+        color: DEFAULT_NOTE_COLOR,
+        text: serializeNoteTable(grid),
+        format: 'table' as const,
+      } : {
         id: newNoteId(),
         x: wx - NEW_NOTE_W / 2,
         y: wy - NEW_NOTE_H / 2,
@@ -567,6 +592,38 @@ export function MindmapCanvasPage() {
     scheduleSave();
   };
 
+  // A new table note: sized to hold its empty grid, and opened for editing so
+  // the first cell is ready to type (or paste) into.
+  const addTableAtWorld = (wx: number, wy: number, table?: NoteTable) => {
+    if (!canEditRef.current) return;
+    const t = table || emptyTable();
+    const w = Math.min(tableNoteWidth(t) + 16, 1200);
+    const h = Math.min(tableNoteHeight(t) + 34, 900);
+    const note: MindmapNote = {
+      id: newNoteId(),
+      x: wx - w / 2,
+      y: wy - h / 2,
+      w: Math.max(NOTE_MIN_W, w),
+      h: Math.max(NOTE_MIN_H, h),
+      color: DEFAULT_NOTE_COLOR,
+      text: serializeNoteTable(t),
+      format: 'table',
+    };
+    setNotes(prev => [...prev, note]);
+    setSelectedIds([note.id]);
+    scheduleSave();
+    return note;
+  };
+
+  const addTableAtCenter = () => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const { wx, wy } = screenToWorld(r.left + r.width / 2, r.top + r.height / 2);
+    const note = addTableAtWorld(wx, wy);
+    if (note) requestAnimationFrame(() => beginEditRef.current(note));
+  };
+
   // Press anywhere on a note to (maybe) drag it. A press without movement is a
   // click that selects the note; movement past the threshold moves it. The
   // action bar, resize grip and edit textarea all stopPropagation, so they're
@@ -603,10 +660,12 @@ export function MindmapCanvasPage() {
     lastNoteClickRef.current = null;
     setSelectedIds([]);
     setEditingId(n.id);
-    const rich = n.format === 'html';
-    setEditingFormat(rich ? 'html' : 'markdown');
-    setEditingText(rich ? '' : n.text);
-    richSeedRef.current = rich ? renderNoteHtml(n.text) : '';
+    const format = n.format === 'html' ? 'html' : n.format === 'table' ? 'table' : 'markdown';
+    editingFormatRef.current = format;
+    setEditingFormat(format);
+    setEditingText(format === 'markdown' ? n.text : '');
+    richSeedRef.current = format === 'html' ? renderNoteHtml(n.text) : '';
+    setEditingTable(format === 'table' ? parseNoteTable(n.text) : null);
   };
   beginEditRef.current = beginEdit;
 
@@ -615,12 +674,15 @@ export function MindmapCanvasPage() {
     const targetId = editingId;
     // The rich editor's content is whatever is in the DOM — sanitized again on
     // the way in, since the browser's own editing commands put it there.
-    const rich = editingFormatRef.current === 'html';
-    const text = rich ? sanitizeNoteHtml(richRef.current?.innerHTML || '') : editingText;
+    const format = editingFormatRef.current;
+    const text = format === 'html' ? sanitizeNoteHtml(richRef.current?.innerHTML || '')
+      : format === 'table' ? serializeNoteTable(editingTableRef.current || emptyTable())
+      : editingText;
     setNotes(prev => prev.map(n => (n.id === targetId
-      ? { ...n, text, format: rich ? 'html' as const : undefined }
+      ? { ...n, text, format: format === 'markdown' ? undefined : format }
       : n)));
     setEditingId(null);
+    setEditingTable(null);
     scheduleSave();
   };
 
@@ -647,6 +709,21 @@ export function MindmapCanvasPage() {
   // markdown renderer so it doesn't lose its own formatting on the way).
   const handlePlainPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const html = e.clipboardData.getData('text/html');
+    // Spreadsheet cells pasted into an empty note make it a table note — the
+    // one shape rich text handles badly. With text already typed, the paste
+    // takes the ordinary rich-text path so nothing already written is lost.
+    if (!editingText.trim()) {
+      const grid = tableFromClipboard(html, e.clipboardData.getData('text/plain'));
+      if (grid && (grid.rows.length > 1 || grid.cols.length > 1)) {
+        e.preventDefault();
+        setEditingTable(grid);
+        editingTableRef.current = grid;
+        editingFormatRef.current = 'table';
+        setEditingFormat('table');
+        fitNoteToTable(editingIdRef.current, grid);
+        return;
+      }
+    }
     if (!html || !isRichHtml(html)) return; // plain text: let the textarea handle it
     e.preventDefault();
     const el = e.currentTarget;
@@ -669,10 +746,52 @@ export function MindmapCanvasPage() {
     }
   };
 
-  // Manual switch between the two editors, for when the auto-detection guessed
-  // wrong or a rich note is better off as plain markdown again.
+  // Turn the note being edited into a table, reading its current content as a
+  // grid: a markdown pipe table, tab-separated rows, a CSV block, or the table
+  // in a rich-text note. Content that isn't tabular seeds an empty grid with
+  // the text in its first cell, so nothing is lost.
+  const convertEditingToTable = () => {
+    const source = editingFormat === 'html'
+      ? htmlToPlainText(richRef.current?.innerHTML || '')
+      : editingText;
+    const htmlSource = editingFormat === 'html' ? (richRef.current?.innerHTML || '') : '';
+    const parsed = tableFromClipboard(htmlSource, source);
+    const table = parsed || (() => {
+      const t = emptyTable();
+      t.rows[0][0] = source.trim().slice(0, 200);
+      return t;
+    })();
+    setEditingTable(table);
+    editingTableRef.current = table;
+    richSeedRef.current = '';
+    editingFormatRef.current = 'table';
+    setEditingFormat('table');
+    // Give the grid room: a table that spills out of the note is unreadable.
+    fitNoteToTable(editingId, table);
+  };
+
+  // Grow a note to hold a table (never shrink it — a note sized by hand keeps
+  // the room it was given).
+  const fitNoteToTable = (noteId: string | null, table: NoteTable) => {
+    if (!noteId) return;
+    const w = tableNoteWidth(table);
+    const h = tableNoteHeight(table) + 34; // + the editor's control row
+    setNotes(prev => prev.map(n => (n.id === noteId
+      ? { ...n, w: Math.max(n.w, Math.min(w + 16, 1200)), h: Math.max(n.h, Math.min(h, 900)) }
+      : n)));
+  };
+
+  // Manual switch between the editors, for when the auto-detection guessed
+  // wrong or a rich note is better off as plain markdown again. A table falls
+  // back to a markdown pipe table, which reads as a table either way.
   const toggleEditingFormat = () => {
-    if (editingFormat === 'html') {
+    if (editingFormat === 'table') {
+      setEditingText(tableToMarkdown(editingTableRef.current || emptyTable()));
+      setEditingTable(null);
+      editingTableRef.current = null;
+      editingFormatRef.current = 'markdown';
+      setEditingFormat('markdown');
+    } else if (editingFormat === 'html') {
       setEditingText(htmlToPlainText(richRef.current?.innerHTML || ''));
       richSeedRef.current = '';
       editingFormatRef.current = 'markdown';
@@ -1092,7 +1211,11 @@ export function MindmapCanvasPage() {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: n.format === 'html' ? richTextTitle(n.text) || 'Untitled mindmap' : titleFromNote(n.text) }),
+        body: JSON.stringify({
+          title: n.format === 'html' ? richTextTitle(n.text) || 'Untitled mindmap'
+            : n.format === 'table' ? tableTitle(n.text) || 'Untitled mindmap'
+            : titleFromNote(n.text),
+        }),
       });
       if (!r.ok) throw new Error();
       const d = await r.json();
@@ -1514,25 +1637,41 @@ export function MindmapCanvasPage() {
                     className="absolute -top-10 left-0 z-40 flex items-center gap-2 bg-white rounded-lg shadow-lg border border-gray-200 px-2 py-1"
                     style={{ cursor: 'default' }}
                   >
-                    <button
-                      onClick={startLinkSelection}
-                      className="flex items-center gap-1 text-xs text-gray-600 hover:text-blue-600 px-0.5"
-                      title="Link the selected text to a mindmap (⌘K)"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 015.656 0 4 4 0 010 5.656l-3 3a4 4 0 01-5.656-5.656m-1.414 5.656a4 4 0 01-5.656 0 4 4 0 010-5.656l3-3a4 4 0 015.656 5.656" /></svg>
-                      Link selection
-                    </button>
-                    <span className="w-px h-4 bg-gray-200" />
+                    {editingFormat !== 'table' && (
+                      <>
+                        <button
+                          onClick={startLinkSelection}
+                          className="flex items-center gap-1 text-xs text-gray-600 hover:text-blue-600 px-0.5"
+                          title="Link the selected text to a mindmap (⌘K)"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 015.656 0 4 4 0 010 5.656l-3 3a4 4 0 01-5.656-5.656m-1.414 5.656a4 4 0 01-5.656 0 4 4 0 010-5.656l3-3a4 4 0 015.656 5.656" /></svg>
+                          Link selection
+                        </button>
+                        <span className="w-px h-4 bg-gray-200" />
+                      </>
+                    )}
                     <button
                       onClick={toggleEditingFormat}
                       className="flex items-center gap-1 text-xs text-gray-600 hover:text-blue-600 px-0.5"
-                      title={editingFormat === 'html'
+                      title={editingFormat === 'table'
+                        ? 'Store this note as plain markdown instead (the grid becomes a markdown table)'
+                        : editingFormat === 'html'
                         ? 'Store this note as plain markdown instead (formatting is flattened)'
                         : 'Store this note as rich text, keeping pasted formatting'}
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h10M4 18h7" /></svg>
-                      {editingFormat === 'html' ? 'Rich text' : 'Plain text'}
+                      {editingFormat === 'table' ? 'Table' : editingFormat === 'html' ? 'Rich text' : 'Plain text'}
                     </button>
+                    {editingFormat !== 'table' && (
+                      <button
+                        onClick={convertEditingToTable}
+                        className="flex items-center gap-1 text-xs text-gray-600 hover:text-blue-600 px-0.5"
+                        title="Turn this note's content into a table"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5h16v14H4z M4 10h16 M4 15h16 M10 5v14 M15 5v14" /></svg>
+                        As table
+                      </button>
+                    )}
                   </div>
                 )}
                 {/* Linked-note badge — sits just outside the top-right corner so
@@ -1549,7 +1688,14 @@ export function MindmapCanvasPage() {
                   </button>
                 )}
                 <div className={`flex-1 min-h-0 text-sm text-gray-800 ${editingId === n.id ? 'overflow-hidden' : 'overflow-auto p-2'}`}>
-                  {editingId === n.id && editingFormat === 'html' ? (
+                  {editingId === n.id && editingFormat === 'table' ? (
+                    <TableNoteEditor
+                      value={editingTable || emptyTable()}
+                      scale={view.scale}
+                      onChange={setEditingTable}
+                      onCommit={commitEdit}
+                    />
+                  ) : editingId === n.id && editingFormat === 'html' ? (
                     <div
                       ref={richRef}
                       contentEditable
@@ -1586,7 +1732,7 @@ export function MindmapCanvasPage() {
                     />
                   ) : (
                     <div
-                      className={`note-md break-words${n.format === 'html' ? ' note-rich' : ''}`}
+                      className={`note-md break-words${n.format === 'html' ? ' note-rich' : ''}${n.format === 'table' ? ' note-table-wrap' : ''}`}
                       // In-app mindmap links: follow them here rather than
                       // letting the browser do a full page load. External links
                       // keep their default behaviour.
@@ -1602,7 +1748,9 @@ export function MindmapCanvasPage() {
                       // Rich text is sanitized here, not just where it was
                       // pasted: stored HTML from any other client is untrusted.
                       dangerouslySetInnerHTML={{
-                        __html: n.format === 'html' ? renderNoteHtml(n.text) : renderNoteMarkdown(n.text),
+                        __html: n.format === 'html' ? renderNoteHtml(n.text)
+                          : n.format === 'table' ? renderNoteTable(n.text)
+                          : renderNoteMarkdown(n.text),
                       }}
                     />
                   )}
@@ -1670,6 +1818,14 @@ export function MindmapCanvasPage() {
               />
             ))}
           </div>
+          <button
+            onClick={addTableAtCenter}
+            className="mt-2 w-full flex items-center justify-center gap-1 text-[11px] text-gray-600 hover:text-blue-600 border border-gray-200 rounded px-1.5 py-1 hover:bg-blue-50"
+            title="Add a table note (paste spreadsheet cells straight into it)"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5h16v14H4z M4 10h16 M4 15h16 M10 5v14 M15 5v14" /></svg>
+            Table
+          </button>
         </div>
 
         {/* Hint pill */}

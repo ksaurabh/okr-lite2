@@ -137,6 +137,25 @@ body {
 }
 .note-rich pre { white-space: pre-wrap; margin: 0.4em 0; }
 .note-rich hr { border-top: 1px solid rgba(0, 0, 0, 0.15); margin: 0.5em 0; }
+/* Table notes: a grid of cells with per-column widths. Same look as a pasted
+   rich-text table, but the widths come from the note's own column sizes, so
+   `table-layout: fixed` has to hold them. */
+.note-table { border-collapse: collapse; table-layout: fixed; }
+.note-table td, .note-table th {
+  border: 1px solid #d1d5db;
+  padding: 0.15em 0.35em;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.note-table th { font-weight: 600; background: rgba(0, 0, 0, 0.04); }
+/* A table wider than its note scrolls sideways rather than being clipped. */
+.note-table-wrap { overflow-x: auto; }
+/* A markdown table has no stored column widths — let the browser size it. */
+.note-table.md-table { table-layout: auto; max-width: 100%; margin: 0.4em 0; }
+.note-table-editor td { padding: 0; }
+.note-table-editor td input { border: 0; }
+
 /* The rich-text editor is the same surface, just editable. */
 .note-rich-editor:focus { outline: none; }
 .note-md code {
