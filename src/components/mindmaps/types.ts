@@ -7,13 +7,15 @@ export interface MindmapNote {
   h: number;
   color: string; // hex
   // markdown source; sanitized HTML when format is 'html'; a JSON NoteTable
-  // (see table.ts) when format is 'table'.
+  // (see table.ts) when format is 'table'; a JSON KanbanBoard (see kanban.ts)
+  // when format is 'kanban'.
   text: string;
   // 'html' = a rich-text note, entered when formatted content is pasted in.
   // 'table' = a grid of cells with resizable columns, entered by adding a table
-  // or by pasting spreadsheet cells. Absent means markdown, which is what every
-  // note starts as.
-  format?: 'markdown' | 'html' | 'table';
+  // or by pasting spreadsheet cells.
+  // 'kanban' = a board of columns holding draggable cards.
+  // Absent means markdown, which is what every note starts as.
+  format?: 'markdown' | 'html' | 'table' | 'kanban';
   linkedMindmapId?: string; // optional link to another mindmap
   tags?: string[]; // free-form, lowercased
 }

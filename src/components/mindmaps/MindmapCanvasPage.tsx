@@ -12,6 +12,12 @@ import {
   tableFromClipboard, tableToMarkdown, tableNoteWidth, tableNoteHeight,
 } from './table';
 import { TableNoteEditor } from './TableNoteEditor';
+import type { KanbanBoard } from './kanban';
+import {
+  emptyBoard, parseNoteKanban, serializeNoteKanban, renderNoteKanban, kanbanTitle,
+  kanbanNoteWidth, KANBAN_MIN_H,
+} from './kanban';
+import { KanbanBoardView } from './KanbanBoardView';
 import { navigateTo, navigateToMindmap, navigateBackToMindmap, getMindmapBackStack } from './nav';
 import { ShareMindmapModal } from './ShareMindmapModal';
 import { NoteLinkModal } from './NoteLinkModal';
@@ -615,6 +621,42 @@ export function MindmapCanvasPage() {
     return note;
   };
 
+  // A new kanban note: three columns, sized to hold them.
+  const addKanbanAtWorld = (wx: number, wy: number) => {
+    if (!canEditRef.current) return;
+    const board = emptyBoard();
+    const w = kanbanNoteWidth(board);
+    const note: MindmapNote = {
+      id: newNoteId(),
+      x: wx - w / 2,
+      y: wy - KANBAN_MIN_H / 2,
+      w: Math.max(NOTE_MIN_W, w),
+      h: Math.max(NOTE_MIN_H, KANBAN_MIN_H),
+      color: DEFAULT_NOTE_COLOR,
+      text: serializeNoteKanban(board),
+      format: 'kanban',
+    };
+    setNotes(prev => [...prev, note]);
+    setSelectedIds([note.id]);
+    scheduleSave();
+  };
+
+  const addKanbanAtCenter = () => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const { wx, wy } = screenToWorld(r.left + r.width / 2, r.top + r.height / 2);
+    addKanbanAtWorld(wx, wy);
+  };
+
+  // A kanban note has no edit mode — its cards are live — so every board change
+  // writes straight into the note and rides the ordinary save debounce.
+  const updateKanban = (noteId: string, board: KanbanBoard) => {
+    if (!canEditRef.current) return;
+    setNotes(prev => prev.map(n => (n.id === noteId ? { ...n, text: serializeNoteKanban(board) } : n)));
+    scheduleSave();
+  };
+
   const addTableAtCenter = () => {
     const el = canvasRef.current;
     if (!el) return;
@@ -657,6 +699,7 @@ export function MindmapCanvasPage() {
   // fired, and re-entering must not reset text the user has started typing.
   const beginEdit = (n: MindmapNote) => {
     if (!canEditRef.current || editingIdRef.current === n.id) return;
+    if (n.format === 'kanban') return; // its cards are edited directly
     lastNoteClickRef.current = null;
     setSelectedIds([]);
     setEditingId(n.id);
@@ -1214,6 +1257,7 @@ export function MindmapCanvasPage() {
         body: JSON.stringify({
           title: n.format === 'html' ? richTextTitle(n.text) || 'Untitled mindmap'
             : n.format === 'table' ? tableTitle(n.text) || 'Untitled mindmap'
+            : n.format === 'kanban' ? kanbanTitle(n.text) || 'Untitled mindmap'
             : titleFromNote(n.text),
         }),
       });
@@ -1249,8 +1293,11 @@ export function MindmapCanvasPage() {
   };
   const onCanvasDrop = (e: React.DragEvent) => {
     if (!canEdit) return;
+    // Only a colour dragged off the palette makes a note here. A kanban card
+    // dropped short of a column carries no colour, and must not leave one.
+    const color = e.dataTransfer.getData('text/mindmap-color');
+    if (!color) return;
     e.preventDefault();
-    const color = e.dataTransfer.getData('text/mindmap-color') || DEFAULT_NOTE_COLOR;
     const { wx, wy } = screenToWorld(e.clientX, e.clientY);
     addNoteAtWorld(color, wx, wy);
   };
@@ -1501,15 +1548,21 @@ export function MindmapCanvasPage() {
                     className="absolute -top-10 left-0 z-40 flex items-center gap-1.5 bg-white rounded-lg shadow-lg border border-gray-200 px-2 py-1"
                     style={{ cursor: 'default' }}
                   >
-                    <button
-                      onMouseDown={e => e.stopPropagation()}
-                      onClick={e => { e.stopPropagation(); beginEdit(n); }}
-                      className="p-0.5 text-gray-600 hover:text-blue-600"
-                      title="Edit text"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                    </button>
-                    <span className="w-px h-4 bg-gray-200" />
+                    {/* A kanban note has no text editor — its cards are edited
+                        on the board itself. */}
+                    {n.format !== 'kanban' && (
+                      <>
+                        <button
+                          onMouseDown={e => e.stopPropagation()}
+                          onClick={e => { e.stopPropagation(); beginEdit(n); }}
+                          className="p-0.5 text-gray-600 hover:text-blue-600"
+                          title="Edit text"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                        </button>
+                        <span className="w-px h-4 bg-gray-200" />
+                      </>
+                    )}
                     <div className="flex items-center gap-1">
                       {PALETTE.map(c => (
                         <button
@@ -1687,8 +1740,36 @@ export function MindmapCanvasPage() {
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 015.656 0 4 4 0 010 5.656l-3 3a4 4 0 01-5.656-5.656m-1.414 5.656a4 4 0 01-5.656 0 4 4 0 010-5.656l3-3a4 4 0 015.656 5.656" /></svg>
                   </button>
                 )}
-                <div className={`flex-1 min-h-0 text-sm text-gray-800 ${editingId === n.id ? 'overflow-hidden' : 'overflow-auto p-2'}`}>
-                  {editingId === n.id && editingFormat === 'table' ? (
+                {/* A kanban note's board fills it, and the board eats mouse
+                    events so cards can be dragged — this strip is what's left
+                    to grab when the note itself needs moving. */}
+                {n.format === 'kanban' && (
+                  <div
+                    className="flex items-center gap-1 px-2 pt-1 pb-0.5 text-[10px] uppercase tracking-wide text-black/40 flex-shrink-0"
+                    style={{ cursor: canEdit ? 'move' : 'default' }}
+                    title={canEdit ? 'Drag here to move the board' : undefined}
+                  >
+                    <span>⠿</span>
+                    <span>Board</span>
+                  </div>
+                )}
+                <div className={`flex-1 min-h-0 text-sm text-gray-800 ${
+                  n.format === 'kanban' ? 'overflow-hidden' : editingId === n.id ? 'overflow-hidden' : 'overflow-auto p-2'
+                }`}>
+                  {n.format === 'kanban' ? (
+                    canEdit ? (
+                      <KanbanBoardView
+                        value={parseNoteKanban(n.text)}
+                        canEdit={canEdit}
+                        onChange={board => updateKanban(n.id, board)}
+                      />
+                    ) : (
+                      <div
+                        className="note-md w-full h-full overflow-auto"
+                        dangerouslySetInnerHTML={{ __html: renderNoteKanban(n.text) }}
+                      />
+                    )
+                  ) : editingId === n.id && editingFormat === 'table' ? (
                     <TableNoteEditor
                       value={editingTable || emptyTable()}
                       scale={view.scale}
@@ -1818,6 +1899,14 @@ export function MindmapCanvasPage() {
               />
             ))}
           </div>
+          <button
+            onClick={addKanbanAtCenter}
+            className="mt-2 w-full flex items-center justify-center gap-1 text-[11px] text-gray-600 hover:text-blue-600 border border-gray-200 rounded px-1.5 py-1 hover:bg-blue-50"
+            title="Add a kanban board (Todo · In Progress · Done)"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5h4v14H4z M10 5h4v9h-4z M16 5h4v11h-4z" /></svg>
+            Board
+          </button>
           <button
             onClick={addTableAtCenter}
             className="mt-2 w-full flex items-center justify-center gap-1 text-[11px] text-gray-600 hover:text-blue-600 border border-gray-200 rounded px-1.5 py-1 hover:bg-blue-50"

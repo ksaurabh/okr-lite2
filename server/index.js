@@ -542,10 +542,11 @@ function sanitizeNote(note) {
   // Rich-text notes hold sanitized HTML, which runs far longer than the same
   // content as markdown — and is re-sanitized in the browser before it renders,
   // so what lands here never has to be trusted.
-  // A table note's text is a JSON grid, which the browser re-parses (and
-  // re-shapes) before it renders, so what lands here never has to be trusted
-  // either. Both non-markdown formats get the larger cap.
-  const format = n.format === 'html' || n.format === 'table' ? n.format : 'markdown';
+  // A table note's text is a JSON grid and a kanban note's is a JSON board;
+  // both are re-parsed (and re-shaped) by the browser before they render, so
+  // what lands here never has to be trusted either. Every non-markdown format
+  // gets the larger cap.
+  const format = ['html', 'table', 'kanban'].includes(n.format) ? n.format : 'markdown';
   const cap = format === 'markdown' ? MINDMAP_TEXT_CAP : MINDMAP_RICH_TEXT_CAP;
   const text = typeof n.text === 'string' ? n.text.slice(0, cap) : '';
   // Optional link to another mindmap; keep only a well-formed mindmap id.
