@@ -565,6 +565,9 @@ function sanitizeNote(note) {
     ...(format === 'markdown' ? {} : { format }),
     ...(linkedMindmapId ? { linkedMindmapId } : {}),
     ...(tags.length ? { tags } : {}),
+    // Collapsed is a display state, but it belongs to the note: everyone
+    // looking at the map sees it the same way.
+    ...(n.collapsed === true ? { collapsed: true } : {}),
   };
 }
 

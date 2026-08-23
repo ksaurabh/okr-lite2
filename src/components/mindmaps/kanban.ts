@@ -169,6 +169,12 @@ export function kanbanTitle(text: string): string {
   return '';
 }
 
+// One line describing the board, for a collapsed note: each column and how
+// many cards it holds.
+export function kanbanSummary(text: string): string {
+  return parseNoteKanban(text).cols.map(c => `${c.name} ${c.cards.length}`).join(' · ');
+}
+
 export function kanbanNoteWidth(b: KanbanBoard): number {
   return b.cols.length * (KANBAN_COL_W + 8) + 8;
 }

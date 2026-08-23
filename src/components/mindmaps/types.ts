@@ -18,6 +18,9 @@ export interface MindmapNote {
   format?: 'markdown' | 'html' | 'table' | 'kanban';
   linkedMindmapId?: string; // optional link to another mindmap
   tags?: string[]; // free-form, lowercased
+  // Collapsed notes show only their first line, in a single-line strip. `h` is
+  // left alone while collapsed, so expanding restores the height it had.
+  collapsed?: boolean;
 }
 
 // A per-mindmap named tag filter, granted to zero or more user groups.
@@ -113,5 +116,14 @@ export const NOTE_MIN_W = 80;
 export const NOTE_MIN_H = 60;
 export const NEW_NOTE_W = 220;
 export const NEW_NOTE_H = 160;
+// The on-screen height of a collapsed note: one line of text plus its padding.
+export const COLLAPSED_NOTE_H = 32;
 export const ZOOM_MIN = 0.25;
 export const ZOOM_MAX = 2.5;
+
+// The height a note actually occupies on the canvas. Everything that measures
+// notes — the frame boxes, marquee selection, fit-to-view — goes through this,
+// so a collapsed note takes up only the room it's drawn in.
+export function noteRenderHeight(n: MindmapNote): number {
+  return n.collapsed ? COLLAPSED_NOTE_H : n.h;
+}

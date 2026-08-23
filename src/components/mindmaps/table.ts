@@ -309,6 +309,14 @@ export function renderNoteTable(text: string): string {
   return `<table class="note-table">${colgroup}<tbody>${body}</tbody></table>`;
 }
 
+// The first row, for a collapsed note: a table's header line says more about
+// it than any single cell.
+export function tableSummary(text: string): string {
+  const t = parseNoteTable(text);
+  const first = t.rows.find(r => r.some(v => v.trim())) || [];
+  return first.filter(v => v.trim()).join(' · ');
+}
+
 // First non-empty cell, used where a plain title is needed.
 export function tableTitle(text: string): string {
   for (const row of parseNoteTable(text).rows) {

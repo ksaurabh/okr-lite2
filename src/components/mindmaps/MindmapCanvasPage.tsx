@@ -2,20 +2,20 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Mindmap, MindmapNote, MindmapView, MindmapFrame, MindmapTemplate } from './types';
 import {
   PALETTE, DEFAULT_NOTE_COLOR, NOTE_MIN_W, NOTE_MIN_H,
-  NEW_NOTE_W, NEW_NOTE_H, ZOOM_MIN, ZOOM_MAX,
+  NEW_NOTE_W, NEW_NOTE_H, ZOOM_MIN, ZOOM_MAX, noteRenderHeight,
 } from './types';
 import { renderNoteMarkdown } from './markdown';
 import { isRichHtml, sanitizeNoteHtml, renderNoteHtml, htmlToPlainText, richTextTitle } from './richtext';
 import type { NoteTable } from './table';
 import {
   parseNoteTable, serializeNoteTable, emptyTable, renderNoteTable, tableTitle,
-  tableFromClipboard, tableToMarkdown, tableNoteWidth, tableNoteHeight,
+  tableFromClipboard, tableToMarkdown, tableNoteWidth, tableNoteHeight, tableSummary,
 } from './table';
 import { TableNoteEditor } from './TableNoteEditor';
 import type { KanbanBoard } from './kanban';
 import {
   emptyBoard, parseNoteKanban, serializeNoteKanban, renderNoteKanban, kanbanTitle,
-  kanbanNoteWidth, KANBAN_MIN_H,
+  kanbanSummary, kanbanNoteWidth, KANBAN_MIN_H,
 } from './kanban';
 import { KanbanBoardView } from './KanbanBoardView';
 import { navigateTo, navigateToMindmap, navigateBackToMindmap, getMindmapBackStack } from './nav';
@@ -60,6 +60,23 @@ function titleFromNote(text: string): string {
   if (heading) return heading.replace(/^#{1,6}\s+/, '').trim().slice(0, 200);
   const firstNonEmpty = lines.map(l => l.trim()).find(Boolean);
   return (firstNonEmpty || 'Untitled mindmap').slice(0, 200);
+}
+
+// The one line a collapsed note shows. Each format has its own idea of what
+// its first line is: a heading or first line of text, the first row of a table,
+// the columns of a board.
+function noteFirstLine(n: MindmapNote): string {
+  if (n.format === 'html') return richTextTitle(n.text);
+  if (n.format === 'table') return tableSummary(n.text);
+  if (n.format === 'kanban') return kanbanSummary(n.text);
+  const line = (n.text || '').split(/\r?\n/).map(l => l.trim()).find(Boolean) || '';
+  return line
+    .replace(/^#{1,6}\s+/, '')            // heading marker
+    .replace(/^([-*]|\d+\.)\s+/, '')     // list bullet
+    .replace(/\[([^\]\n]+)\]\([^)\s]+\)/g, '$1') // link → its text
+    .replace(/\*\*([^*]+)\*\*/g, '$1')  // bold
+    .replace(/\*([^*]+)\*/g, '$1')       // italic
+    .replace(/`([^`]+)`/g, '$1');        // inline code
 }
 
 interface View { tx: number; ty: number; scale: number; }
@@ -262,7 +279,7 @@ export function MindmapCanvasPage() {
     const minX = Math.min(...ns.map(n => n.x));
     const minY = Math.min(...ns.map(n => n.y));
     const maxX = Math.max(...ns.map(n => n.x + n.w));
-    const maxY = Math.max(...ns.map(n => n.y + n.h));
+    const maxY = Math.max(...ns.map(n => n.y + noteRenderHeight(n)));
     const pad = 80;
     const scale = clamp(Math.min(rect.width / (maxX - minX + pad * 2), rect.height / (maxY - minY + pad * 2)), ZOOM_MIN, 1);
     const cx = (minX + maxX) / 2;
@@ -392,7 +409,7 @@ export function MindmapCanvasPage() {
         const copied = selectedRef.current
           .map(sid => byId.get(sid))
           .filter((n): n is MindmapNote => !!n)
-          .map(({ x, y, w, h, color, text, format }) => ({ x, y, w, h, color, text, format }));
+          .map(({ x, y, w, h, color, text, format, collapsed }) => ({ x, y, w, h, color, text, format, collapsed }));
         if (copied.length === 0) return;
         e.preventDefault();
         clipboardRef.current = copied;
@@ -490,7 +507,7 @@ export function MindmapCanvasPage() {
         const minX = Math.min(a.wx, b.wx), maxX = Math.max(a.wx, b.wx);
         const minY = Math.min(a.wy, b.wy), maxY = Math.max(a.wy, b.wy);
         setSelectedIds(notesRef.current
-          .filter(n => n.x < maxX && n.x + n.w > minX && n.y < maxY && n.y + n.h > minY)
+          .filter(n => n.x < maxX && n.x + n.w > minX && n.y < maxY && n.y + noteRenderHeight(n) > minY)
           .map(n => n.id));
         return;
       }
@@ -695,10 +712,21 @@ export function MindmapCanvasPage() {
     movedRef.current = false;
   };
 
+  // Collapse a note to its first line, or open it back up. The note keeps its
+  // height while collapsed, so expanding gives back exactly the card it was.
+  const toggleCollapse = (n: MindmapNote) => {
+    if (!canEditRef.current) return;
+    if (editingIdRef.current === n.id) commitEdit();
+    setNotes(prev => prev.map(x => (x.id === n.id ? { ...x, collapsed: !x.collapsed } : x)));
+    scheduleSave();
+  };
+
   // Idempotent: the DOM's dblclick may arrive right after our own detection
   // fired, and re-entering must not reset text the user has started typing.
   const beginEdit = (n: MindmapNote) => {
     if (!canEditRef.current || editingIdRef.current === n.id) return;
+    // Collapsed: the first thing a double-click should do is show the note.
+    if (n.collapsed) { toggleCollapse(n); return; }
     if (n.format === 'kanban') return; // its cards are edited directly
     lastNoteClickRef.current = null;
     setSelectedIds([]);
@@ -1123,7 +1151,7 @@ export function MindmapCanvasPage() {
       const minX = Math.min(...members.map(n => n.x)) - FRAME_PAD;
       const minY = Math.min(...members.map(n => n.y)) - FRAME_PAD;
       const maxX = Math.max(...members.map(n => n.x + n.w)) + FRAME_PAD;
-      const maxY = Math.max(...members.map(n => n.y + n.h)) + FRAME_PAD;
+      const maxY = Math.max(...members.map(n => n.y + noteRenderHeight(n))) + FRAME_PAD;
       const contentW = maxX - minX;
       const contentH = maxY - minY;
       const w = Math.max(contentW, f.w ?? 0);
@@ -1529,15 +1557,33 @@ export function MindmapCanvasPage() {
                 key={n.id}
                 data-note
                 style={{
-                  position: 'absolute', left: n.x, top: n.y, width: n.w, height: n.h,
+                  position: 'absolute', left: n.x, top: n.y, width: n.w, height: noteRenderHeight(n),
                   backgroundColor: n.color,
                   cursor: canEdit && editingId !== n.id ? 'move' : 'default',
                   zIndex: selectedIds.includes(n.id) || editingId === n.id ? 30 : undefined,
                 }}
-                className={`rounded-md shadow-md border flex flex-col ${selectedIds.includes(n.id) ? 'border-blue-400 ring-1 ring-blue-300' : 'border-black/5'}`}
+                className={`group/note rounded-md shadow-md border flex flex-col ${selectedIds.includes(n.id) ? 'border-blue-400 ring-1 ring-blue-300' : 'border-black/5'}`}
                 onMouseDown={canEdit ? e => startDrag(e, n) : undefined}
                 onDoubleClick={canEdit ? () => beginEdit(n) : undefined}
               >
+                {/* Collapse / expand, top-right. Faint until the note is
+                    hovered, and always visible once collapsed — it's the only
+                    way back. */}
+                {canEdit && editingId !== n.id && (
+                  <button
+                    onMouseDown={e => e.stopPropagation()}
+                    onDoubleClick={e => e.stopPropagation()}
+                    onClick={e => { e.stopPropagation(); toggleCollapse(n); }}
+                    className={`absolute top-1 right-1 z-20 w-5 h-5 flex items-center justify-center rounded text-gray-600 hover:bg-black/10 transition-opacity ${
+                      n.collapsed ? 'opacity-70' : 'opacity-0 group-hover/note:opacity-70'
+                    }`}
+                    title={n.collapsed ? 'Expand note' : 'Collapse to the first line'}
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.25} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d={n.collapsed ? 'M8 10l4 4 4-4' : 'M8 14l4-4 4 4'} />
+                    </svg>
+                  </button>
+                )}
                 {/* Action bar — shown only for a single selected note. Holds every
                     note action; its mousedown is stopped so using it never drags
                     or deselects the note. */}
@@ -1743,7 +1789,7 @@ export function MindmapCanvasPage() {
                 {/* A kanban note's board fills it, and the board eats mouse
                     events so cards can be dragged — this strip is what's left
                     to grab when the note itself needs moving. */}
-                {n.format === 'kanban' && (
+                {n.format === 'kanban' && !n.collapsed && (
                   <div
                     className="flex items-center gap-1 px-2 pt-1 pb-0.5 text-[10px] uppercase tracking-wide text-black/40 flex-shrink-0"
                     style={{ cursor: canEdit ? 'move' : 'default' }}
@@ -1754,9 +1800,13 @@ export function MindmapCanvasPage() {
                   </div>
                 )}
                 <div className={`flex-1 min-h-0 text-sm text-gray-800 ${
-                  n.format === 'kanban' ? 'overflow-hidden' : editingId === n.id ? 'overflow-hidden' : 'overflow-auto p-2'
+                  n.collapsed ? 'overflow-hidden' : n.format === 'kanban' ? 'overflow-hidden' : editingId === n.id ? 'overflow-hidden' : 'overflow-auto p-2'
                 }`}>
-                  {n.format === 'kanban' ? (
+                  {n.collapsed ? (
+                    <div className="px-2 py-1.5 pr-7 truncate leading-tight" title={noteFirstLine(n)}>
+                      {noteFirstLine(n) || <span className="text-gray-400 italic">Empty note</span>}
+                    </div>
+                  ) : n.format === 'kanban' ? (
                     canEdit ? (
                       <KanbanBoardView
                         value={parseNoteKanban(n.text)}
@@ -1837,14 +1887,14 @@ export function MindmapCanvasPage() {
                   )}
                 </div>
                 {/* Tag chips */}
-                {n.tags && n.tags.length > 0 && editingId !== n.id && (
+                {n.tags && n.tags.length > 0 && editingId !== n.id && !n.collapsed && (
                   <div className="flex flex-wrap gap-1 px-2 pb-1.5 flex-shrink-0">
                     {n.tags.map(t => (
                       <span key={t} className="text-[10px] leading-none bg-black/10 text-gray-700 rounded-full px-1.5 py-0.5">{t}</span>
                     ))}
                   </div>
                 )}
-                {canEdit && soleSelected === n.id && editingId !== n.id && (
+                {canEdit && soleSelected === n.id && editingId !== n.id && !n.collapsed && (
                   <div
                     onMouseDown={e => startResize(e, n)}
                     className="absolute bottom-0 right-0 w-3.5 h-3.5"
