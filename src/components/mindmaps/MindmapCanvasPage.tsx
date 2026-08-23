@@ -712,12 +712,28 @@ export function MindmapCanvasPage() {
     movedRef.current = false;
   };
 
+  // Notes paint in array order, so the last one is on top. Moving a note to the
+  // end brings it to the front — and the order is saved, so it stays there.
+  const moveToFront = (notes: MindmapNote[], id: string): MindmapNote[] => {
+    const i = notes.findIndex(x => x.id === id);
+    if (i === -1 || i === notes.length - 1) return notes;
+    const next = notes.slice();
+    next.push(next.splice(i, 1)[0]);
+    return next;
+  };
+
   // Collapse a note to its first line, or open it back up. The note keeps its
   // height while collapsed, so expanding gives back exactly the card it was.
+  // Expanding also brings it to the front: the room it just took back may be
+  // occupied by notes that would otherwise cover what it has to show.
   const toggleCollapse = (n: MindmapNote) => {
     if (!canEditRef.current) return;
     if (editingIdRef.current === n.id) commitEdit();
-    setNotes(prev => prev.map(x => (x.id === n.id ? { ...x, collapsed: !x.collapsed } : x)));
+    const expanding = !!n.collapsed;
+    setNotes(prev => {
+      const next = prev.map(x => (x.id === n.id ? { ...x, collapsed: !x.collapsed } : x));
+      return expanding ? moveToFront(next, n.id) : next;
+    });
     scheduleSave();
   };
 
