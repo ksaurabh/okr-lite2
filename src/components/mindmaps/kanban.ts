@@ -28,7 +28,9 @@ export const DEFAULT_COLUMNS: Array<{ id: string; name: string }> = [
   { id: 'done', name: 'Done' },
 ];
 
-export const KANBAN_COL_W = 190;      // world px per column
+// The width a column is given when a board note is created. Columns share the
+// note's width evenly once it exists, so this only sets the note's first size.
+export const KANBAN_COL_W = 190;
 export const KANBAN_MIN_H = 260;      // world px for a new board note
 const CARD_CAP = 2000;
 const NAME_CAP = 60;
@@ -154,7 +156,7 @@ export function renderNoteKanban(text: string): string {
     const cards = c.cards.map(card =>
       `<div class="kanban-card">${escapeHtml(card.text) || '<span class="kanban-empty">Empty card</span>'}</div>`
     ).join('');
-    return `<div class="kanban-col" style="width:${KANBAN_COL_W}px">`
+    return '<div class="kanban-col">'
       + `<div class="kanban-col-head">${escapeHtml(c.name)}<span class="kanban-count">${c.cards.length}</span></div>`
       + `<div class="kanban-col-body">${cards}</div></div>`;
   }).join('');

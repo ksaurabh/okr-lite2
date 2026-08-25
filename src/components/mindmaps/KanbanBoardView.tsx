@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import type { KanbanBoard } from './kanban';
-import { KANBAN_COL_W, addCard, setCardText, deleteCard, moveCard } from './kanban';
+import { addCard, setCardText, deleteCard, moveCard } from './kanban';
 
 interface Props {
   value: KanbanBoard;
@@ -69,12 +69,12 @@ export function KanbanBoardView({ value, canEdit, onChange }: Props) {
 
   return (
     <div
-      className="kanban w-full h-full overflow-auto p-1"
+      className="kanban w-full h-full"
       onMouseDown={stop}
       onDoubleClick={stop}
     >
       {value.cols.map(col => (
-        <div key={col.id} className="kanban-col" style={{ width: KANBAN_COL_W }}>
+        <div key={col.id} className="kanban-col">
           <div className="kanban-col-head">
             {col.name}
             <span className="kanban-count">{col.cards.length}</span>
@@ -143,12 +143,14 @@ export function KanbanBoardView({ value, canEdit, onChange }: Props) {
               </div>
             ))}
             {drop && drop.colId === col.id && drop.index === col.cards.length && <div className="kanban-drop" />}
-            {canEdit && (
-              <button onClick={() => startAddCard(col.id)} className="kanban-add" title={`Add a card to ${col.name}`}>
-                + Add a card
-              </button>
-            )}
           </div>
+          {/* Outside the scrolling body, so it stays put at the foot of a full
+              column while its cards scroll. */}
+          {canEdit && (
+            <button onClick={() => startAddCard(col.id)} className="kanban-add" title={`Add a card to ${col.name}`}>
+              + Add a card
+            </button>
+          )}
         </div>
       ))}
     </div>

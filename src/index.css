@@ -159,17 +159,32 @@ body {
 /* Kanban notes: columns of cards, laid out side by side and scrolled inside
    the note. The board is interactive wherever the viewer can edit, so these
    rules cover both the live board and its read-only rendering. */
-.kanban { display: flex; gap: 6px; align-items: flex-start; }
+/* The columns share the note evenly and stretch to its full height, inset by
+   the board's padding — a board resized by its note grip fills the new size
+   rather than leaving the columns stranded at their old one. */
+.kanban {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  height: 100%;
+  padding: 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
 .kanban-col {
-  flex: 0 0 auto;
+  flex: 1 1 0;
+  /* min-width beats flex-basis here: past this the board scrolls sideways
+     rather than squeezing columns down to nothing. */
+  min-width: 84px;
   display: flex;
   flex-direction: column;
-  max-height: 100%;
+  min-height: 0;
   background: rgba(255, 255, 255, 0.55);
   border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: 6px;
 }
 .kanban-col-head {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -190,7 +205,15 @@ body {
   border-radius: 999px;
   padding: 0 6px;
 }
-.kanban-col-body { display: flex; flex-direction: column; gap: 4px; padding: 5px; overflow-y: auto; }
+.kanban-col-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 5px;
+  overflow-y: auto;
+}
 .kanban-card {
   position: relative;
   display: flex;
@@ -222,10 +245,12 @@ body {
 /* Where a dragged card would land. */
 .kanban-drop { height: 2px; margin: 1px 0; background: #3b82f6; border-radius: 2px; }
 .kanban-add {
+  flex: 0 0 auto;
   text-align: left;
   font-size: 12px;
   color: #6b7280;
   padding: 3px 6px;
+  margin: 0 5px 5px;
   border-radius: 5px;
 }
 .kanban-add:hover { color: #2563eb; background: rgba(59, 130, 246, 0.08); }
