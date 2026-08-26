@@ -171,6 +171,50 @@ export function kanbanTitle(text: string): string {
   return '';
 }
 
+// ---- Export ----
+
+// The board as standalone HTML, for pasting into an email or a document.
+// Everything is styled inline and laid out as a table: mail clients drop
+// <style> blocks and most of them ignore flexbox, so a table with one column
+// per kanban column is what actually survives the trip.
+export function kanbanExportHtml(text: string, title?: string): string {
+  const b = parseNoteKanban(text);
+  const font = "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif";
+  const heads = b.cols.map(c =>
+    `<th style="${font};font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;`
+    + `color:#4b5563;text-align:left;padding:6px 8px;background:#f3f4f6;border:1px solid #e5e7eb;">`
+    + `${escapeHtml(c.name)} (${c.cards.length})</th>`
+  ).join('');
+  const cells = b.cols.map(c => {
+    const cards = c.cards.length === 0
+      ? `<div style="${font};font-size:13px;color:#9ca3af;font-style:italic;">No cards</div>`
+      : c.cards.map(card =>
+          `<div style="${font};font-size:13px;line-height:1.4;color:#1f2937;background:#ffffff;`
+          + `border:1px solid #e5e7eb;border-radius:5px;padding:6px 8px;margin:0 0 6px 0;">`
+          + `${escapeHtml(card.text).replace(/\n/g, '<br>') || '&nbsp;'}</div>`
+        ).join('');
+    return `<td style="vertical-align:top;padding:8px;border:1px solid #e5e7eb;background:#fafafa;width:${Math.floor(100 / b.cols.length)}%;">${cards}</td>`;
+  }).join('');
+  const heading = title
+    ? `<p style="${font};font-size:15px;font-weight:600;color:#111827;margin:0 0 8px 0;">${escapeHtml(title)}</p>`
+    : '';
+  return `${heading}<table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;">`
+    + `<thead><tr>${heads}</tr></thead><tbody><tr>${cells}</tr></tbody></table>`;
+}
+
+// The same board as plain text, for the clipboard's text/plain flavour and for
+// anywhere that won't take markup at all.
+export function kanbanExportText(text: string, title?: string): string {
+  const b = parseNoteKanban(text);
+  const blocks = b.cols.map(c => {
+    const cards = c.cards.length === 0 ? '  (no cards)' : c.cards
+      .map(card => `  - ${card.text.replace(/\n/g, '\n    ')}`)
+      .join('\n');
+    return `${c.name} (${c.cards.length})\n${cards}`;
+  });
+  return [...(title ? [title] : []), ...blocks].join('\n\n');
+}
+
 // One line describing the board, for a collapsed note: each column and how
 // many cards it holds.
 export function kanbanSummary(text: string): string {

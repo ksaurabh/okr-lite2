@@ -15,9 +15,10 @@ import { TableNoteEditor } from './TableNoteEditor';
 import type { KanbanBoard } from './kanban';
 import {
   emptyBoard, parseNoteKanban, serializeNoteKanban, renderNoteKanban, kanbanTitle,
-  kanbanSummary, kanbanNoteWidth, KANBAN_MIN_H,
+  kanbanSummary, kanbanNoteWidth, kanbanExportHtml, kanbanExportText, KANBAN_MIN_H,
 } from './kanban';
 import { KanbanBoardView } from './KanbanBoardView';
+import { KanbanExportModal } from './KanbanExportModal';
 import { navigateTo, navigateToMindmap, navigateBackToMindmap, getMindmapBackStack } from './nav';
 import { ShareMindmapModal } from './ShareMindmapModal';
 import { NoteLinkModal } from './NoteLinkModal';
@@ -138,6 +139,8 @@ export function MindmapCanvasPage() {
   const [resizeMenuNoteId, setResizeMenuNoteId] = useState<string | null>(null);
   // Open frame-membership menu, anchored on a note's action bar.
   const [frameMenuNoteId, setFrameMenuNoteId] = useState<string | null>(null);
+  // The kanban note whose export dialog is open.
+  const [exportKanbanNoteId, setExportKanbanNoteId] = useState<string | null>(null);
 
   const [view, setViewState] = useState<View>({ tx: 0, ty: 0, scale: 1 });
   const viewRef = useRef(view);
@@ -1844,6 +1847,18 @@ export function MindmapCanvasPage() {
                   >
                     <span>⠿</span>
                     <span>Board</span>
+                    <span className="flex-1" />
+                    <button
+                      onMouseDown={e => e.stopPropagation()}
+                      onDoubleClick={e => e.stopPropagation()}
+                      onClick={e => { e.stopPropagation(); setExportKanbanNoteId(n.id); }}
+                      className="flex items-center gap-1 uppercase tracking-wide text-black/45 hover:text-blue-600 px-1 rounded hover:bg-black/5 mr-5"
+                      style={{ cursor: 'pointer' }}
+                      title="Export this board as HTML to paste elsewhere"
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0 0l-4-4m4 4l4-4" /></svg>
+                      Export
+                    </button>
                   </div>
                 )}
                 <div className={`flex-1 min-h-0 text-sm text-gray-800 ${
@@ -2057,6 +2072,18 @@ export function MindmapCanvasPage() {
           onClose={() => closeLinkSelection()}
         />
       )}
+
+      {exportKanbanNoteId && (() => {
+        const n = notes.find(x => x.id === exportKanbanNoteId);
+        if (!n || n.format !== 'kanban') return null;
+        return (
+          <KanbanExportModal
+            html={kanbanExportHtml(n.text, title)}
+            plain={kanbanExportText(n.text, title)}
+            onClose={() => setExportKanbanNoteId(null)}
+          />
+        );
+      })()}
 
       {tagNoteId && (() => {
         const n = notes.find(x => x.id === tagNoteId);
