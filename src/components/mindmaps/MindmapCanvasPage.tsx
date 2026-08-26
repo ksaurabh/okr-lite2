@@ -28,6 +28,10 @@ import { TextPromptModal } from './TextPromptModal';
 import { useAuth } from '../../context/AuthContext';
 
 const FRAME_PAD = 20; // world px of padding between a frame's edge and its notes
+// How tall a note may grow on its own while it's being edited. Past this the
+// editor scrolls, as it did before — a pasted essay shouldn't produce a note
+// taller than the canvas.
+const MAX_AUTOGROW_H = 1200;
 const UNDO_WINDOW_MS = 30000; // how long the "undo delete" banner sticks around
 
 const API_URL = import.meta.env.VITE_API_URL || '';
@@ -772,6 +776,33 @@ export function MindmapCanvasPage() {
     setEditingTable(null);
     scheduleSave();
   };
+
+  // Grow the note being edited so every line of it is visible. Text that
+  // overflows the editor shows up as scrollHeight past clientHeight, and the
+  // note is taller by exactly that much. Only ever grows: a note sized by hand
+  // keeps its room, and nothing jumps about as text is deleted.
+  const growNoteToFit = useCallback((noteId: string, el: HTMLElement | null) => {
+    if (!el) return;
+    // Layout pixels, so the canvas zoom doesn't enter into it.
+    const overflow = el.scrollHeight - el.clientHeight;
+    if (overflow <= 0) return;
+    setNotes(prev => prev.map(n => (n.id === noteId && n.h < MAX_AUTOGROW_H
+      ? { ...n, h: Math.min(n.h + overflow, MAX_AUTOGROW_H) }
+      : n)));
+  }, []);
+
+  // …and again whenever an editor opens, since the note may already hold more
+  // text than it has room for.
+  useEffect(() => {
+    if (editingId === null) return;
+    const el = editingFormat === 'html' ? richRef.current
+      : editingFormat === 'markdown' ? editorRef.current
+      : null;
+    if (!el) return;
+    // After the editor has been laid out with its content.
+    const raf = requestAnimationFrame(() => growNoteToFit(editingId, el));
+    return () => cancelAnimationFrame(raf);
+  }, [editingId, editingFormat, growNoteToFit]);
 
   // Seed the rich editor when it opens (and when a paste promotes a markdown
   // note into one). React never re-renders its children afterwards, so typing
@@ -1853,6 +1884,7 @@ export function MindmapCanvasPage() {
                       onMouseDown={e => e.stopPropagation()}
                       onDoubleClick={e => e.stopPropagation()}
                       onPaste={handleRichPaste}
+                      onInput={e => growNoteToFit(n.id, e.currentTarget)}
                       onKeyDown={e => {
                         if (e.key === 'Escape') { (e.target as HTMLElement).blur(); }
                         else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); commitEdit(); }
@@ -1865,7 +1897,7 @@ export function MindmapCanvasPage() {
                       autoFocus
                       ref={editorRef}
                       value={editingText}
-                      onChange={e => setEditingText(e.target.value)}
+                      onChange={e => { setEditingText(e.target.value); growNoteToFit(n.id, e.currentTarget); }}
                       onPaste={handlePlainPaste}
                       onBlur={() => { if (!linkSelection && editingFormatRef.current === 'markdown') commitEdit(); }}
                       onMouseDown={e => e.stopPropagation()}
