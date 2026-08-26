@@ -142,6 +142,8 @@ export function MindmapCanvasPage() {
   const [frameMenuNoteId, setFrameMenuNoteId] = useState<string | null>(null);
   // The kanban note whose export dialog is open.
   const [exportKanbanNoteId, setExportKanbanNoteId] = useState<string | null>(null);
+  // The note whose source was just copied, for the button's "Copied" flash.
+  const [copiedNoteId, setCopiedNoteId] = useState<string | null>(null);
 
   const [view, setViewState] = useState<View>({ tx: 0, ty: 0, scale: 1 });
   const viewRef = useRef(view);
@@ -728,6 +730,24 @@ export function MindmapCanvasPage() {
     const next = notes.slice();
     next.push(next.splice(i, 1)[0]);
     return next;
+  };
+
+  // Switch a markdown note between the rendered note and its source. Only
+  // markdown has a source worth showing — rich text, tables and boards are
+  // stored as markup or JSON, which says nothing to a reader.
+  const toggleRawView = (n: MindmapNote) => {
+    if (!canEditRef.current || n.format) return;
+    setNotes(prev => prev.map(x => (x.id === n.id ? { ...x, rawView: !x.rawView } : x)));
+    scheduleSave();
+  };
+
+  // Copy a note's markdown source. Handy in raw view, which is where someone
+  // goes when they want the source rather than the note.
+  const copyNoteSource = (n: MindmapNote) => {
+    navigator.clipboard?.writeText(n.text).then(
+      () => { setCopiedNoteId(n.id); window.setTimeout(() => setCopiedNoteId(null), 1500); },
+      () => { /* clipboard blocked — the text is selectable in raw view */ },
+    );
   };
 
   // Collapse a note to its first line, or open it back up. The note keeps its
@@ -1655,6 +1675,21 @@ export function MindmapCanvasPage() {
                     className="absolute -top-10 left-0 z-40 flex items-center gap-1.5 bg-white rounded-lg shadow-lg border border-gray-200 px-2 py-1"
                     style={{ cursor: 'default' }}
                   >
+                    {/* Only markdown has a source worth reading, so only a
+                        markdown note offers the switch. */}
+                    {!n.format && (
+                      <>
+                        <button
+                          onMouseDown={e => e.stopPropagation()}
+                          onClick={e => { e.stopPropagation(); toggleRawView(n); }}
+                          className={`p-0.5 ${n.rawView ? 'text-blue-600 hover:text-blue-800' : 'text-gray-500 hover:text-blue-600'}`}
+                          title={n.rawView ? 'Show the rendered note' : 'Show the raw markdown'}
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
+                        </button>
+                        <span className="w-px h-4 bg-gray-200" />
+                      </>
+                    )}
                     {/* A kanban note has no text editor — its cards are edited
                         on the board itself. */}
                     {n.format !== 'kanban' && (
@@ -1850,6 +1885,39 @@ export function MindmapCanvasPage() {
                 {/* A kanban note's board fills it, and the board eats mouse
                     events so cards can be dragged — this strip is what's left
                     to grab when the note itself needs moving. */}
+                {!n.format && n.rawView && !n.collapsed && editingId !== n.id && (
+                  <div
+                    className="flex items-center gap-1 px-2 pt-1 pb-0.5 text-[10px] uppercase tracking-wide text-black/40 flex-shrink-0"
+                    style={{ cursor: canEdit ? 'move' : 'default' }}
+                    title={canEdit ? 'Drag here to move the note' : undefined}
+                  >
+                    <span>⠿</span>
+                    <span>Markdown</span>
+                    <span className="flex-1" />
+                    <button
+                      onMouseDown={e => e.stopPropagation()}
+                      onDoubleClick={e => e.stopPropagation()}
+                      onClick={e => { e.stopPropagation(); copyNoteSource(n); }}
+                      className="uppercase tracking-wide text-black/45 hover:text-blue-600 px-1 rounded hover:bg-black/5"
+                      style={{ cursor: 'pointer' }}
+                      title="Copy the markdown source"
+                    >
+                      {copiedNoteId === n.id ? 'Copied' : 'Copy'}
+                    </button>
+                    {canEdit && (
+                      <button
+                        onMouseDown={e => e.stopPropagation()}
+                        onDoubleClick={e => e.stopPropagation()}
+                        onClick={e => { e.stopPropagation(); toggleRawView(n); }}
+                        className="uppercase tracking-wide text-black/45 hover:text-blue-600 px-1 rounded hover:bg-black/5 mr-5"
+                        style={{ cursor: 'pointer' }}
+                        title="Show the rendered note"
+                      >
+                        Rendered
+                      </button>
+                    )}
+                  </div>
+                )}
                 {n.format === 'kanban' && !n.collapsed && (
                   <div
                     className="flex items-center gap-1 px-2 pt-1 pb-0.5 text-[10px] uppercase tracking-wide text-black/40 flex-shrink-0"
@@ -1935,6 +2003,15 @@ export function MindmapCanvasPage() {
                       }}
                       className="w-full h-full box-border resize-none bg-white/70 p-2 text-sm focus:outline-none rounded-b-md"
                     />
+                  ) : !n.format && n.rawView ? (
+                    // The source, selectable: raw view is where someone goes to
+                    // take the markdown, so its mousedown stays put rather than
+                    // starting a drag. The strip above moves the note.
+                    <pre
+                      onMouseDown={e => e.stopPropagation()}
+                      onDoubleClick={e => e.stopPropagation()}
+                      className="note-raw select-text w-full h-full overflow-auto px-2 pb-2 text-xs leading-snug text-gray-700"
+                    >{n.text}</pre>
                   ) : (
                     <div
                       className={`note-md break-words${n.format === 'html' ? ' note-rich' : ''}${n.format === 'table' ? ' note-table-wrap' : ''}`}

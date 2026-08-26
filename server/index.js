@@ -568,6 +568,8 @@ function sanitizeNote(note) {
     // Collapsed is a display state, but it belongs to the note: everyone
     // looking at the map sees it the same way.
     ...(n.collapsed === true ? { collapsed: true } : {}),
+    // As is showing a markdown note as its source rather than rendered.
+    ...(n.rawView === true ? { rawView: true } : {}),
   };
 }
 

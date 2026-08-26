@@ -21,6 +21,9 @@ export interface MindmapNote {
   // Collapsed notes show only their first line, in a single-line strip. `h` is
   // left alone while collapsed, so expanding restores the height it had.
   collapsed?: boolean;
+  // Show the markdown source instead of the rendered note. Only markdown notes
+  // have a source to show, so it means nothing on the other formats.
+  rawView?: boolean;
 }
 
 // A per-mindmap named tag filter, granted to zero or more user groups.
