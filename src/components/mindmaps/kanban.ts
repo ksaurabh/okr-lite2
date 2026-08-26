@@ -202,6 +202,21 @@ export function kanbanExportHtml(text: string, title?: string): string {
     + `<thead><tr>${heads}</tr></thead><tbody><tr>${cells}</tr></tbody></table>`;
 }
 
+// The board as markdown: a section per list, a bullet per card. A markdown
+// table would put every card of a list in one cell, which reads worse than the
+// sections do.
+export function kanbanExportMarkdown(text: string, title?: string): string {
+  const b = parseNoteKanban(text);
+  const blocks = b.cols.map(c => {
+    const cards = c.cards.length === 0 ? '_No cards_' : c.cards
+      // A card's own line breaks are continuation lines of its bullet.
+      .map(card => `- ${card.text.replace(/\n/g, '\n  ')}`)
+      .join('\n');
+    return `## ${c.name} (${c.cards.length})\n\n${cards}`;
+  });
+  return [...(title ? [`# ${title}`] : []), ...blocks].join('\n\n');
+}
+
 // The same board as plain text, for the clipboard's text/plain flavour and for
 // anywhere that won't take markup at all.
 export function kanbanExportText(text: string, title?: string): string {

@@ -3,80 +3,110 @@ import { Modal } from '../common/Modal';
 import { Button } from '../common/Button';
 
 interface Props {
-  html: string;   // the board as standalone HTML
-  plain: string;  // …and as plain text, for anywhere that won't take markup
+  html: string;      // the board as standalone HTML
+  markdown: string;  // …as markdown
+  plain: string;     // …and as plain text, for anywhere that won't take markup
   onClose: () => void;
 }
 
-type Copied = 'none' | 'board' | 'source';
+type Format = 'preview' | 'html' | 'markdown' | 'plain';
 
-// Export a kanban board: the HTML is shown so it can be read (and hand-copied),
-// and the buttons put it on the clipboard — either as a formatted board that
-// pastes into an email as a table, or as the markup itself.
-export function KanbanExportModal({ html, plain, onClose }: Props) {
-  const [copied, setCopied] = useState<Copied>('none');
+const TABS: Array<{ id: Format; label: string; hint: string }> = [
+  { id: 'preview', label: 'Preview', hint: 'The board as it will arrive in an email' },
+  { id: 'html', label: 'HTML', hint: 'The markup behind the preview' },
+  { id: 'markdown', label: 'Markdown', hint: 'A section per list, a bullet per card' },
+  { id: 'plain', label: 'Plain text', hint: 'No markup at all' },
+];
+
+// Export a kanban board. The preview shows it rendered, the other tabs show the
+// source in each format, and Copy always copies whichever tab is open — as a
+// formatted board from the preview, as the text itself from the rest.
+export function KanbanExportModal({ html, markdown, plain, onClose }: Props) {
+  const [format, setFormat] = useState<Format>('preview');
+  const [copied, setCopied] = useState(false);
   const [failed, setFailed] = useState(false);
 
-  const flash = (what: Copied) => {
-    setFailed(false);
-    setCopied(what);
-    window.setTimeout(() => setCopied('none'), 2000);
-  };
+  const source = format === 'markdown' ? markdown : format === 'plain' ? plain : html;
 
-  // A rich copy carries both flavours: mail clients take the HTML and paste a
-  // real table, while a plain-text field gets the readable outline.
-  const copyBoard = async () => {
+  const copy = async () => {
     try {
-      if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+      // From the preview, both flavours go on the clipboard: a mail client
+      // takes the HTML and pastes a real table, while a plain-text field gets
+      // the readable outline. The source tabs copy exactly what they show.
+      if (format === 'preview' && typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
         await navigator.clipboard.write([new ClipboardItem({
           'text/html': new Blob([html], { type: 'text/html' }),
           'text/plain': new Blob([plain], { type: 'text/plain' }),
         })]);
       } else {
-        // Older browsers: no way to put HTML on the clipboard, so the outline
-        // is what they get.
-        await navigator.clipboard.writeText(plain);
+        // Older browsers can't put HTML on the clipboard, so the preview falls
+        // back to the outline.
+        await navigator.clipboard.writeText(format === 'preview' ? plain : source);
       }
-      flash('board');
+      setFailed(false);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
     } catch {
       setFailed(true);
     }
   };
 
-  const copySource = async () => {
-    try {
-      await navigator.clipboard.writeText(html);
-      flash('source');
-    } catch {
-      setFailed(true);
-    }
-  };
+  const active = TABS.find(t => t.id === format)!;
 
   return (
-    <Modal isOpen onClose={onClose} title="Export board">
+    <Modal isOpen onClose={onClose} title="Export board" size="xl">
       <div className="space-y-3">
+        <div className="flex items-center gap-1 border-b border-gray-200">
+          {TABS.map(t => (
+            <button
+              key={t.id}
+              onClick={() => { setFormat(t.id); setCopied(false); setFailed(false); }}
+              title={t.hint}
+              className={`text-sm px-3 py-1.5 -mb-px border-b-2 ${
+                t.id === format
+                  ? 'border-blue-500 text-blue-700 font-medium'
+                  : 'border-transparent text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
         <p className="text-sm text-gray-600">
-          Copy the board and paste it into an email or a document — it arrives as a table, one column
-          per list. The HTML behind it is below.
+          {format === 'preview'
+            ? 'Copy the board and paste it into an email or a document — it arrives as a table, one column per list.'
+            : active.hint + '. Copy it and paste it wherever you need the source.'}
         </p>
-        <textarea
-          readOnly
-          value={html}
-          onFocus={e => e.currentTarget.select()}
-          rows={10}
-          className="w-full border border-gray-300 rounded-md p-2 font-mono text-[11px] leading-snug text-gray-700 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
+
+        {format === 'preview' ? (
+          <div className="border border-gray-200 rounded-md p-3 bg-white overflow-auto max-h-[50vh]">
+            {/* Generated by kanbanExportHtml from escaped card text — the only
+                markup in it is the markup written there. */}
+            <div dangerouslySetInnerHTML={{ __html: html }} />
+          </div>
+        ) : (
+          <textarea
+            readOnly
+            value={source}
+            onFocus={e => e.currentTarget.select()}
+            rows={14}
+            className="w-full border border-gray-300 rounded-md p-2 font-mono text-[11px] leading-snug text-gray-700 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        )}
+
         {failed && (
           <p className="text-xs text-red-600">
-            The clipboard is blocked in this browser. Select the text above and copy it by hand.
+            The clipboard is blocked in this browser. {format === 'preview'
+              ? 'Open one of the source tabs, select the text and copy it by hand.'
+              : 'Select the text above and copy it by hand.'}
           </p>
         )}
+
         <div className="flex justify-end gap-2">
-          <Button variant="secondary" onClick={copySource}>
-            {copied === 'source' ? 'Copied' : 'Copy HTML'}
-          </Button>
-          <Button onClick={copyBoard}>
-            {copied === 'board' ? 'Copied' : 'Copy board'}
+          <Button variant="secondary" onClick={onClose}>Close</Button>
+          <Button onClick={copy}>
+            {copied ? 'Copied' : format === 'preview' ? 'Copy board' : `Copy ${active.label}`}
           </Button>
         </div>
       </div>

@@ -6,10 +6,19 @@ interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
   title: string;
+  // Dialogs holding something wide — a preview, a table — can ask for more
+  // room than the default.
+  size?: 'md' | 'lg' | 'xl';
   children: ReactNode;
 }
 
-export function Modal({ isOpen, onClose, title, children }: ModalProps) {
+const SIZE_CLASS: Record<NonNullable<ModalProps['size']>, string> = {
+  md: 'max-w-md',
+  lg: 'max-w-lg',
+  xl: 'max-w-3xl',
+};
+
+export function Modal({ isOpen, onClose, title, size = 'lg', children }: ModalProps) {
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -34,7 +43,7 @@ export function Modal({ isOpen, onClose, title, children }: ModalProps) {
         className="absolute inset-0 bg-black/50"
         onClick={onClose}
       />
-      <div className="relative bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
+      <div className={`relative bg-white rounded-lg shadow-xl ${SIZE_CLASS[size]} w-full mx-4 max-h-[90vh] overflow-y-auto`}>
         <div className="flex items-center justify-between p-4 border-b">
           <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
           <Button variant="ghost" size="sm" onClick={onClose}>

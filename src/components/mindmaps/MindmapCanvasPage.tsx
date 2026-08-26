@@ -15,7 +15,8 @@ import { TableNoteEditor } from './TableNoteEditor';
 import type { KanbanBoard } from './kanban';
 import {
   emptyBoard, parseNoteKanban, serializeNoteKanban, renderNoteKanban, kanbanTitle,
-  kanbanSummary, kanbanNoteWidth, kanbanExportHtml, kanbanExportText, KANBAN_MIN_H,
+  kanbanSummary, kanbanNoteWidth, kanbanExportHtml, kanbanExportMarkdown, kanbanExportText,
+  KANBAN_MIN_H,
 } from './kanban';
 import { KanbanBoardView } from './KanbanBoardView';
 import { KanbanExportModal } from './KanbanExportModal';
@@ -2079,6 +2080,7 @@ export function MindmapCanvasPage() {
         return (
           <KanbanExportModal
             html={kanbanExportHtml(n.text, title)}
+            markdown={kanbanExportMarkdown(n.text, title)}
             plain={kanbanExportText(n.text, title)}
             onClose={() => setExportKanbanNoteId(null)}
           />
