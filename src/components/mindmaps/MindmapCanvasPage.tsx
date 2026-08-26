@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Mindmap, MindmapNote, MindmapView, MindmapFrame, MindmapTemplate } from './types';
 import {
   PALETTE, DEFAULT_NOTE_COLOR, NOTE_MIN_W, NOTE_MIN_H,
@@ -779,6 +779,12 @@ export function MindmapCanvasPage() {
     setEditingId(null);
     setEditingTable(null);
     scheduleSave();
+    // The rendered note is taller than its source — headings, list bullets and
+    // paragraph spacing all take room the editor didn't need — so measure again
+    // once it's on screen and give it whatever it's short of.
+    requestAnimationFrame(() => {
+      growNoteToFit(targetId, document.querySelector<HTMLElement>(`[data-note-body="${targetId}"]`));
+    });
   };
 
   // Grow the note being edited so every line of it is visible. Text that
@@ -789,24 +795,28 @@ export function MindmapCanvasPage() {
     if (!el) return;
     // Layout pixels, so the canvas zoom doesn't enter into it.
     const overflow = el.scrollHeight - el.clientHeight;
+    // A scrolling box leaves its bottom padding out of scrollHeight, so the
+    // last line ends up flush against the edge without a little slack.
     if (overflow <= 0) return;
+    const grow = overflow + 8;
     setNotes(prev => prev.map(n => (n.id === noteId && n.h < MAX_AUTOGROW_H
-      ? { ...n, h: Math.min(n.h + overflow, MAX_AUTOGROW_H) }
+      ? { ...n, h: Math.min(n.h + grow, MAX_AUTOGROW_H) }
       : n)));
   }, []);
 
-  // …and again whenever an editor opens, since the note may already hold more
-  // text than it has room for.
-  useEffect(() => {
+  // …and again after every change to the text, and when an editor opens on a
+  // note that already holds more than it has room for. A layout effect, so the
+  // measuring happens once the editor is in the DOM with its content but before
+  // the browser paints — the note is never seen at the wrong size. Keyed on the
+  // text too, so the paths that rewrite it (pasting, inserting a link, changing
+  // format) resize the note just as typing does.
+  useLayoutEffect(() => {
     if (editingId === null) return;
     const el = editingFormat === 'html' ? richRef.current
       : editingFormat === 'markdown' ? editorRef.current
       : null;
-    if (!el) return;
-    // After the editor has been laid out with its content.
-    const raf = requestAnimationFrame(() => growNoteToFit(editingId, el));
-    return () => cancelAnimationFrame(raf);
-  }, [editingId, editingFormat, growNoteToFit]);
+    growNoteToFit(editingId, el);
+  }, [editingId, editingFormat, editingText, growNoteToFit]);
 
   // Seed the rich editor when it opens (and when a paste promotes a markdown
   // note into one). React never re-renders its children afterwards, so typing
@@ -1862,7 +1872,7 @@ export function MindmapCanvasPage() {
                     </button>
                   </div>
                 )}
-                <div className={`flex-1 min-h-0 text-sm text-gray-800 ${
+                <div data-note-body={n.id} className={`flex-1 min-h-0 text-sm text-gray-800 ${
                   n.collapsed ? 'overflow-hidden' : n.format === 'kanban' ? 'overflow-hidden' : editingId === n.id ? 'overflow-hidden' : 'overflow-auto p-2'
                 }`}>
                   {n.collapsed ? (

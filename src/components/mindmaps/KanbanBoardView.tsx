@@ -27,6 +27,14 @@ export function KanbanBoardView({ value, canEdit, onChange }: Props) {
 
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
 
+  // Size a card's editor to its content: reset to one row, then take whatever
+  // the text actually needs (bounded, so a pasted essay doesn't fill the note).
+  const autoSize = (el: HTMLTextAreaElement | null) => {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
+  };
+
   const startAddCard = (colId: string) => {
     const { board, cardId } = addCard(value, colId);
     onChange(board);
@@ -109,7 +117,11 @@ export function KanbanBoardView({ value, canEdit, onChange }: Props) {
                     <textarea
                       autoFocus
                       value={card.text}
-                      rows={Math.min(6, Math.max(1, card.text.split('\n').length))}
+                      rows={1}
+                      // Grow to the text rather than counting hard newlines: a
+                      // long line that wraps needs the room just as much.
+                      ref={autoSize}
+                      onInput={e => autoSize(e.currentTarget)}
                       onChange={e => onChange(setCardText(value, card.id, e.target.value))}
                       onBlur={() => {
                         setEditingCardId(null);
