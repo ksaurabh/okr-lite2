@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { Modal } from '../common/Modal';
 import { Button } from '../common/Button';
@@ -7,16 +8,20 @@ interface Props {
   label: string;
   initial: string;
   submitLabel: string;
+  // Optional context shown above the field — what the thing being named is
+  // part of, what renaming it affects, and so on.
+  info?: ReactNode;
   onSubmit: (value: string) => void;
   onClose: () => void;
 }
 
 // A small in-app text-entry dialog (used instead of window.prompt).
-export function TextPromptModal({ title, label, initial, submitLabel, onSubmit, onClose }: Props) {
+export function TextPromptModal({ title, label, initial, submitLabel, info, onSubmit, onClose }: Props) {
   const [value, setValue] = useState(initial);
   return (
     <Modal isOpen onClose={onClose} title={title}>
       <div className="space-y-4">
+        {info}
         <div>
           <label className="block text-sm text-gray-600 mb-1">{label}</label>
           <input

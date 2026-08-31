@@ -143,6 +143,30 @@ function withGeometry(frames: MindmapFrame[], notes: MindmapNote[]): MindmapFram
   });
 }
 
+// Frames holding this one. Two ways to be inside another frame, and both count:
+// every note of this frame is also one of theirs (which is what makes dragging
+// theirs drag this one), or their box covers this one's. A frame with the same
+// notes as another isn't its child — neither contains the other.
+function containingFrames(
+  child: MindmapFrame, frames: MindmapFrame[], rectById: Map<string, FrameRect>,
+): Array<{ frame: MindmapFrame; byNotes: boolean; byBox: boolean }> {
+  const childRect = rectById.get(child.id);
+  const out: Array<{ frame: MindmapFrame; byNotes: boolean; byBox: boolean }> = [];
+  for (const f of frames) {
+    if (f.id === child.id) continue;
+    const byNotes = child.noteIds.length > 0
+      && f.noteIds.length > child.noteIds.length
+      && child.noteIds.every(id => f.noteIds.includes(id));
+    const r = rectById.get(f.id);
+    const byBox = !!(r && childRect
+      && r.x <= childRect.x && r.y <= childRect.y
+      && r.x + r.w >= childRect.x + childRect.w && r.y + r.h >= childRect.y + childRect.h
+      && r.w * r.h > childRect.w * childRect.h);
+    if (byNotes || byBox) out.push({ frame: f, byNotes, byBox });
+  }
+  return out;
+}
+
 // How tall a collapsed frame's bar is, in world px.
 const FRAME_COLLAPSED_H = 30;
 // A frame's box is its own, so it can be drawn tighter than the notes it holds
@@ -1700,7 +1724,16 @@ export function MindmapCanvasPage() {
                   data-frame
                   onMouseDown={canEdit ? e => startFrameDrag(e, frame) : undefined}
                   onDoubleClick={canEdit ? () => setRenameFrameId(frame.id) : undefined}
-                  style={{ position: 'absolute', left: rect.x, top: rect.y - 22, maxWidth: rect.w, cursor: canEdit ? 'move' : 'default' }}
+                  // Open, the label sits above the outline; collapsed, the bar
+                  // is all there is of the frame, so the label lives in it —
+                  // above the bar's own drag surface, or the chevron would be
+                  // unclickable.
+                  style={frame.collapsed
+                    ? {
+                        position: 'absolute', left: rect.x, top: rect.y, width: rect.w, height: rect.h,
+                        padding: '0 8px', zIndex: 2, cursor: canEdit ? 'move' : 'default',
+                      }
+                    : { position: 'absolute', left: rect.x, top: rect.y - 22, maxWidth: rect.w, cursor: canEdit ? 'move' : 'default' }}
                   className="group flex items-center gap-1"
                   title={canEdit ? 'Drag to move frame · double-click to rename' : undefined}
                 >
@@ -1709,7 +1742,9 @@ export function MindmapCanvasPage() {
                       onMouseDown={e => e.stopPropagation()}
                       onDoubleClick={e => e.stopPropagation()}
                       onClick={e => { e.stopPropagation(); toggleFrameCollapse(frame.id); }}
-                      className="text-gray-500 hover:text-blue-600 bg-gray-100/90 rounded shadow-sm p-0.5 leading-none"
+                      className={`text-gray-500 hover:text-blue-600 rounded p-0.5 leading-none${
+                        frame.collapsed ? '' : ' bg-gray-100/90 shadow-sm'
+                      }`}
                       style={{ cursor: 'pointer' }}
                       title={frame.collapsed ? 'Expand frame' : 'Collapse frame (hides its notes)'}
                     >
@@ -1718,7 +1753,9 @@ export function MindmapCanvasPage() {
                       </svg>
                     </button>
                   )}
-                  <span className="truncate text-xs font-medium text-gray-600 bg-gray-100/90 rounded px-1.5 py-0.5 shadow-sm">
+                  <span className={`truncate text-xs font-medium text-gray-600 rounded px-1.5 py-0.5${
+                    frame.collapsed ? '' : ' bg-gray-100/90 shadow-sm'
+                  }`}>
                     {frame.name}
                     {frame.collapsed && (
                       <span className="ml-1 text-gray-400">
@@ -2358,12 +2395,47 @@ export function MindmapCanvasPage() {
       {renameFrameId && (() => {
         const f = frames.find(x => x.id === renameFrameId);
         if (!f) return null;
+        const parents = containingFrames(f, frames, new Map(frameRects.map(fr => [fr.frame.id, fr.rect])));
         return (
           <TextPromptModal
             title="Rename frame"
             label="Frame name"
             initial={f.name}
             submitLabel="Save"
+            info={
+              <div className="text-sm text-gray-600 space-y-1">
+                <p>
+                  {f.noteIds.length} {f.noteIds.length === 1 ? 'note' : 'notes'}
+                  {f.collapsed ? ', collapsed' : ''}.
+                </p>
+                {parents.length > 0 ? (
+                  <div className="rounded-md bg-gray-50 border border-gray-200 px-3 py-2 space-y-1">
+                    <p className="text-xs uppercase tracking-wide text-gray-400">Inside</p>
+                    <ul className="space-y-0.5">
+                      {parents.map(({ frame: p, byNotes, byBox }) => (
+                        <li key={p.id} className="flex items-baseline gap-2">
+                          <span className="font-medium text-gray-800">{p.name}</span>
+                          <span className="text-xs text-gray-500">
+                            {p.noteIds.length} {p.noteIds.length === 1 ? 'note' : 'notes'}
+                            {' · '}
+                            {byNotes && byBox ? 'holds these notes and this box'
+                              : byNotes ? 'holds every note of this frame'
+                              : 'its box covers this one'}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="text-xs text-gray-500">
+                      {parents.some(p => p.byNotes)
+                        ? 'Moving that frame moves this one; moving this one leaves it where it is.'
+                        : 'Each frame keeps its own position and size — moving one never moves the other.'}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-400">Not inside another frame.</p>
+                )}
+              </div>
+            }
             onSubmit={name => renameFrame(f.id, name)}
             onClose={() => setRenameFrameId(null)}
           />
