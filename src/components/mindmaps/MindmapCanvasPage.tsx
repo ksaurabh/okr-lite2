@@ -1740,7 +1740,7 @@ export function MindmapCanvasPage() {
                 <div
                   data-frame-box={frame.id}
                   style={{ position: 'absolute', left: rect.x, top: rect.y, width: rect.w, height: rect.h, pointerEvents: 'none' }}
-                  className={`rounded-lg border-2 border-gray-400/50${frame.collapsed ? ' bg-gray-200/70 border-dashed' : ''}`}
+                  className={`rounded-lg border border-gray-400/25${frame.collapsed ? ' bg-gray-200/50 border-dashed' : ''}`}
                 >
                   {canEdit && frame.collapsed && (
                     <div
