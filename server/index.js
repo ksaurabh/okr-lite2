@@ -639,10 +639,17 @@ function sanitizeFrame(f) {
     ? Array.from(new Set(o.noteIds.filter(x => typeof x === 'string').map(x => x.slice(0, 64)))).slice(0, 1000)
     : [];
   const frame = { id, name, noteIds };
+  // The frame's own rectangle. Position may be negative (world coordinates);
+  // size may not. Kept as a pair each way, since half a rectangle is no use.
+  if (Number.isFinite(Number(o.x)) && Number.isFinite(Number(o.y))) {
+    frame.x = Math.max(-1000000, Math.min(1000000, Math.round(Number(o.x))));
+    frame.y = Math.max(-1000000, Math.min(1000000, Math.round(Number(o.y))));
+  }
   if (Number.isFinite(Number(o.w)) && Number.isFinite(Number(o.h))) {
     frame.w = Math.max(0, Math.min(20000, Math.round(Number(o.w))));
     frame.h = Math.max(0, Math.min(20000, Math.round(Number(o.h))));
   }
+  if (o.collapsed === true) frame.collapsed = true;
   return frame;
 }
 function sanitizeFrames(frames) {

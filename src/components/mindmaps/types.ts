@@ -37,17 +37,28 @@ export interface MindmapView {
   isDefault?: boolean;         // if true, this view is applied on load
 }
 
-// A named rectangle grouping a set of notes. Its top-left is derived from the
-// member notes' bounding box; moving the frame moves all members together.
-// Resizing it only changes the box: `w`/`h` (world px, unset until someone
-// drags the grip) hold that manual size, and the box still grows past it if the
-// notes need the room.
+// A named rectangle grouping a set of notes. Moving the frame moves all members
+// together.
+//
+// `x`/`y`/`w`/`h` (world px) are the frame's own geometry, set when it's created
+// and changed only when the frame itself is dragged or resized. The box drawn is
+// that rectangle union the members' bounding box, so:
+//   - notes moving about inside leave the frame exactly where it is, which is
+//     what keeps an outer frame still while a frame nested in it is moved;
+//   - a note leaving the frame still gets a box around it, and the frame snaps
+//     back to its own size once the note returns.
+// Frames saved before this geometry existed have none; they're given it from
+// their notes the first time the map is opened.
 export interface MindmapFrame {
   id: string;
   name: string;
   noteIds: string[];
+  x?: number;
+  y?: number;
   w?: number;
   h?: number;
+  // A collapsed frame hides its notes and draws as a single title bar.
+  collapsed?: boolean;
 }
 
 // A saved card size (width × height, world px). Apply a template to a note to

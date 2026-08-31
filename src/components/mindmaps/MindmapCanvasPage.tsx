@@ -93,15 +93,62 @@ type Interaction =
   | { kind: 'marquee'; startX: number; startY: number }
   | { kind: 'drag'; id: string; startX: number; startY: number; origX: number; origY: number }
   | { kind: 'groupdrag'; startX: number; startY: number; origins: Record<string, { x: number; y: number }> }
-  | { kind: 'framedrag'; frameId: string; startX: number; startY: number; origins: Record<string, { x: number; y: number }> }
-  | { kind: 'resize'; id: string; startX: number; startY: number; origW: number; origH: number }
   | {
-      kind: 'frameresize'; frameId: string; startX: number; startY: number;
-      origRect: FrameRect; contentW: number; contentH: number;
+      kind: 'framedrag'; frameId: string; startX: number; startY: number;
+      origins: Record<string, { x: number; y: number }>;
+      // Top-left of every frame travelling with this drag when it began — the
+      // dragged frame, and any frame nested inside it. Boxes no longer follow
+      // their notes, so they have to be carried explicitly.
+      frameOrigins: Record<string, { x: number; y: number }>;
     }
+  | { kind: 'resize'; id: string; startX: number; startY: number; origW: number; origH: number }
+  | { kind: 'frameresize'; frameId: string; startX: number; startY: number; origRect: FrameRect }
   | null;
 
 interface FrameRect { x: number; y: number; w: number; h: number; }
+
+// The padded box around a set of notes — what a frame has to cover to hold them.
+function contentRect(members: MindmapNote[]): FrameRect | null {
+  if (!members.length) return null;
+  const minX = Math.min(...members.map(n => n.x)) - FRAME_PAD;
+  const minY = Math.min(...members.map(n => n.y)) - FRAME_PAD;
+  const maxX = Math.max(...members.map(n => n.x + n.w)) + FRAME_PAD;
+  const maxY = Math.max(...members.map(n => n.y + noteRenderHeight(n))) + FRAME_PAD;
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
+function unionRect(a: FrameRect, b: FrameRect): FrameRect {
+  const x = Math.min(a.x, b.x);
+  const y = Math.min(a.y, b.y);
+  return { x, y, w: Math.max(a.x + a.w, b.x + b.w) - x, h: Math.max(a.y + a.h, b.y + b.h) - y };
+}
+
+// A frame's own rectangle, if it has one.
+function storedRect(f: MindmapFrame): FrameRect | null {
+  return f.x !== undefined && f.y !== undefined && f.w !== undefined && f.h !== undefined
+    ? { x: f.x, y: f.y, w: f.w, h: f.h }
+    : null;
+}
+
+// Frames saved before they carried their own geometry get it from their notes,
+// once, as the map loads — so from then on they hold still.
+function withGeometry(frames: MindmapFrame[], notes: MindmapNote[]): MindmapFrame[] {
+  const byId = new Map(notes.map(n => [n.id, n]));
+  return frames.map(f => {
+    if (storedRect(f)) return f;
+    const rect = contentRect(f.noteIds.map(id => byId.get(id)).filter((n): n is MindmapNote => !!n));
+    if (!rect) return f;
+    // A frame resized by hand kept a manual w/h; that size still wins.
+    return { ...f, x: rect.x, y: rect.y, w: Math.max(rect.w, f.w ?? 0), h: Math.max(rect.h, f.h ?? 0) };
+  });
+}
+
+// How tall a collapsed frame's bar is, in world px.
+const FRAME_COLLAPSED_H = 30;
+// A frame's box is its own, so it can be drawn tighter than the notes it holds
+// — down to something still big enough to grab.
+const FRAME_MIN_W = 80;
+const FRAME_MIN_H = 60;
 
 // How close (screen px) the pointer must come to a frame's outline before that
 // frame reveals its resize grip.
@@ -232,7 +279,11 @@ export function MindmapCanvasPage() {
         setSharedWith(Array.isArray(d.mindmap.sharedWith) ? d.mindmap.sharedWith : []);
         const loadedViews = Array.isArray(d.mindmap.views) ? d.mindmap.views : [];
         setViews(loadedViews);
-        const loadedFrames = Array.isArray(d.mindmap.frames) ? d.mindmap.frames : [];
+        const loadedNotesForFrames = Array.isArray(d.mindmap.notes) ? d.mindmap.notes : [];
+        const loadedFrames = withGeometry(
+          Array.isArray(d.mindmap.frames) ? d.mindmap.frames : [],
+          loadedNotesForFrames,
+        );
         setFrames(loadedFrames);
         setTemplates(Array.isArray(d.mindmap.templates) ? d.mindmap.templates : []);
         setCanEdit(!!d.canEdit);
@@ -284,7 +335,7 @@ export function MindmapCanvasPage() {
     const el = canvasRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    const ns = notesRef.current;
+    const ns = notesRef.current.filter(n => !hiddenNoteIdsRef.current.has(n.id));
     if (ns.length === 0) { setView({ tx: 0, ty: 0, scale: 1 }); return; }
     const minX = Math.min(...ns.map(n => n.x));
     const minY = Math.min(...ns.map(n => n.y));
@@ -517,6 +568,7 @@ export function MindmapCanvasPage() {
         const minX = Math.min(a.wx, b.wx), maxX = Math.max(a.wx, b.wx);
         const minY = Math.min(a.wy, b.wy), maxY = Math.max(a.wy, b.wy);
         setSelectedIds(notesRef.current
+          .filter(n => !hiddenNoteIdsRef.current.has(n.id))
           .filter(n => n.x < maxX && n.x + n.w > minX && n.y < maxY && n.y + noteRenderHeight(n) > minY)
           .map(n => n.id));
         return;
@@ -535,6 +587,11 @@ export function MindmapCanvasPage() {
         setNotes(prev => prev.map(n => (it.origins[n.id]
           ? { ...n, x: it.origins[n.id].x + dx, y: it.origins[n.id].y + dy }
           : n)));
+        if (it.kind === 'framedrag') {
+          setFrames(prev => prev.map(f => (it.frameOrigins[f.id]
+            ? { ...f, x: it.frameOrigins[f.id].x + dx, y: it.frameOrigins[f.id].y + dy }
+            : f)));
+        }
       } else if (it.kind === 'resize') {
         setNotes(prev => prev.map(n => (n.id === it.id
           ? { ...n, w: Math.max(NOTE_MIN_W, it.origW + dx), h: Math.max(NOTE_MIN_H, it.origH + dy) }
@@ -543,9 +600,11 @@ export function MindmapCanvasPage() {
         // Only the box changes — the notes keep their positions and sizes, so
         // they stay put relative to the frame's (content-derived) top-left. The
         // box can't shrink below the notes it holds.
-        const w = Math.max(it.contentW, it.origRect.w + dx);
-        const h = Math.max(it.contentH, it.origRect.h + dy);
-        setFrames(prev => prev.map(f => (f.id === it.frameId ? { ...f, w, h } : f)));
+        const w = Math.max(FRAME_MIN_W, it.origRect.w + dx);
+        const h = Math.max(FRAME_MIN_H, it.origRect.h + dy);
+        setFrames(prev => prev.map(f => (f.id === it.frameId
+          ? { ...f, x: f.x ?? it.origRect.x, y: f.y ?? it.origRect.y, w, h }
+          : f)));
       }
     };
     const onUp = () => {
@@ -1154,13 +1213,24 @@ export function MindmapCanvasPage() {
   // Notes shown for the active view. A view that matches nothing must never
   // blank the board — fall back to all notes so a stale/misconfigured view can't
   // hide everything (the user can still switch to "All" explicitly).
+  // Notes inside a collapsed frame: hidden from the canvas, and from everything
+  // that measures or selects notes, until the frame is opened again.
+  const hiddenNoteIds = useMemo(() => {
+    const out = new Set<string>();
+    for (const f of frames) if (f.collapsed) for (const id of f.noteIds) out.add(id);
+    return out;
+  }, [frames]);
+  const hiddenNoteIdsRef = useRef(hiddenNoteIds);
+  hiddenNoteIdsRef.current = hiddenNoteIds;
+
   const filteredNotes = useMemo(() => {
-    if (!activeViewId) return notes;
+    const visible = (ns: MindmapNote[]) => (hiddenNoteIds.size ? ns.filter(n => !hiddenNoteIds.has(n.id)) : ns);
+    if (!activeViewId) return visible(notes);
     const activeView = views.find(v => v.id === activeViewId);
-    if (!activeView) return notes;
+    if (!activeView) return visible(notes);
     const result = filterNotesByView(notes, activeView, frames);
-    return result.length > 0 ? result : notes;
-  }, [notes, activeViewId, views, frames]);
+    return visible(result.length > 0 ? result : notes);
+  }, [notes, activeViewId, views, frames, hiddenNoteIds]);
 
   const setNoteTags = (n: MindmapNote, tags: string[]) => {
     setNotes(prev => prev.map(x => {
@@ -1220,24 +1290,25 @@ export function MindmapCanvasPage() {
   // ---- Frames ----
   // Filtered note map for rendering
   const filteredNoteById = useMemo(() => new Map(filteredNotes.map(n => [n.id, n])), [filteredNotes]);
-  // Each frame's rectangle: top-left from the member notes' padded bounding box,
-  // so the box follows the notes as they move. Its size is that same bounding
-  // box unless the frame has been resized by hand, in which case the manual
-  // size wins — but never shrinks below the content.
+  // Each frame's rectangle is its own: it changes when the frame is dragged,
+  // resized, or given another note, and at no other time. Notes moving about
+  // inside it — including every note of a frame nested within it — leave it
+  // exactly where and as it was. Only a frame with no geometry of its own (one
+  // saved before frames had any, on a map that hasn't been opened since) falls
+  // back to the box around its notes.
+  // A collapsed frame is a bar: its notes are hidden, so they can't size it.
   const frameRects = useMemo(() => {
-    const out: { frame: MindmapFrame; rect: FrameRect; contentW: number; contentH: number }[] = [];
+    const out: { frame: MindmapFrame; rect: FrameRect }[] = [];
     for (const f of frames) {
+      const stored = storedRect(f);
+      if (f.collapsed) {
+        if (!stored) continue;
+        out.push({ frame: f, rect: { x: stored.x, y: stored.y, w: stored.w, h: FRAME_COLLAPSED_H } });
+        continue;
+      }
       const members = f.noteIds.map(nid => filteredNoteById.get(nid)).filter((n): n is MindmapNote => !!n);
-      if (!members.length) continue;
-      const minX = Math.min(...members.map(n => n.x)) - FRAME_PAD;
-      const minY = Math.min(...members.map(n => n.y)) - FRAME_PAD;
-      const maxX = Math.max(...members.map(n => n.x + n.w)) + FRAME_PAD;
-      const maxY = Math.max(...members.map(n => n.y + noteRenderHeight(n))) + FRAME_PAD;
-      const contentW = maxX - minX;
-      const contentH = maxY - minY;
-      const w = Math.max(contentW, f.w ?? 0);
-      const h = Math.max(contentH, f.h ?? 0);
-      out.push({ frame: f, rect: { x: minX, y: minY, w, h }, contentW, contentH });
+      if (!members.length) continue; // frames never render empty
+      out.push({ frame: f, rect: stored || contentRect(members)! });
     }
     return out;
   }, [frames, filteredNoteById]);
@@ -1291,11 +1362,40 @@ export function MindmapCanvasPage() {
 
   const createFrame = (name: string, noteIds: string[]) => {
     if (!canEditRef.current || noteIds.length === 0) return;
-    const frame: MindmapFrame = { id: `f_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`, name: name.trim() || 'Frame', noteIds: [...noteIds] };
+    const byId = new Map(notesRef.current.map(n => [n.id, n]));
+    const rect = contentRect(noteIds.map(nid => byId.get(nid)).filter((n): n is MindmapNote => !!n));
+    const frame: MindmapFrame = {
+      id: `f_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
+      name: name.trim() || 'Frame',
+      noteIds: [...noteIds],
+      ...(rect ? { x: rect.x, y: rect.y, w: rect.w, h: rect.h } : {}),
+    };
     setFrames(prev => [...prev, frame]);
     setSelectedIds([]);
     scheduleSave();
   };
+  // Collapse a frame to its title bar, hiding the notes it holds, or open it
+  // back up. The frame keeps its rectangle either way, so it reopens exactly
+  // where and as it was.
+  const toggleFrameCollapse = (frameId: string) => {
+    if (!canEditRef.current) return;
+    setFrames(prev => prev.map(f => {
+      if (f.id !== frameId) return f;
+      // A frame with no rectangle of its own has nothing to draw once its notes
+      // are hidden, so give it one from where it stands.
+      const stored = storedRect(f);
+      if (!f.collapsed && !stored) {
+        const byId = new Map(notesRef.current.map(n => [n.id, n]));
+        const rect = contentRect(f.noteIds.map(id => byId.get(id)).filter((n): n is MindmapNote => !!n));
+        if (!rect) return f;
+        return { ...f, ...rect, collapsed: true };
+      }
+      return { ...f, collapsed: !f.collapsed };
+    }));
+    setSelectedIds([]);
+    scheduleSave();
+  };
+
   const renameFrame = (frameId: string, name: string) => {
     setFrames(prev => prev.map(f => (f.id === frameId ? { ...f, name: name.trim() || f.name } : f)));
     scheduleSave();
@@ -1311,9 +1411,16 @@ export function MindmapCanvasPage() {
   // matching the "frames never render empty" rule elsewhere.
   const addNoteToFrame = (noteId: string, frameId: string) => {
     if (!canEditRef.current) return;
-    setFrames(prev => prev.map(f => (
-      f.id === frameId && !f.noteIds.includes(noteId) ? { ...f, noteIds: [...f.noteIds, noteId] } : f
-    )));
+    const note = notesRef.current.find(n => n.id === noteId);
+    setFrames(prev => prev.map(f => {
+      if (f.id !== frameId || f.noteIds.includes(noteId)) return f;
+      const next = { ...f, noteIds: [...f.noteIds, noteId] };
+      // The box no longer follows its notes, so a note added from outside would
+      // sit beyond the edge. Stretch the frame over it instead.
+      const stored = storedRect(f);
+      const around = note ? contentRect([note]) : null;
+      return stored && around ? { ...next, ...unionRect(stored, around) } : next;
+    }));
     scheduleSave();
   };
   const removeNoteFromFrame = (noteId: string, frameId: string) => {
@@ -1326,16 +1433,13 @@ export function MindmapCanvasPage() {
 
   // Resize a frame by a corner grip. This resizes the box alone: the member
   // notes keep their positions and sizes, staying anchored to the frame's
-  // top-left corner. The box stops at the members' bounding box.
-  const startFrameResize = (
-    e: React.MouseEvent, frame: MindmapFrame, rect: FrameRect, contentW: number, contentH: number,
-  ) => {
+  // top-left corner.
+  const startFrameResize = (e: React.MouseEvent, frame: MindmapFrame, rect: FrameRect) => {
     if (!canEditRef.current || spaceRef.current) return;
     e.stopPropagation();
     setSelectedIds([]);
     interactionRef.current = {
-      kind: 'frameresize', frameId: frame.id, startX: e.clientX, startY: e.clientY,
-      origRect: rect, contentW, contentH,
+      kind: 'frameresize', frameId: frame.id, startX: e.clientX, startY: e.clientY, origRect: rect,
     };
     movedRef.current = false;
   };
@@ -1351,7 +1455,19 @@ export function MindmapCanvasPage() {
       const n = notesRef.current.find(x => x.id === nid);
       if (n) origins[nid] = { x: n.x, y: n.y };
     }
-    interactionRef.current = { kind: 'framedrag', frameId: frame.id, startX: e.clientX, startY: e.clientY, origins };
+    // A frame nested in this one — every note of it is a note of this one — is
+    // carried along, so a group of frames keeps its arrangement.
+    const members = new Set(frame.noteIds);
+    const frameOrigins: Record<string, { x: number; y: number }> = {};
+    for (const f of framesRef.current) {
+      if (f.x === undefined || f.y === undefined) continue;
+      const nested = f.id === frame.id
+        || (f.noteIds.length > 0 && f.noteIds.every(nid => members.has(nid)));
+      if (nested) frameOrigins[f.id] = { x: f.x, y: f.y };
+    }
+    interactionRef.current = {
+      kind: 'framedrag', frameId: frame.id, startX: e.clientX, startY: e.clientY, origins, frameOrigins,
+    };
     movedRef.current = false;
   };
 
@@ -1578,7 +1694,7 @@ export function MindmapCanvasPage() {
           <div style={{ position: 'absolute', left: 0, top: 0, transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`, transformOrigin: '0 0' }}>
             {/* Frames — rendered behind notes. Fill is click-through; only the
                 edge bands and title grab to move the frame. */}
-            {frameRects.map(({ frame, rect, contentW, contentH }) => (
+            {frameRects.map(({ frame, rect }) => (
               <div key={frame.id}>
                 <div
                   data-frame
@@ -1588,7 +1704,28 @@ export function MindmapCanvasPage() {
                   className="group flex items-center gap-1"
                   title={canEdit ? 'Drag to move frame · double-click to rename' : undefined}
                 >
-                  <span className="truncate text-xs font-medium text-gray-600 bg-gray-100/90 rounded px-1.5 py-0.5 shadow-sm">{frame.name}</span>
+                  {canEdit && (
+                    <button
+                      onMouseDown={e => e.stopPropagation()}
+                      onDoubleClick={e => e.stopPropagation()}
+                      onClick={e => { e.stopPropagation(); toggleFrameCollapse(frame.id); }}
+                      className="text-gray-500 hover:text-blue-600 bg-gray-100/90 rounded shadow-sm p-0.5 leading-none"
+                      style={{ cursor: 'pointer' }}
+                      title={frame.collapsed ? 'Expand frame' : 'Collapse frame (hides its notes)'}
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d={frame.collapsed ? 'M9 6l6 6-6 6' : 'M6 9l6 6 6-6'} />
+                      </svg>
+                    </button>
+                  )}
+                  <span className="truncate text-xs font-medium text-gray-600 bg-gray-100/90 rounded px-1.5 py-0.5 shadow-sm">
+                    {frame.name}
+                    {frame.collapsed && (
+                      <span className="ml-1 text-gray-400">
+                        {frame.noteIds.length} {frame.noteIds.length === 1 ? 'note' : 'notes'}
+                      </span>
+                    )}
+                  </span>
                   {canEdit && (
                     <button
                       onMouseDown={e => e.stopPropagation()}
@@ -1601,10 +1738,20 @@ export function MindmapCanvasPage() {
                   )}
                 </div>
                 <div
+                  data-frame-box={frame.id}
                   style={{ position: 'absolute', left: rect.x, top: rect.y, width: rect.w, height: rect.h, pointerEvents: 'none' }}
-                  className="rounded-lg border-2 border-gray-400/50"
+                  className={`rounded-lg border-2 border-gray-400/50${frame.collapsed ? ' bg-gray-200/70 border-dashed' : ''}`}
                 >
-                  {canEdit && (
+                  {canEdit && frame.collapsed && (
+                    <div
+                      data-frame
+                      onMouseDown={e => startFrameDrag(e, frame)}
+                      onDoubleClick={e => { e.stopPropagation(); toggleFrameCollapse(frame.id); }}
+                      style={{ position: 'absolute', inset: 0, pointerEvents: 'auto', cursor: 'move' }}
+                      title="Drag to move · double-click to expand"
+                    />
+                  )}
+                  {canEdit && !frame.collapsed && (
                     <>
                       <div data-frame onMouseDown={e => startFrameDrag(e, frame)} style={{ position: 'absolute', left: 0, right: 0, top: -7, height: 14, pointerEvents: 'auto', cursor: 'move' }} />
                       <div data-frame onMouseDown={e => startFrameDrag(e, frame)} style={{ position: 'absolute', left: 0, right: 0, bottom: -7, height: 14, pointerEvents: 'auto', cursor: 'move' }} />
@@ -1617,7 +1764,7 @@ export function MindmapCanvasPage() {
                       {edgeHoverFrameId === frame.id && (
                       <div
                         data-frame
-                        onMouseDown={e => startFrameResize(e, frame, rect, contentW, contentH)}
+                        onMouseDown={e => startFrameResize(e, frame, rect)}
                         style={{
                           position: 'absolute', right: 0, bottom: 0, width: 14, height: 14,
                           transform: `translate(50%, 50%) scale(${1 / view.scale})`,
