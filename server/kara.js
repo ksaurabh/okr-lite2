@@ -227,6 +227,8 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
 
   const summarize = (c) => ({
     id: c.id,
+    title: c.title || null,
+    public: !!c.public,
     goal: c.goal,
     status: c.status,
     createdAt: c.createdAt,
@@ -237,8 +239,10 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
 
   // What the client sees: everything but the raw model output and the prompt
   // inputs (playbook and context snapshots).
-  const publicCheckin = (c) => ({
+  const clientCheckin = (c) => ({
     id: c.id,
+    title: c.title || null,
+    public: !!c.public,
     goal: c.goal,
     status: c.status,
     createdAt: c.createdAt,
@@ -565,7 +569,7 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
   app.get('/api/kara/checkins/:id', requireAuth, (req, res) => {
     const checkin = getCheckins(req.user.email).find(c => c.id === req.params.id);
     if (!checkin) return res.status(404).json({ error: 'Check-in not found' });
-    res.json({ checkin: publicCheckin(checkin) });
+    res.json({ checkin: clientCheckin(checkin) });
   });
 
   // Start a check-in: snapshot the playbook and context, and get Kara's opener.
@@ -594,7 +598,7 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
       return sendKaraError(res, err);
     }
     saveCheckin(req.user.email, checkin);
-    res.json({ checkin: publicCheckin(checkin) });
+    res.json({ checkin: clientCheckin(checkin) });
   });
 
   app.post('/api/kara/checkins/:id/messages', requireAuth, async (req, res) => {
@@ -616,7 +620,7 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
       return sendKaraError(res, err);
     }
     saveCheckin(req.user.email, checkin);
-    res.json({ checkin: publicCheckin(checkin) });
+    res.json({ checkin: clientCheckin(checkin) });
   });
 
   // Accept (optionally with edits) or decline the objective Kara proposed in
@@ -690,7 +694,7 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
       return sendKaraError(res, err);
     }
     saveCheckin(req.user.email, checkin);
-    res.json({ checkin: publicCheckin(checkin) });
+    res.json({ checkin: clientCheckin(checkin) });
   });
 
   // "Speak with Kara": continue a check-in. Kara gets the playbook as it is
@@ -721,7 +725,7 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
       return sendKaraError(res, err);
     }
     saveCheckin(req.user.email, checkin);
-    res.json({ checkin: publicCheckin(checkin) });
+    res.json({ checkin: clientCheckin(checkin) });
   });
 
   // Retry Kara's turn when the last message is the person's (a previous call
@@ -739,7 +743,7 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
       return sendKaraError(res, err);
     }
     saveCheckin(req.user.email, checkin);
-    res.json({ checkin: publicCheckin(checkin) });
+    res.json({ checkin: clientCheckin(checkin) });
   });
 
   // Super admin: replace Kara's current (unanswered) question with a fresh one,
@@ -763,7 +767,7 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
       return sendKaraError(res, err);
     }
     saveCheckin(req.user.email, checkin);
-    res.json({ checkin: publicCheckin(checkin) });
+    res.json({ checkin: clientCheckin(checkin) });
   });
 
   // Super admin: the exact request sent to Claude for one of Kara's messages,
@@ -787,7 +791,49 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
       return sendKaraError(res, err);
     }
     saveCheckin(req.user.email, checkin);
-    res.json({ checkin: publicCheckin(checkin) });
+    res.json({ checkin: clientCheckin(checkin) });
+  });
+
+  // Rename a check-in, or make its report public (visible to everyone signed
+  // in from the same organization) or private again.
+  app.patch('/api/kara/checkins/:id', requireAuth, (req, res) => {
+    const checkin = getCheckins(req.user.email).find(c => c.id === req.params.id);
+    if (!checkin) return res.status(404).json({ error: 'Check-in not found' });
+    const { title } = req.body || {};
+    if (title !== undefined) {
+      if (typeof title !== 'string') return res.status(400).json({ error: 'Title must be text.' });
+      const trimmed = title.trim().slice(0, 200);
+      // An empty title goes back to showing the goal.
+      if (trimmed) checkin.title = trimmed;
+      else delete checkin.title;
+    }
+    if (typeof req.body?.public === 'boolean') checkin.public = req.body.public;
+    saveCheckin(req.user.email, checkin);
+    res.json({ checkin: clientCheckin(checkin) });
+  });
+
+  // A public check-in report: only the report, never the conversation, and only
+  // to people signed in from the author's organization.
+  app.get('/api/kara/reports/:id', requireAuth, (req, res) => {
+    const viewerOrg = getOrganizationByDomain(req.user.domain);
+    for (const u of getUsers()) {
+      const checkin = (u.karaCheckins || []).find(c => c.id === req.params.id);
+      if (!checkin) continue;
+      const isAuthor = u.email === req.user.email;
+      const sameOrg = viewerOrg && getOrganizationByDomain(u.domain)?.id === viewerOrg.id;
+      if (!isAuthor && !(checkin.public && sameOrg)) break;
+      if (!checkin.report) return res.status(404).json({ error: 'This check-in has no report yet.' });
+      return res.json({
+        id: checkin.id,
+        title: checkin.title || checkin.goal,
+        goal: checkin.goal,
+        report: checkin.report,
+        reportAt: checkin.reportAt,
+        public: !!checkin.public,
+        author: { name: u.name || u.email, email: u.email },
+      });
+    }
+    res.status(404).json({ error: 'This report is not public, or it no longer exists.' });
   });
 
   app.delete('/api/kara/checkins/:id', requireAuth, (req, res) => {

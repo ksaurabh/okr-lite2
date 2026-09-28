@@ -5,10 +5,17 @@ export function AuthCallback() {
   const { checkAuth } = useAuth();
 
   useEffect(() => {
-    // Re-check auth status after OAuth callback, then redirect to home
+    // Re-check auth status after OAuth callback, then go back to the page
+    // sign-in started from (saved by login()), or home.
     checkAuth().then(() => {
-      // Clear the callback path and go to home
-      window.history.replaceState({}, '', '/');
+      let target = '/';
+      try {
+        const saved = sessionStorage.getItem('okr-return-to');
+        sessionStorage.removeItem('okr-return-to');
+        // Same-origin paths only.
+        if (saved && saved.startsWith('/') && !saved.startsWith('//')) target = saved;
+      } catch { /* ignore */ }
+      window.history.replaceState({}, '', target);
       window.location.reload();
     });
   }, [checkAuth]);

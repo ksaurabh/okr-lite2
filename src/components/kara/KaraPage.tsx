@@ -13,6 +13,8 @@ type CheckinStatus = 'active' | 'wrapping-up' | 'completed';
 
 interface CheckinSummary {
   id: string;
+  title: string | null;
+  public: boolean;
   goal: string;
   status: CheckinStatus;
   createdAt: string;
@@ -48,6 +50,8 @@ interface KaraMessage {
 
 interface Checkin {
   id: string;
+  title: string | null;
+  public: boolean;
   goal: string;
   status: CheckinStatus;
   createdAt: string;
@@ -132,6 +136,8 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
   const [busy, setBusy] = useState<null | 'starting' | 'speaking' | 'replying' | 'reporting' | 'regenerating'>(null);
   const [promptFor, setPromptFor] = useState<{ messageId: string; label: string } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [titleDraft, setTitleDraft] = useState<string | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
   const fetchData = useOKRStore((state) => state.fetchData);
   const periods = useOKRStore((state) => state.periods);
   const [error, setError] = useState<string | null>(null);
@@ -184,7 +190,7 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
     setCurrent(c);
     setCheckins(list => {
       const summary: CheckinSummary = {
-        id: c.id, goal: c.goal, status: c.status, createdAt: c.createdAt, updatedAt: c.updatedAt,
+        id: c.id, title: c.title, public: c.public, goal: c.goal, status: c.status, createdAt: c.createdAt, updatedAt: c.updatedAt,
         messageCount: c.messages.length, hasReport: !!c.report,
       };
       const rest = list.filter(x => x.id !== c.id);
@@ -266,6 +272,23 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
     });
   };
 
+  // Rename the session, or make its report public / private.
+  const updateCheckin = async (patch: { title?: string; public?: boolean }) => {
+    if (!current) return;
+    try {
+      const data = await api<{ checkin: Checkin }>(`/checkins/${current.id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+      showCheckin(data.checkin);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not update the session');
+    }
+  };
+
+  const saveTitle = async () => {
+    if (titleDraft === null) return;
+    await updateCheckin({ title: titleDraft });
+    setTitleDraft(null);
+  };
+
   const retryTurn = () => {
     if (!current) return;
     run('replying', async () => {
@@ -318,6 +341,9 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
       setError(e instanceof Error ? e.message : 'Could not save the playbook');
     }
   };
+
+  // Switching sessions drops an unfinished rename.
+  useEffect(() => { setTitleDraft(null); setLinkCopied(false); }, [current?.id]);
 
   const newCheckin = () => { setCurrent(null); setGoal(DEFAULT_GOAL); setPane('start'); setError(null); };
 
@@ -391,7 +417,10 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
                 onClick={() => { if (!busy) open(c.id); }}
               >
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm text-gray-800 truncate">{c.goal}</p>
+                  <p className="text-sm text-gray-800 truncate">
+                    {c.title || c.goal}
+                    {c.public && <span className="ml-1.5 text-[10px] uppercase tracking-wide text-green-700">Public</span>}
+                  </p>
                   <p className="text-xs text-gray-500">{fmtDate(c.createdAt)} · {STATUS_LABEL[c.status]}</p>
                 </div>
                 <button
@@ -411,10 +440,47 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
         <section className="flex-1 flex flex-col min-w-0">
           <header className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
             <div className="min-w-0">
-              <h2 className="text-lg font-semibold text-gray-900">Kara</h2>
-              <p className="text-xs text-gray-500 truncate">
-                {current ? current.goal : 'Key Results Assistant'}
-              </p>
+              {!current ? (
+                <>
+                  <h2 className="text-lg font-semibold text-gray-900">Kara</h2>
+                  <p className="text-xs text-gray-500 truncate">Key Results Assistant</p>
+                </>
+              ) : titleDraft !== null ? (
+                <form
+                  onSubmit={(e) => { e.preventDefault(); saveTitle(); }}
+                  className="flex items-center gap-2"
+                >
+                  <input
+                    autoFocus
+                    value={titleDraft}
+                    onChange={(e) => setTitleDraft(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Escape') setTitleDraft(null); }}
+                    maxLength={200}
+                    placeholder={current.goal}
+                    className="w-80 max-w-full border border-gray-300 rounded-md px-2 py-1 text-base font-semibold focus:outline-none focus:ring-2 focus:ring-violet-500"
+                  />
+                  <button type="submit" className="px-3 py-1 rounded-md text-sm font-medium bg-violet-600 text-white hover:bg-violet-700">Save</button>
+                  <button type="button" onClick={() => setTitleDraft(null)} className="px-2 py-1 rounded-md text-sm text-gray-600 hover:bg-gray-100">Cancel</button>
+                </form>
+              ) : (
+                <>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <h2 className="text-lg font-semibold text-gray-900 truncate">{current.title || current.goal}</h2>
+                    <button
+                      onClick={() => setTitleDraft(current.title || current.goal)}
+                      title="Rename this session"
+                      className="p-1 rounded text-gray-400 hover:text-violet-700 hover:bg-gray-100 flex-shrink-0"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536M9 13l6.232-6.232a2.5 2.5 0 113.536 3.536L12.536 16.536a4 4 0 01-1.897 1.052L7 18.5l.912-3.64A4 4 0 019 13z" />
+                      </svg>
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 truncate">
+                    {current.title ? current.goal : 'Kara: Key Results Assistant'}
+                  </p>
+                </>
+              )}
             </div>
             <div className="flex items-center gap-1">
               {current && pane !== 'start' && (
@@ -662,6 +728,42 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
           {pane === 'report' && current?.report && (
             <div className="flex-1 overflow-y-auto p-6">
               <div className="max-w-3xl">
+                <div className="mb-4 rounded-md border border-gray-200 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{current.public ? 'This report is public' : 'Make this report public'}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {current.public
+                          ? 'Anyone signed in from your organization can open it with the link. Your conversation and answers stay private.'
+                          : 'Only you can see this report. Making it public shares the report (not the conversation) with your organization.'}
+                      </p>
+                    </div>
+                    <button
+                      role="switch"
+                      aria-checked={current.public}
+                      onClick={() => updateCheckin({ public: !current.public })}
+                      className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full transition-colors ${current.public ? 'bg-green-600' : 'bg-gray-300'}`}
+                      title={current.public ? 'Make private' : 'Make public'}
+                    >
+                      <span className={`inline-block h-5 w-5 mt-0.5 rounded-full bg-white shadow transition-transform ${current.public ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                    </button>
+                  </div>
+                  {current.public && (() => {
+                    const link = `${window.location.origin}/kara-report?id=${encodeURIComponent(current.id)}`;
+                    return (
+                      <div className="mt-3 flex items-center gap-2">
+                        <input readOnly value={link} onFocus={(e) => e.target.select()} className="flex-1 min-w-0 border border-gray-300 rounded-md px-2 py-1 text-xs font-mono text-gray-700 bg-gray-50" />
+                        <button
+                          onClick={() => { navigator.clipboard?.writeText(link); setLinkCopied(true); }}
+                          className="px-3 py-1 rounded-md text-sm border border-gray-300 text-gray-700 hover:bg-gray-50"
+                        >
+                          {linkCopied ? 'Copied' : 'Copy link'}
+                        </button>
+                        <a href={link} target="_blank" rel="noopener noreferrer" className="px-3 py-1 rounded-md text-sm text-violet-700 hover:underline">Open</a>
+                      </div>
+                    );
+                  })()}
+                </div>
                 <p className="text-xs text-gray-500 mb-3">Generated {current.reportAt && fmtDate(current.reportAt)}</p>
                 {current.reportAt && current.messages.some(m => m.role === 'user' && m.at > current.reportAt!) && (
                   <p className="mb-4 px-3 py-2 rounded-md bg-amber-50 text-sm text-amber-800">

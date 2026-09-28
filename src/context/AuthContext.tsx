@@ -163,6 +163,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [serverReachable]);
 
   const login = () => {
+    // Come back to this page after signing in (e.g. a shared report link).
+    try {
+      const here = window.location.pathname + window.location.search;
+      if (here !== '/' && !here.startsWith('/auth/')) sessionStorage.setItem('okr-return-to', here);
+    } catch { /* ignore */ }
     window.location.href = `${API_URL}/auth/google`;
   };
 

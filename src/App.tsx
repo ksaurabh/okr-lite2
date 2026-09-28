@@ -26,10 +26,11 @@ import { useOKRStore } from './store/okrStore';
 
 // Loaded on demand: Kara's markdown editor is sizeable and most visits never open it.
 const KaraPage = lazy(() => import('./components/kara/KaraPage').then(m => ({ default: m.KaraPage })));
+const KaraReportPage = lazy(() => import('./components/kara/KaraReportPage').then(m => ({ default: m.KaraReportPage })));
 
-type View = 'dashboard' | 'objectives' | 'plans' | 'plans-overview' | 'planbuilder' | 'weeklyupdates' | 'agent' | 'views' | 'checklist' | 'progress' | 'updates' | 'logwork' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin' | 'logs' | 'scorecard' | 'mindmaps' | 'mindmap' | 'kara';
+type View = 'dashboard' | 'objectives' | 'plans' | 'plans-overview' | 'planbuilder' | 'weeklyupdates' | 'agent' | 'views' | 'checklist' | 'progress' | 'updates' | 'logwork' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin' | 'logs' | 'scorecard' | 'mindmaps' | 'mindmap' | 'kara' | 'kara-report';
 
-const ALL_VIEWS: View[] = ['dashboard', 'objectives', 'plans', 'plans-overview', 'planbuilder', 'weeklyupdates', 'agent', 'views', 'checklist', 'progress', 'updates', 'logwork', 'teams', 'periods', 'tags', 'settings', 'admin', 'logs', 'scorecard', 'mindmaps', 'mindmap', 'kara'];
+const ALL_VIEWS: View[] = ['dashboard', 'objectives', 'plans', 'plans-overview', 'planbuilder', 'weeklyupdates', 'agent', 'views', 'checklist', 'progress', 'updates', 'logwork', 'teams', 'periods', 'tags', 'settings', 'admin', 'logs', 'scorecard', 'mindmaps', 'mindmap', 'kara', 'kara-report'];
 const RESERVED_PATHS = new Set(['/auth/callback', '/invite/accept']);
 
 function viewFromPath(pathname: string): View {
@@ -147,6 +148,16 @@ function AppContent() {
     return (
       <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-gray-500">Loading Kara…</div>}>
         <KaraPage onExit={() => setCurrentView(karaReturnView)} />
+      </Suspense>
+    );
+  }
+
+  // A public Kara report, reached via /kara-report?id=<check-in id> (the
+  // shareable link). Standalone like the scorecard, and still behind sign-in.
+  if (currentView === 'kara-report') {
+    return (
+      <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-gray-500">Loading report…</div>}>
+        <KaraReportPage onExit={() => setCurrentView('dashboard')} />
       </Suspense>
     );
   }
