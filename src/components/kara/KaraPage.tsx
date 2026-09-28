@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import { renderNoteMarkdown } from '../mindmaps/markdown';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
@@ -36,7 +36,21 @@ interface Playbook {
   canEdit: boolean;
 }
 
-type Pane = 'start' | 'chat' | 'report' | 'answers' | 'playbook';
+type Pane = 'start' | 'chat' | 'report' | 'answers';
+
+// Width of the playbook panel, remembered per browser.
+const PLAYBOOK_WIDTH_KEY = 'kara-playbook-width';
+const PLAYBOOK_MIN_WIDTH = 260;
+const CHAT_MIN_WIDTH = 360;
+
+function loadPlaybookWidth(): number {
+  try {
+    const w = Number(localStorage.getItem(PLAYBOOK_WIDTH_KEY));
+    return Number.isFinite(w) && w >= PLAYBOOK_MIN_WIDTH ? w : 440;
+  } catch {
+    return 440;
+  }
+}
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${KARA_URL}${path}`, {
@@ -72,8 +86,25 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [playbook, setPlaybook] = useState<Playbook | null>(null);
   const [playbookDraft, setPlaybookDraft] = useState<string | null>(null);
+  const [playbookWidth, setPlaybookWidth] = useState(loadPlaybookWidth);
+  const [resizing, setResizing] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const splitRef = useRef<HTMLDivElement>(null);
+
+  // Dragging the divider: the playbook panel spans from the pointer to the
+  // right edge, leaving the chat at least CHAT_MIN_WIDTH.
+  const onDividerMove = (e: PointerEvent) => {
+    if (!resizing || !splitRef.current) return;
+    const rect = splitRef.current.getBoundingClientRect();
+    const max = Math.max(PLAYBOOK_MIN_WIDTH, rect.width - CHAT_MIN_WIDTH);
+    setPlaybookWidth(Math.min(max, Math.max(PLAYBOOK_MIN_WIDTH, rect.right - e.clientX)));
+  };
+  const endResize = () => {
+    if (!resizing) return;
+    setResizing(false);
+    try { localStorage.setItem(PLAYBOOK_WIDTH_KEY, String(Math.round(playbookWidth))); } catch { /* ignore */ }
+  };
 
   const loadCheckins = async () => {
     try {
@@ -245,24 +276,20 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
               </div>
             ))}
           </div>
-          <div className="p-3 border-t border-gray-200">
-            <button onClick={() => setPane('playbook')} className="text-sm text-violet-700 hover:underline">
-              Kara's playbook
-            </button>
-          </div>
         </aside>
 
-        {/* Main */}
+        {/* Chat and playbook, side by side with a draggable divider */}
+        <div ref={splitRef} className={`flex-1 flex min-w-0 ${resizing ? 'select-none cursor-col-resize' : ''}`}>
         <section className="flex-1 flex flex-col min-w-0">
           <header className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
             <div className="min-w-0">
               <h2 className="text-lg font-semibold text-gray-900">Kara</h2>
               <p className="text-xs text-gray-500 truncate">
-                {pane === 'playbook' ? "Kara's playbook" : current ? current.goal : 'Key Results Assistant'}
+                {current ? current.goal : 'Key Results Assistant'}
               </p>
             </div>
             <div className="flex items-center gap-1">
-              {current && pane !== 'playbook' && pane !== 'start' && (
+              {current && pane !== 'start' && (
                 <>
                   {tab('chat', 'Chat')}
                   {tab('answers', `Answers (${current.answers.length})`)}
@@ -407,39 +434,53 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
             </div>
           )}
 
-          {pane === 'playbook' && (
-            <div className="flex-1 overflow-y-auto p-6">
-              {!playbook ? (
-                <p className="text-sm text-gray-500">Loading…</p>
-              ) : playbookDraft !== null ? (
-                <div className="flex flex-col h-full gap-3">
-                  <textarea
-                    value={playbookDraft}
-                    onChange={(e) => setPlaybookDraft(e.target.value)}
-                    className="flex-1 min-h-[50vh] w-full font-mono text-sm border border-gray-300 rounded-md p-3 focus:outline-none focus:ring-2 focus:ring-violet-500"
-                  />
-                  <div className="flex gap-2">
-                    <button onClick={savePlaybook} className="bg-violet-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-violet-700">Save playbook</button>
-                    <button onClick={() => setPlaybookDraft(null)} className="px-4 py-2 rounded-md text-sm text-gray-700 hover:bg-gray-100">Cancel</button>
-                  </div>
-                  <p className="text-xs text-gray-500">Changes apply to check-ins started after saving.</p>
-                </div>
-              ) : (
-                <div className="max-w-3xl">
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-xs text-gray-500">
-                      {playbook.updatedAt ? `Last edited ${fmtDate(playbook.updatedAt)} by ${playbook.updatedBy}` : 'Default playbook'}
-                    </p>
-                    {playbook.canEdit && (
-                      <button onClick={() => setPlaybookDraft(playbook.content)} className="text-sm text-violet-700 hover:underline">Edit</button>
-                    )}
-                  </div>
-                  <Markdown text={playbook.content} />
-                </div>
-              )}
-            </div>
-          )}
         </section>
+
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          title="Drag to resize"
+          onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); setResizing(true); }}
+          onPointerMove={onDividerMove}
+          onPointerUp={endResize}
+          onPointerCancel={endResize}
+          className={`w-1.5 flex-shrink-0 cursor-col-resize border-l border-gray-200 transition-colors ${resizing ? 'bg-violet-400' : 'bg-gray-100 hover:bg-violet-300'}`}
+        />
+
+        <aside style={{ width: playbookWidth }} className="flex-shrink-0 flex flex-col min-h-0 bg-gray-50">
+          <header className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+            <div className="min-w-0">
+              <h2 className="text-lg font-semibold text-gray-900">Kara's playbook</h2>
+              <p className="text-xs text-gray-500 truncate">
+                {playbook?.updatedAt ? `Last edited ${fmtDate(playbook.updatedAt)} by ${playbook.updatedBy}` : 'Default playbook'}
+              </p>
+            </div>
+            {playbook?.canEdit && playbookDraft === null && (
+              <button onClick={() => setPlaybookDraft(playbook.content)} className="text-sm text-violet-700 hover:underline">Edit</button>
+            )}
+          </header>
+          <div className="flex-1 overflow-y-auto p-4">
+            {!playbook ? (
+              <p className="text-sm text-gray-500">Loading…</p>
+            ) : playbookDraft !== null ? (
+              <div className="flex flex-col h-full gap-3">
+                <textarea
+                  value={playbookDraft}
+                  onChange={(e) => setPlaybookDraft(e.target.value)}
+                  className="flex-1 min-h-[40vh] w-full font-mono text-sm border border-gray-300 rounded-md p-3 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                />
+                <div className="flex gap-2">
+                  <button onClick={savePlaybook} className="bg-violet-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-violet-700">Save playbook</button>
+                  <button onClick={() => setPlaybookDraft(null)} className="px-4 py-2 rounded-md text-sm text-gray-700 hover:bg-gray-100">Cancel</button>
+                </div>
+                <p className="text-xs text-gray-500">Changes apply to check-ins started after saving.</p>
+              </div>
+            ) : (
+              <Markdown text={playbook.content} />
+            )}
+          </div>
+        </aside>
+        </div>
       </div>
     </div>
   );
