@@ -327,11 +327,17 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
     return lines.join('\n');
   }
 
+  // "Speak with Kara" is an open conversation with no goal set in advance:
+  // Kara's opening question comes from asking her, against the playbook, what
+  // that first question should be.
+  const SPEAK_GOAL = 'Open conversation ("Speak with Kara"): no goal was set in advance; follow the playbook and where the answers lead.';
+  const goalFor = (checkin) => (checkin.mode === 'speak' ? SPEAK_GOAL : checkin.goal);
+
   function apiMessages(checkin) {
-    const messages = [{
-      role: 'user',
-      content: `<okr_context>\n${checkin.context}\n</okr_context>\n\n<goal>\n${checkin.goal}\n</goal>\n\nStart the check-in.`,
-    }];
+    const content = checkin.mode === 'speak'
+      ? `<okr_context>\n${checkin.context}\n</okr_context>\n\n<goal>\n${SPEAK_GOAL}\n</goal>\n\nThe person has just started speaking with Kara. What is the first question Kara should ask when one starts speaking with Kara? Ask that question as your message.`
+      : `<okr_context>\n${checkin.context}\n</okr_context>\n\n<goal>\n${checkin.goal}\n</goal>\n\nStart the check-in.`;
+    const messages = [{ role: 'user', content }];
     for (const m of checkin.messages) {
       messages.push(m.role === 'kara'
         ? { role: 'assistant', content: m.raw || m.text }
@@ -461,7 +467,7 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
       system: reportSystemPrompt(checkin.playbook),
       messages: [{
         role: 'user',
-        content: `<okr_context>\n${checkin.context}\n</okr_context>\n\n<goal>\n${checkin.goal}\n</goal>\n\n<recorded_answers>\n${answers}\n</recorded_answers>\n\n<conversation>\n${transcript}\n</conversation>\n\nWrite the check-in report.`,
+        content: `<okr_context>\n${checkin.context}\n</okr_context>\n\n<goal>\n${goalFor(checkin)}\n</goal>\n\n<recorded_answers>\n${answers}\n</recorded_answers>\n\n<conversation>\n${transcript}\n</conversation>\n\nWrite the check-in report.`,
       }],
     });
     assertAnswered(response);
@@ -570,13 +576,17 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
 
   // Start a check-in: snapshot the playbook and context, and get Kara's opener.
   app.post('/api/kara/checkins', requireAuth, async (req, res) => {
-    const goal = typeof req.body?.goal === 'string' && req.body.goal.trim()
-      ? req.body.goal.trim().slice(0, 2000)
-      : 'Weekly check-in on my objectives and key results';
+    const mode = req.body?.mode === 'speak' ? 'speak' : 'checkin';
+    const goal = mode === 'speak'
+      ? 'Speak with Kara'
+      : typeof req.body?.goal === 'string' && req.body.goal.trim()
+        ? req.body.goal.trim().slice(0, 2000)
+        : 'Weekly check-in on my objectives and key results';
     const now = new Date().toISOString();
     const checkin = {
       id: newId('kc'),
       email: req.user.email,
+      mode,
       goal,
       status: 'active',
       createdAt: now,

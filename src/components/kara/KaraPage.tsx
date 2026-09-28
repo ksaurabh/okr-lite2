@@ -118,7 +118,7 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
   const [pane, setPane] = useState<Pane>('start');
   const [goal, setGoal] = useState(DEFAULT_GOAL);
   const [draft, setDraft] = useState('');
-  const [busy, setBusy] = useState<null | 'starting' | 'replying' | 'reporting' | 'regenerating'>(null);
+  const [busy, setBusy] = useState<null | 'starting' | 'speaking' | 'replying' | 'reporting' | 'regenerating'>(null);
   const [promptFor, setPromptFor] = useState<{ messageId: string; label: string } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const fetchData = useOKRStore((state) => state.fetchData);
@@ -187,8 +187,8 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
     }
   };
 
-  const start = () => run('starting', async () => {
-    const data = await api<{ checkin: Checkin }>('/checkins', { method: 'POST', body: JSON.stringify({ goal }) });
+  const start = (mode: 'checkin' | 'speak' = 'checkin') => run(mode === 'speak' ? 'speaking' : 'starting', async () => {
+    const data = await api<{ checkin: Checkin }>('/checkins', { method: 'POST', body: JSON.stringify(mode === 'speak' ? { mode } : { goal }) });
     showCheckin(data.checkin);
     setPane('chat');
   });
@@ -335,6 +335,13 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
             >
               + New check-in
             </button>
+            <button
+              onClick={() => start('speak')}
+              disabled={!!busy}
+              className="mt-2 w-full border border-violet-300 bg-white text-violet-700 px-3 py-2 rounded-md text-sm font-medium hover:bg-violet-50 disabled:opacity-60"
+            >
+              {busy === 'speaking' ? 'Kara is getting ready…' : 'Speak with Kara'}
+            </button>
           </div>
           <div className="flex-1 overflow-y-auto">
             {checkins.length === 0 ? (
@@ -417,12 +424,25 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
                   />
                 </label>
                 <button
-                  onClick={start}
+                  onClick={() => start()}
                   disabled={!!busy}
                   className="bg-violet-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-violet-700 disabled:opacity-60"
                 >
                   {busy === 'starting' ? 'Kara is reading your key results…' : 'Start check-in'}
                 </button>
+                <div className="pt-4 mt-2 border-t border-gray-200">
+                  <h3 className="text-base font-semibold text-gray-900">Or just speak with Kara</h3>
+                  <p className="text-sm text-gray-600 mt-1">
+                    No goal needed. Kara opens with a question drawn from her playbook, and the conversation goes wherever your answers lead.
+                  </p>
+                  <button
+                    onClick={() => start('speak')}
+                    disabled={!!busy}
+                    className="mt-3 border border-violet-300 text-violet-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-violet-50 disabled:opacity-60"
+                  >
+                    {busy === 'speaking' ? 'Kara is getting ready…' : 'Speak with Kara'}
+                  </button>
+                </div>
               </div>
             </div>
           )}
