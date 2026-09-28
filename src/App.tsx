@@ -12,6 +12,7 @@ import { ScorecardPage } from './components/plans/ScorecardPage';
 import { PlanBuilderPage } from './components/plans/PlanBuilderPage';
 import { AgentPage } from './components/agent/AgentPage';
 import { MindmapsPage, MindmapCanvasPage } from './components/mindmaps';
+import { KaraPage } from './components/kara/KaraPage';
 import { WeeklyUpdatesPage } from './components/weeklyupdates/WeeklyUpdatesPage';
 import { UpdatesPage } from './components/updates';
 import { ListsPage } from './components/lists';
@@ -24,9 +25,9 @@ import { LoginPage, UnauthorizedPage, AuthCallback, AdminInviteAccept } from './
 import { Modal } from './components/common';
 import { useOKRStore } from './store/okrStore';
 
-type View = 'dashboard' | 'objectives' | 'plans' | 'plans-overview' | 'planbuilder' | 'weeklyupdates' | 'agent' | 'views' | 'checklist' | 'progress' | 'updates' | 'logwork' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin' | 'logs' | 'scorecard' | 'mindmaps' | 'mindmap';
+type View = 'dashboard' | 'objectives' | 'plans' | 'plans-overview' | 'planbuilder' | 'weeklyupdates' | 'agent' | 'views' | 'checklist' | 'progress' | 'updates' | 'logwork' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin' | 'logs' | 'scorecard' | 'mindmaps' | 'mindmap' | 'kara';
 
-const ALL_VIEWS: View[] = ['dashboard', 'objectives', 'plans', 'plans-overview', 'planbuilder', 'weeklyupdates', 'agent', 'views', 'checklist', 'progress', 'updates', 'logwork', 'teams', 'periods', 'tags', 'settings', 'admin', 'logs', 'scorecard', 'mindmaps', 'mindmap'];
+const ALL_VIEWS: View[] = ['dashboard', 'objectives', 'plans', 'plans-overview', 'planbuilder', 'weeklyupdates', 'agent', 'views', 'checklist', 'progress', 'updates', 'logwork', 'teams', 'periods', 'tags', 'settings', 'admin', 'logs', 'scorecard', 'mindmaps', 'mindmap', 'kara'];
 const RESERVED_PATHS = new Set(['/auth/callback', '/invite/accept']);
 
 function viewFromPath(pathname: string): View {
@@ -64,6 +65,12 @@ function AppContent() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
   const [showAddObjective, setShowAddObjective] = useState(false);
+  // The page Kara was opened from, so "Back" returns there.
+  const [karaReturnView, setKaraReturnView] = useState<View>('dashboard');
+  const openKara = () => {
+    setKaraReturnView(currentView);
+    setCurrentView('kara');
+  };
   const [highlightObjectiveId, setHighlightObjectiveId] = useState<string | null>(null);
 
   const handleNavigateToObjective = (objectiveId: string) => {
@@ -133,6 +140,11 @@ function AppContent() {
     return <MindmapCanvasPage key={pathname} />;
   }
 
+  // Kara takes over the whole app; "Back" returns to the page it was opened from.
+  if (currentView === 'kara') {
+    return <KaraPage onExit={() => setCurrentView(karaReturnView)} />;
+  }
+
   // Show main app if authenticated and allowed
   return (
     <>
@@ -141,6 +153,7 @@ function AppContent() {
       currentView={currentView}
       onViewChange={setCurrentView}
       onAddObjective={() => setShowAddObjective(true)}
+      onOpenKara={openKara}
     >
       {currentView === 'dashboard' && <DashboardPage onViewChange={setCurrentView} />}
       {currentView === 'objectives' && <ObjectiveTree highlightObjectiveId={highlightObjectiveId} onHighlightClear={() => setHighlightObjectiveId(null)} onViewChange={setCurrentView} />}

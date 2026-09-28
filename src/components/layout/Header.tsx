@@ -4,15 +4,15 @@ import { useAuth } from '../../context/AuthContext';
 import { Modal } from '../common/Modal';
 import type { Period, User } from '../../types';
 import { APP_VERSION } from '../../version';
-import { KaraChat } from '../kara/KaraChat';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
 interface HeaderProps {
   onAddObjective: () => void;
+  onOpenKara: () => void;
 }
 
-export function Header({ onAddObjective }: HeaderProps) {
+export function Header({ onAddObjective, onOpenKara }: HeaderProps) {
   const periods = useOKRStore((state: OKRStore) => state.periods);
   const activePeriodId = useOKRStore((state: OKRStore) => state.activePeriodId);
   const setActivePeriod = useOKRStore((state: OKRStore) => state.setActivePeriod);
@@ -20,7 +20,6 @@ export function Header({ onAddObjective }: HeaderProps) {
   const [storedName, setStoredName] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [karaOpen, setKaraOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -110,7 +109,7 @@ export function Header({ onAddObjective }: HeaderProps) {
                 lines up with "+ Add Objective" in the same row. */}
             <div className="relative">
               <button
-                onClick={() => setKaraOpen(true)}
+                onClick={onOpenKara}
                 className="bg-violet-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-violet-700 transition-colors"
               >
                 Checkin with Kara
@@ -179,7 +178,6 @@ export function Header({ onAddObjective }: HeaderProps) {
           </div>
         </div>
       </header>
-      {karaOpen && <KaraChat onClose={() => setKaraOpen(false)} />}
       {pickerOpen && (
         <ImpersonatePicker
           currentEmail={user?.email}

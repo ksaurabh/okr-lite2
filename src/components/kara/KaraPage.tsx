@@ -62,7 +62,7 @@ const STATUS_LABEL: Record<CheckinStatus, string> = {
   completed: 'Complete',
 };
 
-export function KaraChat({ onClose }: { onClose: () => void }) {
+export function KaraPage({ onExit }: { onExit: () => void }) {
   const [checkins, setCheckins] = useState<CheckinSummary[]>([]);
   const [current, setCurrent] = useState<Checkin | null>(null);
   const [pane, setPane] = useState<Pane>('start');
@@ -88,16 +88,6 @@ export function KaraChat({ onClose }: { onClose: () => void }) {
     loadCheckins();
     api<Playbook>('/playbook').then(setPlaybook).catch(() => {});
   }, []);
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) onClose(); };
-    document.addEventListener('keydown', handler);
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.removeEventListener('keydown', handler);
-      document.body.style.overflow = 'unset';
-    };
-  }, [busy, onClose]);
 
   useEffect(() => {
     if (pane === 'chat') bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -204,11 +194,25 @@ export function KaraChat({ onClose }: { onClose: () => void }) {
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50" onClick={() => { if (!busy) onClose(); }} />
-      <div className="relative bg-white rounded-lg shadow-xl w-full max-w-5xl mx-4 h-[88vh] flex overflow-hidden">
+    <div className="h-screen flex flex-col bg-white">
+      <div className="flex items-center gap-4 px-4 py-2.5 border-b border-gray-200">
+        <button
+          onClick={onExit}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          Back to OKR Lite
+        </button>
+        <div>
+          <h1 className="text-base font-semibold text-gray-900 leading-tight">Checkin with Kara</h1>
+          <p className="text-xs text-gray-500">Kara: Key Results Assistant</p>
+        </div>
+      </div>
+      <div className="flex-1 flex min-h-0">
         {/* History */}
-        <aside className="w-60 flex-shrink-0 border-r border-gray-200 bg-gray-50 flex flex-col">
+        <aside className="w-64 flex-shrink-0 border-r border-gray-200 bg-gray-50 flex flex-col">
           <div className="p-3 border-b border-gray-200">
             <button
               onClick={newCheckin}
@@ -265,11 +269,6 @@ export function KaraChat({ onClose }: { onClose: () => void }) {
                   {current.report && tab('report', 'Report')}
                 </>
               )}
-              <button onClick={onClose} disabled={!!busy} className="ml-2 p-1.5 rounded text-gray-500 hover:bg-gray-100 disabled:opacity-40" title="Close">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
             </div>
           </header>
 

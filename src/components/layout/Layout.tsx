@@ -27,9 +27,10 @@ interface LayoutProps {
   currentView: View;
   onViewChange: (view: View) => void;
   onAddObjective: () => void;
+  onOpenKara: () => void;
 }
 
-export function Layout({ children, currentView, onViewChange, onAddObjective }: LayoutProps) {
+export function Layout({ children, currentView, onViewChange, onAddObjective, onOpenKara }: LayoutProps) {
   const [sidebarCollapsed, setSidebarCollapsedState] = useState(loadSidebarCollapsed);
 
   const toggleSidebar = useCallback(() => {
@@ -42,7 +43,7 @@ export function Layout({ children, currentView, onViewChange, onAddObjective }: 
 
   return (
     <div className="min-h-screen bg-gray-100">
-      <Header onAddObjective={onAddObjective} />
+      <Header onAddObjective={onAddObjective} onOpenKara={onOpenKara} />
       <div className="flex">
         <Sidebar
           currentView={currentView}
