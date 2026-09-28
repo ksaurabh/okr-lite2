@@ -2,11 +2,15 @@
 // Kara runs a check-in conversation with a user about their objectives and key
 // results. She is steered by "Kara's playbook" (a markdown document only the
 // playbook owner may edit), a snapshot of the user's OKR context, and a goal the
-// user picks when starting. Each check-in stores its chat history, the answers
-// Kara recorded along the way, and the check-in report generated at the end.
+// user picks when starting. Kara asks one question at a time; each answer
+// produces the next question. Each check-in stores its chat history, the
+// answers Kara recorded along the way, and the check-in report generated at the
+// end. The exact request behind every question is kept in a per-check-in file
+// so super admins can inspect it, and they can regenerate the current question.
 
 import Anthropic from '@anthropic-ai/sdk';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from 'fs';
+import { join } from 'path';
 
 const KARA_MODEL = 'claude-opus-5';
 const PLAYBOOK_OWNER = 'kumar@airmdr.com';
@@ -80,10 +84,10 @@ ${playbook}
 
 The first user message holds the person's OKR data (a snapshot taken when the check-in started) and the goal of this check-in. Everything after that is the live conversation.
 
-You lead: ask the questions, keep the conversation moving toward the goal, and ground your questions in their actual objectives and key results. Your messages are shown in a chat window and may use light markdown (bold, bullets).
+You lead the check-in as a series of questions. Each turn, you ask exactly one question; the person types an answer and submits it, and you choose the next question based on that answer. Keep the conversation moving toward the goal, and ground your questions in their actual objectives and key results. Your question is shown on a card above an answer box and may use light markdown (bold, bullets).
 
 Respond with JSON:
-- "message": what you say to the person next.
+- "message": your next question, optionally preceded by a brief acknowledgement of their last answer. When done is true, this is instead your closing message and asks nothing.
 - "recorded": the answers from the person's latest message worth keeping for the report, each with the topic (usually the key result's name), the question it answers, and the answer in a sentence or two, faithful to what they said. Empty when there is nothing new, including on your opening message.
 - "done": true only when the check-in is complete: you have covered what the goal and playbook call for (or the person asked to wrap up) and your message is the closing one.`;
 }
@@ -100,7 +104,9 @@ ${playbook}
 Write the report in markdown, starting with a level-2 heading. Base it only on the OKR snapshot, the recorded answers, and the conversation: do not invent progress, dates, or commitments the person did not state. If the conversation ended early, say what was not covered.`;
 }
 
-export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getOKRData, getOrganizationByDomain, playbookFile }) {
+const newId = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
+export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getOKRData, getOrganizationByDomain, isSuperAdmin, playbookFile, promptsDir }) {
   let client = null;
   const getClient = () => {
     if (!client) client = new Anthropic();
@@ -124,8 +130,29 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
 
   // Editing is tied to the real signed-in account, so impersonating the owner
   // doesn't grant it, and the owner keeps it while impersonating someone else.
-  const canEditPlaybook = (req) =>
-    (req.realUser?.email || req.user?.email || '').toLowerCase() === PLAYBOOK_OWNER;
+  const realEmail = (req) => (req.realUser?.email || req.user?.email || '').toLowerCase();
+  const canEditPlaybook = (req) => realEmail(req) === PLAYBOOK_OWNER;
+  // Super admins (and the playbook owner) can see the prompts behind each
+  // question and regenerate the current one.
+  const canAdmin = (req) => canEditPlaybook(req) || isSuperAdmin(realEmail(req));
+
+  // --- Prompt log: the exact request and response behind each Kara message,
+  // one file per check-in, keyed by message id. Kept out of users.json since
+  // every request repeats the whole conversation.
+  const promptFile = (checkinId) => join(promptsDir, `${checkinId.replace(/[^A-Za-z0-9_-]/g, '')}.json`);
+  function readPrompts(checkinId) {
+    try {
+      return JSON.parse(readFileSync(promptFile(checkinId), 'utf-8'));
+    } catch {
+      return {};
+    }
+  }
+  function savePrompt(checkinId, messageId, record) {
+    mkdirSync(promptsDir, { recursive: true });
+    const prompts = readPrompts(checkinId);
+    prompts[messageId] = record;
+    writeFileSync(promptFile(checkinId), JSON.stringify(prompts, null, 2));
+  }
 
   // --- Check-in storage (on the user record, like agent sessions) ---
   function getCheckins(email) {
@@ -165,7 +192,7 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
     status: c.status,
     createdAt: c.createdAt,
     updatedAt: c.updatedAt,
-    messages: c.messages.map(({ role, text, at }) => ({ role, text, at })),
+    messages: c.messages.map(({ id, role, text, at, regenerated }) => ({ id, role, text, at, regenerated })),
     answers: c.answers,
     report: c.report,
     reportAt: c.reportAt,
@@ -266,8 +293,8 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
     }
   }
 
-  async function karaTurn(checkin) {
-    const response = await getClient().beta.messages.create({
+  async function karaTurn(checkin, { regenerated = false } = {}) {
+    const request = {
       model: KARA_MODEL,
       max_tokens: 16000,
       betas: ['server-side-fallback-2026-07-01'],
@@ -277,7 +304,8 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
       cache_control: { type: 'ephemeral' },
       system: turnSystemPrompt(checkin.playbook),
       messages: apiMessages(checkin),
-    });
+    };
+    const response = await getClient().beta.messages.create(request);
     assertAnswered(response);
     const raw = textOf(response);
     let turn;
@@ -287,9 +315,15 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
       turn = { message: raw, recorded: [], done: false };
     }
     const at = new Date().toISOString();
-    checkin.messages.push({ role: 'kara', text: String(turn.message || ''), raw, at });
+    const id = newId('km');
+    savePrompt(checkin.id, id, {
+      at,
+      request,
+      response: { model: response.model, stop_reason: response.stop_reason, usage: response.usage, text: raw },
+    });
+    checkin.messages.push({ id, role: 'kara', text: String(turn.message || ''), raw, at, ...(regenerated && { regenerated: true }) });
     for (const r of Array.isArray(turn.recorded) ? turn.recorded : []) {
-      checkin.answers.push({ topic: r.topic, question: r.question, answer: r.answer, at });
+      checkin.answers.push({ topic: r.topic, question: r.question, answer: r.answer, at, messageId: id });
     }
     if (turn.done) checkin.status = 'wrapping-up';
     checkin.updatedAt = at;
@@ -342,7 +376,7 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
 
   // --- Routes ---
   app.get('/api/kara/playbook', requireAuth, (req, res) => {
-    res.json({ ...getPlaybook(), canEdit: canEditPlaybook(req) });
+    res.json({ ...getPlaybook(), canEdit: canEditPlaybook(req), canAdmin: canAdmin(req) });
   });
 
   app.put('/api/kara/playbook', requireAuth, (req, res) => {
@@ -355,7 +389,7 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
       updatedBy: (req.realUser?.email || req.user.email).toLowerCase(),
     };
     writeFileSync(playbookFile, JSON.stringify(playbook, null, 2));
-    res.json({ ...playbook, canEdit: true });
+    res.json({ ...playbook, canEdit: true, canAdmin: canAdmin(req) });
   });
 
   app.get('/api/kara/checkins', requireAuth, (req, res) => {
@@ -375,7 +409,7 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
       : 'Weekly check-in on my objectives and key results';
     const now = new Date().toISOString();
     const checkin = {
-      id: `kc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      id: newId('kc'),
       goal,
       status: 'active',
       createdAt: now,
@@ -404,7 +438,7 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
     if (!text) return res.status(400).json({ error: 'Message is empty.' });
     // A reply after Kara's closing message reopens the conversation.
     checkin.status = 'active';
-    checkin.messages.push({ role: 'user', text, at: new Date().toISOString() });
+    checkin.messages.push({ id: newId('km'), role: 'user', text, at: new Date().toISOString() });
     try {
       await karaTurn(checkin);
     } catch (err) {
@@ -412,6 +446,40 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
     }
     saveCheckin(req.user.email, checkin);
     res.json({ checkin: publicCheckin(checkin) });
+  });
+
+  // Super admin: replace Kara's current (unanswered) question with a fresh one,
+  // written against the playbook as it is now, so playbook edits can be tried
+  // on a live check-in. Answers recorded by the replaced turn go with it.
+  app.post('/api/kara/checkins/:id/regenerate', requireAuth, async (req, res) => {
+    if (!canAdmin(req)) return res.status(403).json({ error: 'Only super admins can regenerate questions.' });
+    const checkin = getCheckins(req.user.email).find(c => c.id === req.params.id);
+    if (!checkin) return res.status(404).json({ error: 'Check-in not found' });
+    if (checkin.status === 'completed') return res.status(409).json({ error: 'This check-in is already complete.' });
+    const last = checkin.messages[checkin.messages.length - 1];
+    if (!last || last.role !== 'kara') return res.status(409).json({ error: "There's no unanswered question to regenerate." });
+    checkin.messages.pop();
+    checkin.answers = checkin.answers.filter(a => !a.messageId || a.messageId !== last.id);
+    checkin.playbook = getPlaybook().content;
+    checkin.status = 'active';
+    try {
+      await karaTurn(checkin, { regenerated: true });
+    } catch (err) {
+      return sendKaraError(res, err);
+    }
+    saveCheckin(req.user.email, checkin);
+    res.json({ checkin: publicCheckin(checkin) });
+  });
+
+  // Super admin: the exact request sent to Claude for one of Kara's messages,
+  // and what came back.
+  app.get('/api/kara/checkins/:id/messages/:messageId/prompt', requireAuth, (req, res) => {
+    if (!canAdmin(req)) return res.status(403).json({ error: 'Only super admins can view prompts.' });
+    const checkin = getCheckins(req.user.email).find(c => c.id === req.params.id);
+    if (!checkin) return res.status(404).json({ error: 'Check-in not found' });
+    const record = readPrompts(checkin.id)[req.params.messageId];
+    if (!record) return res.status(404).json({ error: 'No prompt was recorded for this message.' });
+    res.json(record);
   });
 
   // Finish: generate (or regenerate) the check-in report.
@@ -436,6 +504,7 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
     list.splice(at, 1);
     users[idx].karaCheckins = list;
     saveUsers(users);
+    try { unlinkSync(promptFile(req.params.id)); } catch { /* none recorded */ }
     res.json({ ok: true });
   });
 }

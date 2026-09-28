@@ -18,6 +18,7 @@ dist-ssr
 
 # Server data files
 server/*.json
+server/kara-prompts/
 
 # Claude Code settings
 .claude/

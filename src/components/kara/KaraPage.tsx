@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import { renderNoteMarkdown } from '../mindmaps/markdown';
+import { Modal } from '../common/Modal';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 const KARA_URL = `${API_URL}/api/kara`;
@@ -23,7 +24,7 @@ interface Checkin {
   status: CheckinStatus;
   createdAt: string;
   updatedAt: string;
-  messages: { role: 'kara' | 'user'; text: string; at: string }[];
+  messages: { id?: string; role: 'kara' | 'user'; text: string; at: string; regenerated?: boolean }[];
   answers: { topic: string; question: string; answer: string; at: string }[];
   report: string | null;
   reportAt: string | null;
@@ -34,6 +35,14 @@ interface Playbook {
   updatedAt: string | null;
   updatedBy: string | null;
   canEdit: boolean;
+  canAdmin?: boolean;
+}
+
+// The exact request sent to Claude for one of Kara's messages (super admins).
+interface PromptRecord {
+  at: string;
+  request: { system: string; messages: { role: string; content: string }[] } & Record<string, unknown>;
+  response: { model?: string; stop_reason?: string; usage?: Record<string, unknown>; text: string };
 }
 
 type Pane = 'start' | 'chat' | 'report' | 'answers';
@@ -82,7 +91,8 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
   const [pane, setPane] = useState<Pane>('start');
   const [goal, setGoal] = useState(DEFAULT_GOAL);
   const [draft, setDraft] = useState('');
-  const [busy, setBusy] = useState<null | 'starting' | 'replying' | 'reporting'>(null);
+  const [busy, setBusy] = useState<null | 'starting' | 'replying' | 'reporting' | 'regenerating'>(null);
+  const [promptFor, setPromptFor] = useState<{ messageId: string; label: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [playbook, setPlaybook] = useState<Playbook | null>(null);
   const [playbookDraft, setPlaybookDraft] = useState<string | null>(null);
@@ -140,7 +150,7 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
     });
   };
 
-  const run = async (kind: 'starting' | 'replying' | 'reporting', fn: () => Promise<void>) => {
+  const run = async (kind: NonNullable<typeof busy>, fn: () => Promise<void>) => {
     setBusy(kind);
     setError(null);
     try {
@@ -173,6 +183,14 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
         setDraft(text);
         throw e;
       }
+    });
+  };
+
+  const regenerate = () => {
+    if (!current) return;
+    run('regenerating', async () => {
+      const data = await api<{ checkin: Checkin }>(`/checkins/${current.id}/regenerate`, { method: 'POST' });
+      showCheckin(data.checkin);
     });
   };
 
@@ -291,7 +309,7 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
             <div className="flex items-center gap-1">
               {current && pane !== 'start' && (
                 <>
-                  {tab('chat', 'Chat')}
+                  {tab('chat', 'Questions')}
                   {tab('answers', `Answers (${current.answers.length})`)}
                   {current.report && tab('report', 'Report')}
                 </>
@@ -336,70 +354,139 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
             </div>
           )}
 
-          {pane === 'chat' && current && (
-            <>
-              <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-                {current.messages.map((m, i) => (
-                  <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[80%] rounded-lg px-3 py-2 ${m.role === 'user' ? 'bg-violet-600 text-white' : 'bg-gray-100'}`}>
-                      {m.role === 'user'
-                        ? <p className="text-sm whitespace-pre-wrap">{m.text}</p>
-                        : <Markdown text={m.text} />}
-                    </div>
+          {pane === 'chat' && current && (() => {
+            const last = current.messages[current.messages.length - 1];
+            const awaitingAnswer = last?.role === 'kara' && current.status === 'active';
+            const closed = current.status !== 'active';
+            const canAdmin = !!playbook?.canAdmin;
+            let questionNo = 0;
+            return (
+              <>
+                <div className="flex-1 overflow-y-auto px-6 py-5">
+                  <div className="max-w-3xl mx-auto space-y-4">
+                    {current.messages.map((m, i) => {
+                      if (m.role === 'user') {
+                        return (
+                          <div key={m.id ?? i} className="ml-6 pl-4 border-l-2 border-violet-200">
+                            <p className="text-xs font-medium text-gray-500 mb-0.5">Your answer</p>
+                            <p className="text-sm text-gray-900 whitespace-pre-wrap">{m.text}</p>
+                          </div>
+                        );
+                      }
+                      const isLast = i === current.messages.length - 1;
+                      const isClosing = isLast && closed;
+                      const label = isClosing ? 'Kara' : `Question ${++questionNo}`;
+                      const isCurrent = isLast && awaitingAnswer;
+                      return (
+                        <div
+                          key={m.id ?? i}
+                          className={`rounded-lg border p-4 ${isCurrent ? 'border-violet-300 bg-violet-50/60 shadow-sm' : 'border-gray-200 bg-white'}`}
+                        >
+                          <div className="flex items-center justify-between gap-2 mb-1.5">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">
+                              {label}
+                              {m.regenerated && <span className="ml-2 normal-case font-normal text-gray-500">(regenerated)</span>}
+                            </p>
+                            {canAdmin && (
+                              <div className="flex items-center gap-3 text-xs">
+                                {isLast && current.status !== 'completed' && (
+                                  <button
+                                    onClick={regenerate}
+                                    disabled={!!busy}
+                                    className="text-violet-700 hover:underline disabled:opacity-50"
+                                    title="Replace this question with a new one written against the current playbook"
+                                  >
+                                    {busy === 'regenerating' ? 'Regenerating…' : 'Regenerate question'}
+                                  </button>
+                                )}
+                                {m.id && (
+                                  <button onClick={() => setPromptFor({ messageId: m.id!, label })} className="text-gray-500 hover:text-violet-700 hover:underline">
+                                    View prompt
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          <Markdown text={m.text} />
+                          {isCurrent && busy !== 'replying' && (
+                            <div className="mt-4">
+                              <textarea
+                                ref={inputRef}
+                                value={draft}
+                                onChange={(e) => setDraft(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); }
+                                }}
+                                rows={4}
+                                disabled={!!busy}
+                                placeholder="Type your answer…"
+                                className="w-full resize-y border border-gray-300 rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-violet-500 disabled:bg-gray-50"
+                              />
+                              <div className="mt-2 flex items-center justify-between">
+                                <span className="text-xs text-gray-400">Ctrl/⌘ + Enter to submit</span>
+                                <button
+                                  onClick={send}
+                                  disabled={!!busy || !draft.trim()}
+                                  className="bg-violet-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-violet-700 disabled:opacity-50"
+                                >
+                                  Submit answer
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {busy === 'replying' && (
+                      <div className="rounded-lg border border-dashed border-violet-200 p-4 text-sm text-gray-500 italic">
+                        Kara is choosing the next question…
+                      </div>
+                    )}
+                    {closed && busy !== 'replying' && (
+                      <div className="flex flex-col items-center gap-2 pt-2">
+                        <button
+                          onClick={generateReport}
+                          disabled={!!busy}
+                          className="bg-violet-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-violet-700 disabled:opacity-60"
+                        >
+                          {busy === 'reporting' ? 'Writing the report…' : current.report ? 'Regenerate check-in report' : 'Generate check-in report'}
+                        </button>
+                        {current.status === 'wrapping-up' && (
+                          <div className="w-full mt-2">
+                            <textarea
+                              value={draft}
+                              onChange={(e) => setDraft(e.target.value)}
+                              rows={2}
+                              disabled={!!busy}
+                              placeholder="Anything to add before the report? (optional)"
+                              className="w-full resize-y border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+                            />
+                            {draft.trim() && (
+                              <div className="flex justify-end mt-1">
+                                <button onClick={send} disabled={!!busy} className="text-sm text-violet-700 hover:underline">Send to Kara</button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <div ref={bottomRef} />
                   </div>
-                ))}
-                {busy === 'replying' && (
-                  <div className="flex justify-start">
-                    <div className="bg-gray-100 rounded-lg px-3 py-2 text-sm text-gray-500 italic">Kara is thinking…</div>
-                  </div>
-                )}
-                {current.status !== 'active' && busy !== 'replying' && (
-                  <div className="flex justify-center pt-2">
+                </div>
+                {current.status === 'active' && (
+                  <div className="border-t border-gray-200 px-6 py-2">
                     <button
                       onClick={generateReport}
-                      disabled={!!busy}
-                      className="bg-violet-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-violet-700 disabled:opacity-60"
+                      disabled={!!busy || current.messages.length < 2}
+                      className="text-xs text-gray-500 hover:text-violet-700 disabled:opacity-50"
                     >
-                      {busy === 'reporting' ? 'Writing the report…' : current.report ? 'Regenerate check-in report' : 'Generate check-in report'}
+                      {busy === 'reporting' ? 'Writing the report…' : 'Finish now and generate the report'}
                     </button>
                   </div>
                 )}
-                <div ref={bottomRef} />
-              </div>
-              <div className="border-t border-gray-200 p-3">
-                <div className="flex gap-2 items-end">
-                  <textarea
-                    ref={inputRef}
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
-                    }}
-                    rows={2}
-                    disabled={!!busy || current.status === 'completed'}
-                    placeholder={current.status === 'completed' ? 'This check-in is complete.' : 'Reply to Kara… (Enter to send, Shift+Enter for a new line)'}
-                    className="flex-1 resize-none border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 disabled:bg-gray-50"
-                  />
-                  <button
-                    onClick={send}
-                    disabled={!!busy || !draft.trim() || current.status === 'completed'}
-                    className="bg-violet-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-violet-700 disabled:opacity-50"
-                  >
-                    Send
-                  </button>
-                </div>
-                {current.status === 'active' && (
-                  <button
-                    onClick={generateReport}
-                    disabled={!!busy || current.messages.length < 2}
-                    className="mt-2 text-xs text-gray-500 hover:text-violet-700 disabled:opacity-50"
-                  >
-                    {busy === 'reporting' ? 'Writing the report…' : 'Finish now and generate the report'}
-                  </button>
-                )}
-              </div>
-            </>
-          )}
+              </>
+            );
+          })()}
 
           {pane === 'answers' && current && (
             <div className="flex-1 overflow-y-auto p-6">
@@ -482,6 +569,51 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
         </aside>
         </div>
       </div>
+      {promptFor && current && (
+        <PromptViewer checkinId={current.id} messageId={promptFor.messageId} label={promptFor.label} onClose={() => setPromptFor(null)} />
+      )}
     </div>
+  );
+}
+
+function PromptBlock({ title, text }: { title: string; text: string }) {
+  return (
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">{title}</p>
+      <pre className="text-xs bg-gray-50 border border-gray-200 rounded-md p-3 whitespace-pre-wrap break-words max-h-96 overflow-y-auto">{text}</pre>
+    </div>
+  );
+}
+
+function PromptViewer({ checkinId, messageId, label, onClose }: { checkinId: string; messageId: string; label: string; onClose: () => void }) {
+  const [record, setRecord] = useState<PromptRecord | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api<PromptRecord>(`/checkins/${checkinId}/messages/${messageId}/prompt`)
+      .then(setRecord)
+      .catch((e) => setError(e instanceof Error ? e.message : 'Could not load the prompt'));
+  }, [checkinId, messageId]);
+
+  const { system, messages, ...params } = record?.request ?? { system: '', messages: [] };
+  return (
+    <Modal isOpen onClose={onClose} title={`Prompt behind ${label}`} size="xl">
+      {error ? (
+        <p className="text-sm text-red-600">{error}</p>
+      ) : !record ? (
+        <p className="text-sm text-gray-500">Loading…</p>
+      ) : (
+        <div className="space-y-4">
+          <p className="text-xs text-gray-500">Sent {fmtDate(record.at)}. This is the complete request, exactly as sent to Claude.</p>
+          <PromptBlock title="Request parameters" text={JSON.stringify(params, null, 2)} />
+          <PromptBlock title="System prompt" text={system} />
+          {messages.map((m, i) => (
+            <PromptBlock key={i} title={`Message ${i + 1} · ${m.role}`} text={typeof m.content === 'string' ? m.content : JSON.stringify(m.content, null, 2)} />
+          ))}
+          <PromptBlock title={`Response${record.response.model ? ` · ${record.response.model}` : ''}${record.response.stop_reason ? ` · ${record.response.stop_reason}` : ''}`} text={record.response.text} />
+          {record.response.usage && <PromptBlock title="Usage" text={JSON.stringify(record.response.usage, null, 2)} />}
+        </div>
+      )}
+    </Modal>
   );
 }

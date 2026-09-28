@@ -4053,7 +4053,9 @@ registerKaraRoutes(app, {
   saveUsers,
   getOKRData,
   getOrganizationByDomain,
+  isSuperAdmin,
   playbookFile: KARA_PLAYBOOK_FILE,
+  promptsDir: join(__dirname, 'kara-prompts'),
 });
 
 // ============ Work Logs API Routes ============
