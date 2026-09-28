@@ -5,6 +5,9 @@ echo "Restart started at: $(date)"
 echo "Pulling latest changes..."
 git pull
 
+echo "Installing dependencies..."
+npm install
+
 echo "Building application..."
 npm run build
 
