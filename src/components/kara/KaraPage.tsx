@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import { renderNoteMarkdown } from '../mindmaps/markdown';
 import { Modal } from '../common/Modal';
 import { MarkdownAnswerEditor, MarkdownAnswerView } from './MarkdownAnswer';
+import { useOKRStore } from '../../store/okrStore';
+import type { ObjectiveType, Period } from '../../types';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 const KARA_URL = `${API_URL}/api/kara`;
@@ -19,13 +21,37 @@ interface CheckinSummary {
   hasReport: boolean;
 }
 
+const OBJECTIVE_TYPES: ObjectiveType[] = ['initiative', 'saga', 'epic', 'story', 'subtask'];
+
+interface Proposal {
+  action: 'create_objective';
+  title: string;
+  type: string;
+  period: string;
+  reason?: string;
+  status: 'pending' | 'created' | 'declined' | 'skipped';
+  objectiveId?: string;
+}
+
+type ProposalDecision = { accept: false } | { accept: true; title: string; type: string; periodId: string };
+
+interface KaraMessage {
+  id?: string;
+  role: 'kara' | 'user';
+  text: string;
+  at: string;
+  regenerated?: boolean;
+  options?: string[];
+  proposal?: Proposal;
+}
+
 interface Checkin {
   id: string;
   goal: string;
   status: CheckinStatus;
   createdAt: string;
   updatedAt: string;
-  messages: { id?: string; role: 'kara' | 'user'; text: string; at: string; regenerated?: boolean }[];
+  messages: KaraMessage[];
   answers: { topic: string; question: string; answer: string; at: string }[];
   report: string | null;
   reportAt: string | null;
@@ -95,6 +121,8 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
   const [busy, setBusy] = useState<null | 'starting' | 'replying' | 'reporting' | 'regenerating'>(null);
   const [promptFor, setPromptFor] = useState<{ messageId: string; label: string } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const fetchData = useOKRStore((state) => state.fetchData);
+  const periods = useOKRStore((state) => state.periods);
   const [error, setError] = useState<string | null>(null);
   const [playbook, setPlaybook] = useState<Playbook | null>(null);
   const [playbookDraft, setPlaybookDraft] = useState<string | null>(null);
@@ -165,21 +193,49 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
     setPane('chat');
   });
 
-  const send = () => {
-    const text = draft.trim();
+  // Submit an answer: the typed draft, or a choice Kara offered.
+  const send = (choice?: string) => {
+    const text = (choice ?? draft).trim();
     if (!text || !current || busy) return;
     // Show the message right away; the server echoes the saved transcript back.
     setCurrent({ ...current, messages: [...current.messages, { role: 'user', text, at: new Date().toISOString() }] });
-    setDraft('');
+    if (choice === undefined) setDraft('');
     run('replying', async () => {
       try {
         const data = await api<{ checkin: Checkin }>(`/checkins/${current.id}/messages`, { method: 'POST', body: JSON.stringify({ text }) });
         showCheckin(data.checkin);
       } catch (e) {
         setCurrent(current);
-        setDraft(text);
+        if (choice === undefined) setDraft(text);
         throw e;
       }
+    });
+  };
+
+  const answerProposal = (decision: ProposalDecision) => {
+    if (!current) return;
+    const id = current.id;
+    run('replying', async () => {
+      try {
+        const data = await api<{ checkin: Checkin }>(`/checkins/${id}/proposal`, { method: 'POST', body: JSON.stringify(decision) });
+        showCheckin(data.checkin);
+      } catch (e) {
+        // The outcome may be saved even if Kara then failed to reply; reload to show it.
+        const data = await api<{ checkin: Checkin }>(`/checkins/${id}`).catch(() => null);
+        if (data) showCheckin(data.checkin);
+        throw e;
+      } finally {
+        // A new objective should show up in the rest of the app.
+        if (decision.accept) fetchData();
+      }
+    });
+  };
+
+  const retryTurn = () => {
+    if (!current) return;
+    run('replying', async () => {
+      const data = await api<{ checkin: Checkin }>(`/checkins/${current.id}/continue`, { method: 'POST' });
+      showCheckin(data.checkin);
     });
   };
 
@@ -417,12 +473,29 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
                             )}
                           </div>
                           <Markdown text={m.text} />
+                          {m.proposal && (isCurrent && m.proposal.status === 'pending' && busy !== 'replying'
+                            ? <ProposalCard key={m.id} proposal={m.proposal} periods={periods} disabled={!!busy} onDecide={answerProposal} />
+                            : <ProposalOutcome proposal={m.proposal} />)}
+                          {isCurrent && busy !== 'replying' && !!m.options?.length && (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {m.options.map(o => (
+                                <button
+                                  key={o}
+                                  onClick={() => send(o)}
+                                  disabled={!!busy}
+                                  className="px-3 py-1.5 rounded-full border border-violet-300 bg-white text-sm text-violet-800 hover:bg-violet-100 disabled:opacity-50"
+                                >
+                                  {o}
+                                </button>
+                              ))}
+                            </div>
+                          )}
                           {isCurrent && busy !== 'replying' && (
                             <div className="mt-4">
                               <MarkdownAnswerEditor
                                 value={draft}
                                 onChange={setDraft}
-                                onSubmit={send}
+                                onSubmit={() => send()}
                                 disabled={!!busy}
                                 autoFocus
                                 placeholder="Type your answer… (markdown supported)"
@@ -430,7 +503,7 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
                               <div className="mt-2 flex items-center justify-between">
                                 <span className="text-xs text-gray-400">Ctrl/⌘ + Enter to submit</span>
                                 <button
-                                  onClick={send}
+                                  onClick={() => send()}
                                   disabled={!!busy || !draft.trim()}
                                   className="bg-violet-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-violet-700 disabled:opacity-50"
                                 >
@@ -445,6 +518,12 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
                     {busy === 'replying' && (
                       <div className="rounded-lg border border-dashed border-violet-200 p-4 text-sm text-gray-500 italic">
                         Kara is choosing the next question…
+                      </div>
+                    )}
+                    {!busy && last?.role === 'user' && current.status === 'active' && (
+                      <div className="rounded-lg border border-dashed border-amber-300 bg-amber-50 p-4 text-sm text-amber-800 flex items-center justify-between gap-3">
+                        <span>Kara didn't reply to your last answer.</span>
+                        <button onClick={retryTurn} className="px-3 py-1.5 rounded-md bg-white border border-amber-300 hover:bg-amber-100">Try again</button>
                       </div>
                     )}
                     {closed && busy !== 'replying' && (
@@ -467,7 +546,7 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
                             />
                             {draft.trim() && (
                               <div className="flex justify-end mt-1">
-                                <button onClick={send} disabled={!!busy} className="text-sm text-violet-700 hover:underline">Send to Kara</button>
+                                <button onClick={() => send()} disabled={!!busy} className="text-sm text-violet-700 hover:underline">Send to Kara</button>
                               </div>
                             )}
                           </div>
@@ -577,6 +656,81 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
       {promptFor && current && (
         <PromptViewer checkinId={current.id} messageId={promptFor.messageId} label={promptFor.label} onClose={() => setPromptFor(null)} />
       )}
+    </div>
+  );
+}
+
+const PROPOSAL_OUTCOME: Record<Exclude<Proposal['status'], 'pending'>, string> = {
+  created: 'Created',
+  declined: 'Declined',
+  skipped: 'Answered instead',
+};
+
+function ProposalOutcome({ proposal }: { proposal: Proposal }) {
+  if (proposal.status === 'pending') return null;
+  return (
+    <p className={`mt-2 text-xs ${proposal.status === 'created' ? 'text-green-700' : 'text-gray-500'}`}>
+      {PROPOSAL_OUTCOME[proposal.status]}: objective "{proposal.title}"
+      {proposal.status === 'created' && ` (${proposal.type}, ${proposal.period})`}
+    </p>
+  );
+}
+
+// Kara's offer to create an objective. Everything is editable before it's
+// created; nothing happens until the person clicks Create.
+function ProposalCard({ proposal, periods, disabled, onDecide }: {
+  proposal: Proposal;
+  periods: Period[];
+  disabled: boolean;
+  onDecide: (decision: ProposalDecision) => void;
+}) {
+  const open = periods.filter(p => !p.archived);
+  const [title, setTitle] = useState(proposal.title);
+  const [type, setType] = useState(OBJECTIVE_TYPES.includes(proposal.type as ObjectiveType) ? proposal.type : '');
+  const [periodId, setPeriodId] = useState(
+    () => open.find(p => p.name.toLowerCase() === proposal.period.toLowerCase())?.id ?? '',
+  );
+  const field = 'mt-1 w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-violet-500';
+  return (
+    <div className="mt-3 rounded-md border border-violet-200 bg-white p-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Create objective?</p>
+      {proposal.reason && <p className="text-xs text-gray-500 mt-0.5">{proposal.reason}</p>}
+      <label className="block mt-2">
+        <span className="text-xs text-gray-600">Title</span>
+        <input value={title} onChange={(e) => setTitle(e.target.value)} className={field} />
+      </label>
+      <div className="grid grid-cols-2 gap-2 mt-2">
+        <label className="block">
+          <span className="text-xs text-gray-600">Type</span>
+          <select value={type} onChange={(e) => setType(e.target.value)} className={field}>
+            <option value="">Choose…</option>
+            {OBJECTIVE_TYPES.map(t => <option key={t} value={t}>{t[0].toUpperCase() + t.slice(1)}</option>)}
+          </select>
+        </label>
+        <label className="block">
+          <span className="text-xs text-gray-600">Period</span>
+          <select value={periodId} onChange={(e) => setPeriodId(e.target.value)} className={field}>
+            <option value="">Choose…</option>
+            {open.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </label>
+      </div>
+      <div className="flex justify-end gap-2 mt-3">
+        <button
+          onClick={() => onDecide({ accept: false })}
+          disabled={disabled}
+          className="px-3 py-1.5 rounded-md text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+        >
+          Don't create
+        </button>
+        <button
+          onClick={() => onDecide({ accept: true, title: title.trim(), type, periodId })}
+          disabled={disabled || !title.trim() || !type || !periodId}
+          className="px-3 py-1.5 rounded-md text-sm font-medium bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50"
+        >
+          Create objective
+        </button>
+      </div>
     </div>
   );
 }

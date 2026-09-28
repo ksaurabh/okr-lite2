@@ -4052,6 +4052,8 @@ registerKaraRoutes(app, {
   getUsers,
   saveUsers,
   getOKRData,
+  saveOKRData,
+  generateId,
   getOrganizationByDomain,
   isSuperAdmin,
   playbookFile: KARA_PLAYBOOK_FILE,

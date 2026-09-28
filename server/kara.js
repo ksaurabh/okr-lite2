@@ -50,6 +50,8 @@ stand, what's in the way, and what happens next.
 - **Flags for the manager**: anything that needs attention.
 `;
 
+const OBJECTIVE_TYPES = ['initiative', 'saga', 'epic', 'story', 'subtask'];
+
 const TURN_SCHEMA = {
   type: 'object',
   properties: {
@@ -67,11 +69,40 @@ const TURN_SCHEMA = {
         additionalProperties: false,
       },
     },
+    options: { type: 'array', items: { type: 'string' } },
+    proposal: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['none', 'create_objective'] },
+        title: { type: 'string' },
+        type: { type: 'string', enum: ['', ...OBJECTIVE_TYPES] },
+        period: { type: 'string' },
+        reason: { type: 'string' },
+      },
+      required: ['action', 'title', 'type', 'period', 'reason'],
+      additionalProperties: false,
+    },
     done: { type: 'boolean' },
   },
-  required: ['message', 'recorded', 'done'],
+  required: ['message', 'recorded', 'options', 'proposal', 'done'],
   additionalProperties: false,
 };
+
+// Kara looks up existing objectives with this tool before proposing a new one.
+const TOOLS = [{
+  name: 'search_objectives',
+  description: "Search the organization's objectives (goals) that this person can see, in every period including Evergreen, by words in the title or description. Use it to check whether a goal the person mentions already exists before proposing to create one. Returns up to 15 best matches.",
+  input_schema: {
+    type: 'object',
+    properties: {
+      query: { type: 'string', description: 'Words to look for, e.g. the key words of the goal the person described.' },
+    },
+    required: ['query'],
+    additionalProperties: false,
+  },
+  strict: true,
+}];
+const MAX_TOOL_ROUNDS = 5;
 
 function turnSystemPrompt(playbook) {
   return `You are Kara, the Key Results Assistant in OKR Lite. You lead check-in conversations with a team member about their objectives and key results.
@@ -89,6 +120,8 @@ You lead the check-in as a series of questions. Each turn, you ask exactly one q
 Respond with JSON:
 - "message": your next question, optionally preceded by a brief acknowledgement of their last answer. When done is true, this is instead your closing message and asks nothing.
 - "recorded": the answers from the person's latest message worth keeping for the report, each with the topic (usually the key result's name), the question it answers, and the answer in a sentence or two, faithful to what they said. Empty when there is nothing new, including on your opening message.
+- "options": when your question has a fixed set of answers (for example, the playbook lists choices), the choices, each as the person would say it. They appear as buttons; the person can still type something else. Otherwise an empty list.
+- "proposal": set "action" to "create_objective" to offer to create an objective, with its "title", "type" (one of ${OBJECTIVE_TYPES.join(', ')}), "period" (a period name exactly as listed in the OKR data), and a one-line "reason". The person sees the proposal as a card they can edit and then accept or decline, so your message should ask whether to create it. Nothing is created unless they accept; their next message tells you what happened. Before proposing, use the search_objectives tool to check that no matching objective already exists; if one does, mention it instead. If the playbook doesn't say which period to use, pick the active period whose length best fits the goal. Otherwise set "action" to "none" and leave the other fields empty.
 - "done": true only when the check-in is complete: you have covered what the goal and playbook call for (or the person asked to wrap up) and your message is the closing one.`;
 }
 
@@ -106,7 +139,7 @@ Write the report in markdown, starting with a level-2 heading. Base it only on t
 
 const newId = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 
-export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getOKRData, getOrganizationByDomain, isSuperAdmin, playbookFile, promptsDir, configFile }) {
+export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getOKRData, saveOKRData, generateId, getOrganizationByDomain, isSuperAdmin, playbookFile, promptsDir, configFile }) {
   // --- Anthropic API key: set from the UI by a super admin (stored in
   // configFile, never sent back to the browser), else ANTHROPIC_API_KEY from
   // the environment.
@@ -210,7 +243,7 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
     status: c.status,
     createdAt: c.createdAt,
     updatedAt: c.updatedAt,
-    messages: c.messages.map(({ id, role, text, at, regenerated }) => ({ id, role, text, at, regenerated })),
+    messages: c.messages.map(({ id, role, text, at, regenerated, options, proposal }) => ({ id, role, text, at, regenerated, options, proposal })),
     answers: c.answers,
     report: c.report,
     reportAt: c.reportAt,
@@ -245,8 +278,14 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
     mine.sort((a, b) => rank(a) - rank(b));
     const shown = mine.slice(0, CONTEXT_OBJECTIVE_LIMIT);
 
-    if (activePeriodIds.size) {
-      lines.push(`Active periods: ${[...activePeriodIds].map(periodName).filter(Boolean).join(', ')}`);
+    const openPeriods = periods.filter(p => !p.archived);
+    if (openPeriods.length) {
+      lines.push('');
+      lines.push('Periods (objectives belong to one):');
+      for (const p of openPeriods) {
+        const dates = p.startDate && p.endDate ? `, ${p.startDate.slice(0, 10)} to ${p.endDate.slice(0, 10)}` : '';
+        lines.push(`- ${p.name} (${p.type}${dates}${p.isActive ? ', active' : ''})`);
+      }
     }
     lines.push('');
     lines.push(`Objectives and key results this person owns, is assigned, or created (${shown.length}${mine.length > shown.length ? ` of ${mine.length}` : ''}):`);
@@ -311,6 +350,41 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
     }
   }
 
+  // Objectives the check-in's person can see (mirrors /api/okr-data).
+  function visibleObjectives(email) {
+    const user = getUsers().find(u => u.email === email);
+    const org = user && getOrganizationByDomain(user.domain);
+    if (!org) return { org: null, objectives: [], data: null };
+    const data = getOKRData();
+    const isAdmin = org.admins?.some(a => a.email === email);
+    const objectives = data.objectives.filter(o => o.orgId === org.id && (
+      o.shared !== false || isAdmin || o.createdBy === email || (user.id && (o.ownerId === user.id || o.assigneeId === user.id))
+    ));
+    return { org, objectives, data, user };
+  }
+
+  function runTool(checkin, block) {
+    if (block.name !== 'search_objectives') return `Unknown tool: ${block.name}`;
+    const query = String(block.input?.query || '').toLowerCase();
+    const words = [...new Set(query.split(/[^a-z0-9]+/).filter(w => w.length >= 3))];
+    if (!words.length) return 'Give a few words to search for.';
+    const { objectives, data } = visibleObjectives(checkin.email);
+    const users = getUsers();
+    const scored = objectives.map(o => {
+      const title = (o.title || '').toLowerCase();
+      const desc = (o.description || '').toLowerCase();
+      let score = title.includes(query.trim()) ? 5 : 0;
+      for (const w of words) score += (title.includes(w) ? 2 : 0) + (desc.includes(w) ? 1 : 0);
+      return { o, score };
+    }).filter(x => x.score > 0).sort((a, b) => b.score - a.score).slice(0, 15);
+    if (!scored.length) return `No objectives match "${block.input?.query}".`;
+    return scored.map(({ o }) => {
+      const period = data.periods.find(p => p.id === o.periodId)?.name || 'no period';
+      const owner = users.find(u => u.id === o.ownerId)?.name;
+      return `- "${o.title}" [${o.isKeyResult ? 'key result' : o.type || o.level}, period ${period}, ${o.workflowStatus}${owner ? `, owner ${owner}` : ''}]`;
+    }).join('\n');
+  }
+
   async function karaTurn(checkin, { regenerated = false } = {}) {
     const request = {
       model: KARA_MODEL,
@@ -320,10 +394,24 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
       thinking: { type: 'adaptive' },
       output_config: { effort: 'medium', format: { type: 'json_schema', schema: TURN_SCHEMA } },
       cache_control: { type: 'ephemeral' },
+      tools: TOOLS,
       system: turnSystemPrompt(checkin.playbook),
       messages: apiMessages(checkin),
     };
-    const response = await getClient().beta.messages.create(request);
+    // Tool loop: Kara may search objectives before answering. Each round's
+    // request carries the whole exchange so far, so the last one is the
+    // complete prompt behind this message.
+    let response;
+    const usage = [];
+    for (let round = 0; ; round++) {
+      response = await getClient().beta.messages.create(request);
+      usage.push(response.usage);
+      if (response.stop_reason !== 'tool_use' || round >= MAX_TOOL_ROUNDS) break;
+      const results = response.content
+        .filter(b => b.type === 'tool_use')
+        .map(b => ({ type: 'tool_result', tool_use_id: b.id, content: runTool(checkin, b) }));
+      request.messages = [...request.messages, { role: 'assistant', content: response.content }, { role: 'user', content: results }];
+    }
     assertAnswered(response);
     const raw = textOf(response);
     let turn;
@@ -337,9 +425,18 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
     savePrompt(checkin.id, id, {
       at,
       request,
-      response: { model: response.model, stop_reason: response.stop_reason, usage: response.usage, text: raw },
+      response: { model: response.model, stop_reason: response.stop_reason, usage: usage.length === 1 ? usage[0] : usage, text: raw },
     });
-    checkin.messages.push({ id, role: 'kara', text: String(turn.message || ''), raw, at, ...(regenerated && { regenerated: true }) });
+    const options = Array.isArray(turn.options) ? turn.options.filter(o => typeof o === 'string' && o.trim()).slice(0, 12) : [];
+    const proposal = turn.proposal?.action === 'create_objective' && turn.proposal.title
+      ? { action: 'create_objective', title: turn.proposal.title, type: turn.proposal.type, period: turn.proposal.period, reason: turn.proposal.reason, status: 'pending' }
+      : null;
+    checkin.messages.push({
+      id, role: 'kara', text: String(turn.message || ''), raw, at,
+      ...(options.length && { options }),
+      ...(proposal && { proposal }),
+      ...(regenerated && { regenerated: true }),
+    });
     for (const r of Array.isArray(turn.recorded) ? turn.recorded : []) {
       checkin.answers.push({ topic: r.topic, question: r.question, answer: r.answer, at, messageId: id });
     }
@@ -477,6 +574,7 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
     const now = new Date().toISOString();
     const checkin = {
       id: newId('kc'),
+      email: req.user.email,
       goal,
       status: 'active',
       createdAt: now,
@@ -503,9 +601,105 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
     if (checkin.status === 'completed') return res.status(409).json({ error: 'This check-in is already complete.' });
     const text = typeof req.body?.text === 'string' ? req.body.text.trim().slice(0, MESSAGE_CAP) : '';
     if (!text) return res.status(400).json({ error: 'Message is empty.' });
+    checkin.email = req.user.email;
+    // Typing an answer instead of using a proposal's buttons passes on it.
+    const prev = checkin.messages[checkin.messages.length - 1];
+    if (prev?.proposal?.status === 'pending') prev.proposal = { ...prev.proposal, status: 'skipped' };
     // A reply after Kara's closing message reopens the conversation.
     checkin.status = 'active';
     checkin.messages.push({ id: newId('km'), role: 'user', text, at: new Date().toISOString() });
+    try {
+      await karaTurn(checkin);
+    } catch (err) {
+      return sendKaraError(res, err);
+    }
+    saveCheckin(req.user.email, checkin);
+    res.json({ checkin: publicCheckin(checkin) });
+  });
+
+  // Accept (optionally with edits) or decline the objective Kara proposed in
+  // her current question. The outcome becomes the person's answer, and Kara
+  // asks her next question.
+  app.post('/api/kara/checkins/:id/proposal', requireAuth, async (req, res) => {
+    const checkin = getCheckins(req.user.email).find(c => c.id === req.params.id);
+    if (!checkin) return res.status(404).json({ error: 'Check-in not found' });
+    const last = checkin.messages[checkin.messages.length - 1];
+    if (!last || last.role !== 'kara' || last.proposal?.status !== 'pending') {
+      return res.status(409).json({ error: 'There is no pending proposal to answer.' });
+    }
+    checkin.email = req.user.email;
+    const at = new Date().toISOString();
+    let reply;
+    if (req.body?.accept) {
+      const { org, data, user } = visibleObjectives(req.user.email);
+      if (!org) return res.status(403).json({ error: 'No organization found' });
+      const title = String(req.body.title ?? last.proposal.title).trim().slice(0, 500);
+      const type = String(req.body.type ?? last.proposal.type);
+      const period = data.periods.find(p => p.orgId === org.id && !p.archived && (
+        req.body.periodId ? p.id === req.body.periodId : p.name.toLowerCase() === String(last.proposal.period).toLowerCase()
+      ));
+      if (!title) return res.status(400).json({ error: 'The objective needs a title.' });
+      if (!OBJECTIVE_TYPES.includes(type)) return res.status(400).json({ error: 'Pick a type for the objective.' });
+      if (!period) return res.status(400).json({ error: 'Pick a period for the objective.' });
+      const objective = {
+        id: generateId(),
+        orgId: org.id,
+        createdBy: req.user.email,
+        shared: true,
+        title,
+        level: 'individual',
+        type,
+        ownerId: user?.id,
+        periodId: period.id,
+        progress: 0,
+        status: 'behind',
+        workflowStatus: 'todo',
+        createdAt: at,
+        updatedAt: at,
+        history: [{
+          id: generateId(),
+          timestamp: at,
+          userEmail: req.user.email,
+          action: 'created',
+          changes: [
+            { field: 'title', newValue: title },
+            { field: 'level', newValue: 'individual' },
+            { field: 'type', newValue: type },
+            { field: 'period', newValue: period.name },
+            { field: 'source', newValue: 'Kara check-in' },
+          ],
+        }],
+      };
+      data.objectives.push(objective);
+      saveOKRData(data);
+      last.proposal = { ...last.proposal, status: 'created', title, type, period: period.name, objectiveId: objective.id };
+      reply = `Yes, create it. (Created the objective "${title}", type ${type}, period ${period.name}.)`;
+    } else {
+      last.proposal = { ...last.proposal, status: 'declined' };
+      reply = "No, don't create it.";
+    }
+    checkin.status = 'active';
+    checkin.messages.push({ id: newId('km'), role: 'user', text: reply, at });
+    try {
+      await karaTurn(checkin);
+    } catch (err) {
+      // The objective (if any) exists and the reply is recorded; keep both.
+      saveCheckin(req.user.email, checkin);
+      return sendKaraError(res, err);
+    }
+    saveCheckin(req.user.email, checkin);
+    res.json({ checkin: publicCheckin(checkin) });
+  });
+
+  // Retry Kara's turn when the last message is the person's (a previous call
+  // to Claude failed after their answer was saved).
+  app.post('/api/kara/checkins/:id/continue', requireAuth, async (req, res) => {
+    const checkin = getCheckins(req.user.email).find(c => c.id === req.params.id);
+    if (!checkin) return res.status(404).json({ error: 'Check-in not found' });
+    if (checkin.messages[checkin.messages.length - 1]?.role !== 'user') {
+      return res.status(409).json({ error: 'Kara has already replied.' });
+    }
+    checkin.email = req.user.email;
     try {
       await karaTurn(checkin);
     } catch (err) {
@@ -528,6 +722,7 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
     checkin.messages.pop();
     checkin.answers = checkin.answers.filter(a => !a.messageId || a.messageId !== last.id);
     checkin.playbook = getPlaybook().content;
+    checkin.email = req.user.email;
     checkin.status = 'active';
     try {
       await karaTurn(checkin, { regenerated: true });
