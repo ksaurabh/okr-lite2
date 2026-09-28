@@ -7,6 +7,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import 'dotenv/config';
+import { registerKaraRoutes } from './kara.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -20,6 +21,7 @@ const SUPER_ADMINS_FILE = join(__dirname, 'super-admins.json');
 const USERS_FILE = join(__dirname, 'users.json');
 const OKR_DATA_FILE = join(__dirname, 'okr-data.json');
 const MINDMAPS_FILE = join(__dirname, 'mindmaps.json');
+const KARA_PLAYBOOK_FILE = join(__dirname, 'kara-playbook.json');
 
 // Initialize files if they don't exist
 if (!existsSync(DOMAINS_FILE)) {
@@ -1365,7 +1367,7 @@ app.get('/api/users', requireAuth, (req, res) => {
   if (isSuperAdmin(req.user.email)) {
     const allUsers = getUsers();
     // Enrich users with organization info
-    const usersWithOrg = allUsers.map(user => {
+    const usersWithOrg = allUsers.map(({ karaCheckins: _private, ...user }) => {
       const org = organizations.find(o => o.id === user.organizationId);
       return {
         ...user,
@@ -1381,7 +1383,8 @@ app.get('/api/users', requireAuth, (req, res) => {
     return res.json({ users: [], allOrgs: false });
   }
   const users = getUsersByOrganization(org.id);
-  const usersWithOrg = users.map(user => ({
+  // Kara check-ins are private to their user.
+  const usersWithOrg = users.map(({ karaCheckins: _private, ...user }) => ({
     ...user,
     organizationName: org.name,
   }));
@@ -4040,6 +4043,17 @@ app.delete('/api/users/me/agent-sessions/:id', requireAuth, (req, res) => {
   sessions.splice(idx, 1);
   saveUserAgentSessions(req.user.email, sessions);
   res.json({ ok: true });
+});
+
+// ============ Kara (Key Results Assistant) API Routes ============
+
+registerKaraRoutes(app, {
+  requireAuth,
+  getUsers,
+  saveUsers,
+  getOKRData,
+  getOrganizationByDomain,
+  playbookFile: KARA_PLAYBOOK_FILE,
 });
 
 // ============ Work Logs API Routes ============

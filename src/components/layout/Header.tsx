@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { Modal } from '../common/Modal';
 import type { Period, User } from '../../types';
 import { APP_VERSION } from '../../version';
+import { KaraChat } from '../kara/KaraChat';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -19,6 +20,7 @@ export function Header({ onAddObjective }: HeaderProps) {
   const [storedName, setStoredName] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [karaOpen, setKaraOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -104,6 +106,15 @@ export function Header({ onAddObjective }: HeaderProps) {
             )}
           </div>
           <div className="flex items-center gap-4">
+            <div className="flex flex-col items-center">
+              <button
+                onClick={() => setKaraOpen(true)}
+                className="bg-violet-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-violet-700 transition-colors"
+              >
+                Checkin with Kara
+              </button>
+              <span className="text-[11px] text-gray-500 mt-0.5">Kara: Key Results Assistant</span>
+            </div>
             <button
               onClick={onAddObjective}
               className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors"
@@ -164,6 +175,7 @@ export function Header({ onAddObjective }: HeaderProps) {
           </div>
         </div>
       </header>
+      {karaOpen && <KaraChat onClose={() => setKaraOpen(false)} />}
       {pickerOpen && (
         <ImpersonatePicker
           currentEmail={user?.email}
