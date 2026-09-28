@@ -4056,6 +4056,7 @@ registerKaraRoutes(app, {
   isSuperAdmin,
   playbookFile: KARA_PLAYBOOK_FILE,
   promptsDir: join(__dirname, 'kara-prompts'),
+  configFile: join(__dirname, 'kara-config.json'),
 });
 
 // ============ Work Logs API Routes ============

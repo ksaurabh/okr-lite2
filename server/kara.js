@@ -106,10 +106,28 @@ Write the report in markdown, starting with a level-2 heading. Base it only on t
 
 const newId = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 
-export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getOKRData, getOrganizationByDomain, isSuperAdmin, playbookFile, promptsDir }) {
+export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getOKRData, getOrganizationByDomain, isSuperAdmin, playbookFile, promptsDir, configFile }) {
+  // --- Anthropic API key: set from the UI by a super admin (stored in
+  // configFile, never sent back to the browser), else ANTHROPIC_API_KEY from
+  // the environment.
+  function getConfig() {
+    try {
+      return JSON.parse(readFileSync(configFile, 'utf-8'));
+    } catch {
+      return {};
+    }
+  }
+  const activeKey = () => getConfig().apiKey || process.env.ANTHROPIC_API_KEY || '';
+
   let client = null;
+  let clientKey = null;
   const getClient = () => {
-    if (!client) client = new Anthropic();
+    const key = activeKey();
+    if (!key) throw Object.assign(new Error('Missing API key'), { missingKey: true });
+    if (!client || clientKey !== key) {
+      client = new Anthropic({ apiKey: key });
+      clientKey = key;
+    }
     return client;
   };
 
@@ -358,9 +376,12 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
   }
 
   function sendKaraError(res, err) {
-    if (err instanceof Anthropic.AuthenticationError || /api key|apiKey|authToken|credentials/i.test(err?.message || '')) {
-      console.error('[kara] Claude credentials missing or invalid:', err.message);
-      return res.status(503).json({ error: "Kara isn't set up yet: the server needs ANTHROPIC_API_KEY." });
+    if (err?.missingKey) {
+      return res.status(503).json({ error: "Kara isn't set up yet: a super admin needs to add an Anthropic API key in Kara's settings." });
+    }
+    if (err instanceof Anthropic.AuthenticationError) {
+      console.error('[kara] Anthropic API key rejected:', err.message);
+      return res.status(503).json({ error: "Kara's Anthropic API key was rejected. A super admin needs to update it in Kara's settings." });
     }
     if (err instanceof Anthropic.RateLimitError) {
       return res.status(429).json({ error: 'Kara is busy right now. Try again in a moment.' });
@@ -375,6 +396,52 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
   }
 
   // --- Routes ---
+  const keyStatus = () => {
+    const config = getConfig();
+    const key = activeKey();
+    return {
+      source: config.apiKey ? 'ui' : process.env.ANTHROPIC_API_KEY ? 'env' : 'none',
+      hint: key ? `…${key.slice(-4)}` : null,
+      updatedAt: config.apiKey ? config.updatedAt || null : null,
+      updatedBy: config.apiKey ? config.updatedBy || null : null,
+    };
+  };
+
+  app.get('/api/kara/config', requireAuth, (req, res) => {
+    if (!canAdmin(req)) return res.status(403).json({ error: 'Only super admins can view Kara settings.' });
+    res.json(keyStatus());
+  });
+
+  // Save a new key, after checking with Anthropic that it works.
+  app.put('/api/kara/config', requireAuth, async (req, res) => {
+    if (!canAdmin(req)) return res.status(403).json({ error: 'Only super admins can change Kara settings.' });
+    const apiKey = typeof req.body?.apiKey === 'string' ? req.body.apiKey.trim() : '';
+    if (!apiKey) return res.status(400).json({ error: 'Paste an API key.' });
+    try {
+      await new Anthropic({ apiKey }).models.retrieve(KARA_MODEL);
+    } catch (err) {
+      if (err instanceof Anthropic.AuthenticationError) return res.status(400).json({ error: 'Anthropic rejected that key. Check it and try again.' });
+      if (err instanceof Anthropic.PermissionDeniedError || err instanceof Anthropic.NotFoundError) {
+        return res.status(400).json({ error: `That key works but can't use ${KARA_MODEL}.` });
+      }
+      console.error('[kara] could not verify API key:', err?.message);
+      return res.status(502).json({ error: "Couldn't reach Anthropic to check the key. Try again." });
+    }
+    writeFileSync(configFile, JSON.stringify({
+      apiKey,
+      updatedAt: new Date().toISOString(),
+      updatedBy: realEmail(req),
+    }, null, 2), { mode: 0o600 });
+    res.json(keyStatus());
+  });
+
+  // Remove the UI-set key (falls back to ANTHROPIC_API_KEY, if the server has one).
+  app.delete('/api/kara/config', requireAuth, (req, res) => {
+    if (!canAdmin(req)) return res.status(403).json({ error: 'Only super admins can change Kara settings.' });
+    try { unlinkSync(configFile); } catch { /* nothing saved */ }
+    res.json(keyStatus());
+  });
+
   app.get('/api/kara/playbook', requireAuth, (req, res) => {
     res.json({ ...getPlaybook(), canEdit: canEditPlaybook(req), canAdmin: canAdmin(req) });
   });

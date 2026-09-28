@@ -93,6 +93,7 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState<null | 'starting' | 'replying' | 'reporting' | 'regenerating'>(null);
   const [promptFor, setPromptFor] = useState<{ messageId: string; label: string } | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [playbook, setPlaybook] = useState<Playbook | null>(null);
   const [playbookDraft, setPlaybookDraft] = useState<string | null>(null);
@@ -258,6 +259,18 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
           <h1 className="text-base font-semibold text-gray-900 leading-tight">Checkin with Kara</h1>
           <p className="text-xs text-gray-500">Kara: Key Results Assistant</p>
         </div>
+        {playbook?.canAdmin && (
+          <button
+            onClick={() => setSettingsOpen(true)}
+            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            Kara settings
+          </button>
+        )}
       </div>
       <div className="flex-1 flex min-h-0">
         {/* History */}
@@ -569,10 +582,102 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
         </aside>
         </div>
       </div>
+      {settingsOpen && <KaraSettings onClose={() => setSettingsOpen(false)} />}
       {promptFor && current && (
         <PromptViewer checkinId={current.id} messageId={promptFor.messageId} label={promptFor.label} onClose={() => setPromptFor(null)} />
       )}
     </div>
+  );
+}
+
+interface KeyStatus {
+  source: 'ui' | 'env' | 'none';
+  hint: string | null;
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
+
+// Super admins: the Anthropic API key Kara uses. The key itself never comes
+// back from the server; only where it's set and its last four characters.
+function KaraSettings({ onClose }: { onClose: () => void }) {
+  const [status, setStatus] = useState<KeyStatus | null>(null);
+  const [key, setKey] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    api<KeyStatus>('/config').then(setStatus).catch((e) => setError(e instanceof Error ? e.message : 'Could not load settings'));
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      setStatus(await api<KeyStatus>('/config', { method: 'PUT', body: JSON.stringify({ apiKey: key }) }));
+      setKey('');
+      setSaved(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save the key');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeKey = async () => {
+    if (!window.confirm('Remove the API key saved here?')) return;
+    setError(null);
+    setSaved(false);
+    try {
+      setStatus(await api<KeyStatus>('/config', { method: 'DELETE' }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not remove the key');
+    }
+  };
+
+  return (
+    <Modal isOpen onClose={onClose} title="Kara settings">
+      <div className="space-y-4">
+        <div>
+          <p className="text-sm font-medium text-gray-800">Anthropic API key</p>
+          <p className="text-sm text-gray-600 mt-1">
+            {!status ? 'Loading…'
+              : status.source === 'ui' ? <>Kara is using the key ending <span className="font-mono">{status.hint}</span>, saved here{status.updatedBy ? ` by ${status.updatedBy}` : ''}{status.updatedAt ? ` on ${fmtDate(status.updatedAt)}` : ''}.</>
+              : status.source === 'env' ? <>Kara is using the key ending <span className="font-mono">{status.hint}</span> from the server's <span className="font-mono">.env</span>. A key saved here takes priority.</>
+              : 'No key is set, so Kara cannot run check-ins yet.'}
+          </p>
+        </div>
+        <label className="block">
+          <span className="text-sm text-gray-700">{status?.source === 'none' ? 'API key' : 'Replace with a new key'}</span>
+          <input
+            type="password"
+            autoComplete="off"
+            value={key}
+            onChange={(e) => { setKey(e.target.value); setSaved(false); }}
+            placeholder="sk-ant-…"
+            className="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-violet-500"
+          />
+          <span className="text-xs text-gray-500">
+            Create one at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" className="text-violet-700 hover:underline">console.anthropic.com</a>. It's checked with Anthropic before it's saved.
+          </span>
+        </label>
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        {saved && <p className="text-sm text-green-700">Key verified and saved. Kara is ready.</p>}
+        <div className="flex items-center justify-between">
+          {status?.source === 'ui' ? (
+            <button onClick={removeKey} className="text-sm text-red-600 hover:underline">Remove saved key</button>
+          ) : <span />}
+          <button
+            onClick={save}
+            disabled={saving || !key.trim()}
+            className="bg-violet-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-violet-700 disabled:opacity-50"
+          >
+            {saving ? 'Checking…' : 'Save key'}
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
