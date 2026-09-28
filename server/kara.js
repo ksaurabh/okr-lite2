@@ -318,7 +318,7 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
       }
     }
 
-    const last = getCheckins(user.email).find(c => c.status === 'completed' && c.report);
+    const last = getCheckins(user.email).find(c => c.report);
     if (last) {
       lines.push('');
       lines.push(`Report from the previous check-in (${last.reportAt?.slice(0, 10)}):`);
@@ -468,7 +468,9 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
     const now = new Date().toISOString();
     checkin.report = textOf(response).trim();
     checkin.reportAt = now;
-    checkin.status = 'completed';
+    // A report can be written mid-session without ending it; once Kara has
+    // closed the check-in, the report completes it.
+    if (checkin.status === 'wrapping-up') checkin.status = 'completed';
     checkin.updatedAt = now;
   }
 
@@ -744,7 +746,7 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
     res.json(record);
   });
 
-  // Finish: generate (or regenerate) the check-in report.
+  // Generate (or regenerate) the check-in report from the conversation so far.
   app.post('/api/kara/checkins/:id/report', requireAuth, async (req, res) => {
     const checkin = getCheckins(req.user.email).find(c => c.id === req.params.id);
     if (!checkin) return res.status(404).json({ error: 'Check-in not found' });

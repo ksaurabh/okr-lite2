@@ -377,6 +377,14 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
                   {tab('chat', 'Questions')}
                   {tab('answers', `Answers (${current.answers.length})`)}
                   {current.report && tab('report', 'Report')}
+                  <button
+                    onClick={generateReport}
+                    disabled={!!busy || !current.messages.some(m => m.role === 'user')}
+                    title={current.messages.some(m => m.role === 'user') ? 'Write a check-in report from the conversation so far' : 'Answer at least one question first'}
+                    className="ml-2 bg-violet-600 text-white px-3 py-1.5 rounded-md text-sm font-medium hover:bg-violet-700 disabled:opacity-50"
+                  >
+                    {busy === 'reporting' ? 'Writing report…' : current.report ? 'Regenerate report' : 'Generate report'}
+                  </button>
                 </>
               )}
             </div>
@@ -556,17 +564,6 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
                     <div ref={bottomRef} />
                   </div>
                 </div>
-                {current.status === 'active' && (
-                  <div className="border-t border-gray-200 px-6 py-2">
-                    <button
-                      onClick={generateReport}
-                      disabled={!!busy || current.messages.length < 2}
-                      className="text-xs text-gray-500 hover:text-violet-700 disabled:opacity-50"
-                    >
-                      {busy === 'reporting' ? 'Writing the report…' : 'Finish now and generate the report'}
-                    </button>
-                  </div>
-                )}
               </>
             );
           })()}
@@ -593,6 +590,11 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
             <div className="flex-1 overflow-y-auto p-6">
               <div className="max-w-3xl">
                 <p className="text-xs text-gray-500 mb-3">Generated {current.reportAt && fmtDate(current.reportAt)}</p>
+                {current.reportAt && current.messages.some(m => m.role === 'user' && m.at > current.reportAt!) && (
+                  <p className="mb-4 px-3 py-2 rounded-md bg-amber-50 text-sm text-amber-800">
+                    You've answered more questions since this report was written. Use Regenerate report to include them.
+                  </p>
+                )}
                 <Markdown text={current.report} />
                 <button
                   onClick={() => navigator.clipboard?.writeText(current.report ?? '')}
