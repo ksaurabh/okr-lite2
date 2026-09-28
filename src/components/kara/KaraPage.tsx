@@ -41,6 +41,7 @@ interface KaraMessage {
   text: string;
   at: string;
   regenerated?: boolean;
+  resume?: boolean;
   options?: string[];
   proposal?: Proposal;
 }
@@ -78,6 +79,16 @@ type Pane = 'start' | 'chat' | 'report' | 'answers';
 const PLAYBOOK_WIDTH_KEY = 'kara-playbook-width';
 const PLAYBOOK_MIN_WIDTH = 260;
 const CHAT_MIN_WIDTH = 360;
+
+const PLAYBOOK_VISIBLE_KEY = 'kara-playbook-visible';
+
+function loadPlaybookVisible(): boolean {
+  try {
+    return localStorage.getItem(PLAYBOOK_VISIBLE_KEY) !== 'false';
+  } catch {
+    return true;
+  }
+}
 
 function loadPlaybookWidth(): number {
   try {
@@ -127,6 +138,12 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
   const [playbook, setPlaybook] = useState<Playbook | null>(null);
   const [playbookDraft, setPlaybookDraft] = useState<string | null>(null);
   const [playbookWidth, setPlaybookWidth] = useState(loadPlaybookWidth);
+  const [playbookVisible, setPlaybookVisible] = useState(loadPlaybookVisible);
+  const togglePlaybook = () => {
+    const next = !playbookVisible;
+    setPlaybookVisible(next);
+    try { localStorage.setItem(PLAYBOOK_VISIBLE_KEY, String(next)); } catch { /* ignore */ }
+  };
   const [resizing, setResizing] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const splitRef = useRef<HTMLDivElement>(null);
@@ -187,8 +204,8 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
     }
   };
 
-  const start = (mode: 'checkin' | 'speak' = 'checkin') => run(mode === 'speak' ? 'speaking' : 'starting', async () => {
-    const data = await api<{ checkin: Checkin }>('/checkins', { method: 'POST', body: JSON.stringify(mode === 'speak' ? { mode } : { goal }) });
+  const start = () => run('starting', async () => {
+    const data = await api<{ checkin: Checkin }>('/checkins', { method: 'POST', body: JSON.stringify({ goal }) });
     showCheckin(data.checkin);
     setPane('chat');
   });
@@ -227,6 +244,24 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
       } finally {
         // A new objective should show up in the rest of the app.
         if (decision.accept) fetchData();
+      }
+    });
+  };
+
+  // Continue this check-in: Kara opens with a fresh question from the playbook.
+  const speak = () => {
+    if (!current) return;
+    const id = current.id;
+    setPane('chat');
+    run('speaking', async () => {
+      try {
+        const data = await api<{ checkin: Checkin }>(`/checkins/${id}/speak`, { method: 'POST' });
+        showCheckin(data.checkin);
+      } catch (e) {
+        // The session may be reopened even if Kara then failed to reply.
+        const data = await api<{ checkin: Checkin }>(`/checkins/${id}`).catch(() => null);
+        if (data) showCheckin(data.checkin);
+        throw e;
       }
     });
   };
@@ -311,10 +346,20 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
           <h1 className="text-base font-semibold text-gray-900 leading-tight">Checkin with Kara</h1>
           <p className="text-xs text-gray-500">Kara: Key Results Assistant</p>
         </div>
+        <button
+          onClick={togglePlaybook}
+          aria-pressed={playbookVisible}
+          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+          </svg>
+          {playbookVisible ? 'Hide playbook' : 'Show playbook'}
+        </button>
         {playbook?.canAdmin && (
           <button
             onClick={() => setSettingsOpen(true)}
-            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -334,13 +379,6 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
               className="w-full bg-violet-600 text-white px-3 py-2 rounded-md text-sm font-medium hover:bg-violet-700 disabled:opacity-60"
             >
               + New check-in
-            </button>
-            <button
-              onClick={() => start('speak')}
-              disabled={!!busy}
-              className="mt-2 w-full border border-violet-300 bg-white text-violet-700 px-3 py-2 rounded-md text-sm font-medium hover:bg-violet-50 disabled:opacity-60"
-            >
-              {busy === 'speaking' ? 'Kara is getting ready…' : 'Speak with Kara'}
             </button>
           </div>
           <div className="flex-1 overflow-y-auto">
@@ -384,6 +422,16 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
                   {tab('chat', 'Questions')}
                   {tab('answers', `Answers (${current.answers.length})`)}
                   {current.report && tab('report', 'Report')}
+                  {current.status !== 'active' && (
+                    <button
+                      onClick={speak}
+                      disabled={!!busy}
+                      title="Continue this session: Kara picks it back up with a new question"
+                      className="ml-2 border border-violet-300 text-violet-700 px-3 py-1.5 rounded-md text-sm font-medium hover:bg-violet-50 disabled:opacity-50"
+                    >
+                      {busy === 'speaking' ? 'Kara is getting ready…' : 'Speak with Kara'}
+                    </button>
+                  )}
                   <button
                     onClick={generateReport}
                     disabled={!!busy || !current.messages.some(m => m.role === 'user')}
@@ -424,25 +472,12 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
                   />
                 </label>
                 <button
-                  onClick={() => start()}
+                  onClick={start}
                   disabled={!!busy}
                   className="bg-violet-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-violet-700 disabled:opacity-60"
                 >
                   {busy === 'starting' ? 'Kara is reading your key results…' : 'Start check-in'}
                 </button>
-                <div className="pt-4 mt-2 border-t border-gray-200">
-                  <h3 className="text-base font-semibold text-gray-900">Or just speak with Kara</h3>
-                  <p className="text-sm text-gray-600 mt-1">
-                    No goal needed. Kara opens with a question drawn from her playbook, and the conversation goes wherever your answers lead.
-                  </p>
-                  <button
-                    onClick={() => start('speak')}
-                    disabled={!!busy}
-                    className="mt-3 border border-violet-300 text-violet-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-violet-50 disabled:opacity-60"
-                  >
-                    {busy === 'speaking' ? 'Kara is getting ready…' : 'Speak with Kara'}
-                  </button>
-                </div>
               </div>
             </div>
           )}
@@ -458,6 +493,15 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
                 <div className="flex-1 overflow-y-auto px-6 py-5">
                   <div className="max-w-3xl mx-auto space-y-4">
                     {current.messages.map((m, i) => {
+                      if (m.resume) {
+                        return (
+                          <div key={m.id ?? i} className="flex items-center gap-3 text-xs text-gray-500">
+                            <div className="flex-1 border-t border-gray-200" />
+                            You chose Speak with Kara · {fmtDate(m.at)}
+                            <div className="flex-1 border-t border-gray-200" />
+                          </div>
+                        );
+                      }
                       if (m.role === 'user') {
                         return (
                           <div key={m.id ?? i} className="ml-6 pl-4 border-l-2 border-violet-200">
@@ -543,7 +587,7 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
                         </div>
                       );
                     })}
-                    {busy === 'replying' && (
+                    {(busy === 'replying' || busy === 'speaking') && (
                       <div className="rounded-lg border border-dashed border-violet-200 p-4 text-sm text-gray-500 italic">
                         Kara is choosing the next question…
                       </div>
@@ -554,15 +598,24 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
                         <button onClick={retryTurn} className="px-3 py-1.5 rounded-md bg-white border border-amber-300 hover:bg-amber-100">Try again</button>
                       </div>
                     )}
-                    {closed && busy !== 'replying' && (
+                    {closed && busy !== 'replying' && busy !== 'speaking' && (
                       <div className="flex flex-col items-center gap-2 pt-2">
-                        <button
-                          onClick={generateReport}
-                          disabled={!!busy}
-                          className="bg-violet-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-violet-700 disabled:opacity-60"
-                        >
-                          {busy === 'reporting' ? 'Writing the report…' : current.report ? 'Regenerate check-in report' : 'Generate check-in report'}
-                        </button>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={generateReport}
+                            disabled={!!busy}
+                            className="bg-violet-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-violet-700 disabled:opacity-60"
+                          >
+                            {busy === 'reporting' ? 'Writing the report…' : current.report ? 'Regenerate check-in report' : 'Generate check-in report'}
+                          </button>
+                          <button
+                            onClick={speak}
+                            disabled={!!busy}
+                            className="border border-violet-300 text-violet-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-violet-50 disabled:opacity-60"
+                          >
+                            Speak with Kara
+                          </button>
+                        </div>
                         {current.status === 'wrapping-up' && (
                           <div className="w-full mt-2">
                             <MarkdownAnswerEditor
@@ -628,6 +681,7 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
 
         </section>
 
+        {playbookVisible && (<>
         <div
           role="separator"
           aria-orientation="vertical"
@@ -672,6 +726,7 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
             )}
           </div>
         </aside>
+        </>)}
         </div>
       </div>
       {settingsOpen && <KaraSettings onClose={() => setSettingsOpen(false)} />}

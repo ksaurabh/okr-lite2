@@ -243,14 +243,14 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
     status: c.status,
     createdAt: c.createdAt,
     updatedAt: c.updatedAt,
-    messages: c.messages.map(({ id, role, text, at, regenerated, options, proposal }) => ({ id, role, text, at, regenerated, options, proposal })),
+    messages: c.messages.map(({ id, role, text, at, regenerated, options, proposal, resume }) => ({ id, role, text, at, regenerated, options, proposal, resume })),
     answers: c.answers,
     report: c.report,
     reportAt: c.reportAt,
   });
 
   // --- Context snapshot ---
-  function buildContext(user) {
+  function buildContext(user, { excludeCheckinId } = {}) {
     const org = getOrganizationByDomain(user.domain);
     const users = getUsers();
     const me = users.find(u => u.email === user.email);
@@ -318,7 +318,7 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
       }
     }
 
-    const last = getCheckins(user.email).find(c => c.report);
+    const last = getCheckins(user.email).find(c => c.report && c.id !== excludeCheckinId);
     if (last) {
       lines.push('');
       lines.push(`Report from the previous check-in (${last.reportAt?.slice(0, 10)}):`);
@@ -327,17 +327,11 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
     return lines.join('\n');
   }
 
-  // "Speak with Kara" is an open conversation with no goal set in advance:
-  // Kara's opening question comes from asking her, against the playbook, what
-  // that first question should be.
-  const SPEAK_GOAL = 'Open conversation ("Speak with Kara"): no goal was set in advance; follow the playbook and where the answers lead.';
-  const goalFor = (checkin) => (checkin.mode === 'speak' ? SPEAK_GOAL : checkin.goal);
-
   function apiMessages(checkin) {
-    const content = checkin.mode === 'speak'
-      ? `<okr_context>\n${checkin.context}\n</okr_context>\n\n<goal>\n${SPEAK_GOAL}\n</goal>\n\nThe person has just started speaking with Kara. What is the first question Kara should ask when one starts speaking with Kara? Ask that question as your message.`
-      : `<okr_context>\n${checkin.context}\n</okr_context>\n\n<goal>\n${checkin.goal}\n</goal>\n\nStart the check-in.`;
-    const messages = [{ role: 'user', content }];
+    const messages = [{
+      role: 'user',
+      content: `<okr_context>\n${checkin.context}\n</okr_context>\n\n<goal>\n${checkin.goal}\n</goal>\n\nStart the check-in.`,
+    }];
     for (const m of checkin.messages) {
       messages.push(m.role === 'kara'
         ? { role: 'assistant', content: m.raw || m.text }
@@ -452,7 +446,7 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
 
   async function writeReport(checkin) {
     const transcript = checkin.messages
-      .map(m => `${m.role === 'kara' ? 'Kara' : 'Person'}: ${m.text}`)
+      .map(m => (m.resume ? '(The person chose "Speak with Kara" to continue the session.)' : `${m.role === 'kara' ? 'Kara' : 'Person'}: ${m.text}`))
       .join('\n\n');
     const answers = checkin.answers.length
       ? checkin.answers.map(a => `- [${a.topic}] ${a.question} → ${a.answer}`).join('\n')
@@ -467,7 +461,7 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
       system: reportSystemPrompt(checkin.playbook),
       messages: [{
         role: 'user',
-        content: `<okr_context>\n${checkin.context}\n</okr_context>\n\n<goal>\n${goalFor(checkin)}\n</goal>\n\n<recorded_answers>\n${answers}\n</recorded_answers>\n\n<conversation>\n${transcript}\n</conversation>\n\nWrite the check-in report.`,
+        content: `<okr_context>\n${checkin.context}\n</okr_context>\n\n<goal>\n${checkin.goal}\n</goal>\n\n<recorded_answers>\n${answers}\n</recorded_answers>\n\n<conversation>\n${transcript}\n</conversation>\n\nWrite the check-in report.`,
       }],
     });
     assertAnswered(response);
@@ -576,17 +570,13 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
 
   // Start a check-in: snapshot the playbook and context, and get Kara's opener.
   app.post('/api/kara/checkins', requireAuth, async (req, res) => {
-    const mode = req.body?.mode === 'speak' ? 'speak' : 'checkin';
-    const goal = mode === 'speak'
-      ? 'Speak with Kara'
-      : typeof req.body?.goal === 'string' && req.body.goal.trim()
-        ? req.body.goal.trim().slice(0, 2000)
-        : 'Weekly check-in on my objectives and key results';
+    const goal = typeof req.body?.goal === 'string' && req.body.goal.trim()
+      ? req.body.goal.trim().slice(0, 2000)
+      : 'Weekly check-in on my objectives and key results';
     const now = new Date().toISOString();
     const checkin = {
       id: newId('kc'),
       email: req.user.email,
-      mode,
       goal,
       status: 'active',
       createdAt: now,
@@ -696,6 +686,37 @@ export function registerKaraRoutes(app, { requireAuth, getUsers, saveUsers, getO
       await karaTurn(checkin);
     } catch (err) {
       // The objective (if any) exists and the reply is recorded; keep both.
+      saveCheckin(req.user.email, checkin);
+      return sendKaraError(res, err);
+    }
+    saveCheckin(req.user.email, checkin);
+    res.json({ checkin: publicCheckin(checkin) });
+  });
+
+  // "Speak with Kara": continue a check-in. Kara gets the playbook as it is
+  // now and a fresh OKR snapshot, and is asked what her first question should
+  // be when someone starts speaking with her. Reopens a finished check-in; its
+  // report stays until regenerated.
+  app.post('/api/kara/checkins/:id/speak', requireAuth, async (req, res) => {
+    const checkin = getCheckins(req.user.email).find(c => c.id === req.params.id);
+    if (!checkin) return res.status(404).json({ error: 'Check-in not found' });
+    const prev = checkin.messages[checkin.messages.length - 1];
+    if (prev?.proposal?.status === 'pending') prev.proposal = { ...prev.proposal, status: 'skipped' };
+    checkin.email = req.user.email;
+    checkin.playbook = getPlaybook().content;
+    checkin.status = 'active';
+    const context = buildContext(req.user, { excludeCheckinId: checkin.id });
+    checkin.messages.push({
+      id: newId('km'),
+      role: 'user',
+      resume: true,
+      text: `(I chose "Speak with Kara" to continue this session.)\n\n<okr_context_now>\n${context}\n</okr_context_now>\n\nWhat is the first question Kara should ask when one starts speaking with Kara? Ask that question as your message.`,
+      at: new Date().toISOString(),
+    });
+    try {
+      await karaTurn(checkin);
+    } catch (err) {
+      // Keep the resume so Try again can pick it up.
       saveCheckin(req.user.email, checkin);
       return sendKaraError(res, err);
     }
