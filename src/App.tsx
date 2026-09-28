@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Layout } from './components/layout';
 import { DashboardPage } from './components/dashboard';
@@ -12,7 +12,6 @@ import { ScorecardPage } from './components/plans/ScorecardPage';
 import { PlanBuilderPage } from './components/plans/PlanBuilderPage';
 import { AgentPage } from './components/agent/AgentPage';
 import { MindmapsPage, MindmapCanvasPage } from './components/mindmaps';
-import { KaraPage } from './components/kara/KaraPage';
 import { WeeklyUpdatesPage } from './components/weeklyupdates/WeeklyUpdatesPage';
 import { UpdatesPage } from './components/updates';
 import { ListsPage } from './components/lists';
@@ -24,6 +23,9 @@ import { SettingsPage } from './components/settings';
 import { LoginPage, UnauthorizedPage, AuthCallback, AdminInviteAccept } from './components/auth';
 import { Modal } from './components/common';
 import { useOKRStore } from './store/okrStore';
+
+// Loaded on demand: Kara's markdown editor is sizeable and most visits never open it.
+const KaraPage = lazy(() => import('./components/kara/KaraPage').then(m => ({ default: m.KaraPage })));
 
 type View = 'dashboard' | 'objectives' | 'plans' | 'plans-overview' | 'planbuilder' | 'weeklyupdates' | 'agent' | 'views' | 'checklist' | 'progress' | 'updates' | 'logwork' | 'teams' | 'periods' | 'tags' | 'settings' | 'admin' | 'logs' | 'scorecard' | 'mindmaps' | 'mindmap' | 'kara';
 
@@ -142,7 +144,11 @@ function AppContent() {
 
   // Kara takes over the whole app; "Back" returns to the page it was opened from.
   if (currentView === 'kara') {
-    return <KaraPage onExit={() => setCurrentView(karaReturnView)} />;
+    return (
+      <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-gray-500">Loading Kara…</div>}>
+        <KaraPage onExit={() => setCurrentView(karaReturnView)} />
+      </Suspense>
+    );
   }
 
   // Show main app if authenticated and allowed

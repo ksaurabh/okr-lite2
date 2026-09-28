@@ -277,3 +277,8 @@ body {
 .note-md a { color: #2563eb; text-decoration: underline; word-break: break-all; }
 .note-md strong { font-weight: 700; }
 .note-md em { font-style: italic; }
+
+/* Kara's markdown answers (@uiw/react-md-editor): Tailwind's preflight strips
+   list markers, and the editor's stylesheet only restores them for nested lists. */
+.wmde-markdown ul { list-style: disc; }
+.wmde-markdown ol { list-style: decimal; }

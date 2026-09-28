@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import { renderNoteMarkdown } from '../mindmaps/markdown';
 import { Modal } from '../common/Modal';
+import { MarkdownAnswerEditor, MarkdownAnswerView } from './MarkdownAnswer';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 const KARA_URL = `${API_URL}/api/kara`;
@@ -100,7 +101,6 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
   const [playbookWidth, setPlaybookWidth] = useState(loadPlaybookWidth);
   const [resizing, setResizing] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
   const splitRef = useRef<HTMLDivElement>(null);
 
   // Dragging the divider: the playbook panel spans from the pointer to the
@@ -134,10 +134,6 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
   useEffect(() => {
     if (pane === 'chat') bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [pane, current?.messages.length, busy]);
-
-  useEffect(() => {
-    if (pane === 'chat' && !busy) inputRef.current?.focus();
-  }, [pane, busy]);
 
   const showCheckin = (c: Checkin) => {
     setCurrent(c);
@@ -382,7 +378,7 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
                         return (
                           <div key={m.id ?? i} className="ml-6 pl-4 border-l-2 border-violet-200">
                             <p className="text-xs font-medium text-gray-500 mb-0.5">Your answer</p>
-                            <p className="text-sm text-gray-900 whitespace-pre-wrap">{m.text}</p>
+                            <MarkdownAnswerView text={m.text} />
                           </div>
                         );
                       }
@@ -423,17 +419,13 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
                           <Markdown text={m.text} />
                           {isCurrent && busy !== 'replying' && (
                             <div className="mt-4">
-                              <textarea
-                                ref={inputRef}
+                              <MarkdownAnswerEditor
                                 value={draft}
-                                onChange={(e) => setDraft(e.target.value)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); }
-                                }}
-                                rows={4}
+                                onChange={setDraft}
+                                onSubmit={send}
                                 disabled={!!busy}
-                                placeholder="Type your answer…"
-                                className="w-full resize-y border border-gray-300 rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-violet-500 disabled:bg-gray-50"
+                                autoFocus
+                                placeholder="Type your answer… (markdown supported)"
                               />
                               <div className="mt-2 flex items-center justify-between">
                                 <span className="text-xs text-gray-400">Ctrl/⌘ + Enter to submit</span>
@@ -466,13 +458,12 @@ export function KaraPage({ onExit }: { onExit: () => void }) {
                         </button>
                         {current.status === 'wrapping-up' && (
                           <div className="w-full mt-2">
-                            <textarea
+                            <MarkdownAnswerEditor
                               value={draft}
-                              onChange={(e) => setDraft(e.target.value)}
-                              rows={2}
+                              onChange={setDraft}
                               disabled={!!busy}
+                              height={120}
                               placeholder="Anything to add before the report? (optional)"
-                              className="w-full resize-y border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
                             />
                             {draft.trim() && (
                               <div className="flex justify-end mt-1">
