@@ -106,14 +106,18 @@ export function Header({ onAddObjective }: HeaderProps) {
             )}
           </div>
           <div className="flex items-center gap-4">
-            <div className="flex flex-col items-center">
+            {/* The caption hangs below the button, out of flow, so the button
+                lines up with "+ Add Objective" in the same row. */}
+            <div className="relative">
               <button
                 onClick={() => setKaraOpen(true)}
                 className="bg-violet-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-violet-700 transition-colors"
               >
                 Checkin with Kara
               </button>
-              <span className="text-[11px] text-gray-500 mt-0.5">Kara: Key Results Assistant</span>
+              <span className="absolute top-full left-1/2 -translate-x-1/2 mt-0.5 whitespace-nowrap text-[11px] leading-none text-gray-500">
+                Kara: Key Results Assistant
+              </span>
             </div>
             <button
               onClick={onAddObjective}
