@@ -1,7 +1,7 @@
 {
   "name": "okr-lite-claude",
   "private": true,
-  "version": "1.75.0",
+  "version": "1.76.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
+    "@uiw/react-md-editor": "^4.1.2",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
@@ -21,6 +22,7 @@
     "passport-google-oauth20": "^2.0.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "rehype-sanitize": "^6.0.0",
     "zustand": "^5.0.9"
   },
   "devDependencies": {
